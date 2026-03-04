@@ -1,0 +1,143 @@
+use std::fs::File;
+use std::io::{Seek, SeekFrom, Write};
+
+use crate::core::TxBase::TxBase;
+use crate::index::format::{ChromBlockBuilder, ChromDirectoryEntry, IndexHeader};
+use crate::traits::{DiskSize, Encodable};
+
+/// Index 写入器。
+///
+/// # 写入流程
+/// 1. `new()` — 写入 4KB 占位 Header + N×34B 占位 Directory + Chrom Name Table（一次写定）
+/// 2. `add_chrom()` — 逐 chrom 顺序写入数据，写完立即可 drop，记录真实 offset 到 `entries`
+/// 3. `finalize()` — seek 回文件头，回填真实 Header 与 Directory
+pub struct IndexBuilder {
+    header: IndexHeader,
+    entries: Vec<ChromDirectoryEntry>,
+    /// Pre-computed (offset_in_table, len) for each chrom, indexed by chrom_id - 1.
+    chrom_name_offsets: Vec<(u32, u32)>,
+    current_offset: u64,
+    file: File,
+}
+
+impl IndexBuilder {
+    /// `chrom_names` must be in the same order as chroms will appear in the GTF
+    /// (i.e. the order returned by `profile_gtf`).
+    pub fn new(
+        mut file: File,
+        chrom_names: Vec<String>,
+        gtf_size: u64,
+        md5: [u8; 16],
+        has_ref_hash: bool,
+        has_seq_hash: bool,
+    ) -> std::io::Result<Self> {
+        let chrom_count = chrom_names.len() as u32;
+
+        // Build the chrom name table bytes and pre-compute per-chrom offsets.
+        let mut name_table: Vec<u8> = Vec::new();
+        let mut chrom_name_offsets: Vec<(u32, u32)> = Vec::with_capacity(chrom_names.len());
+        for name in &chrom_names {
+            let offset = name_table.len() as u32;
+            let len = name.len() as u32;
+            name_table.extend_from_slice(name.as_bytes());
+            chrom_name_offsets.push((offset, len));
+        }
+        let chrom_name_table_len = name_table.len() as u32;
+
+        let header = IndexHeader::new(
+            chrom_count,
+            gtf_size,
+            md5,
+            has_ref_hash,
+            has_seq_hash,
+            chrom_name_table_len,
+        );
+
+        // Write placeholder header (4 KB)
+        file.write_all(&[0u8; IndexHeader::DISK_SIZE])?;
+        // Write placeholder directory (N × 34 B)
+        file.write_all(&vec![
+            0u8;
+            chrom_count as usize * ChromDirectoryEntry::DISK_SIZE
+        ])?;
+        // Write chrom name table — fixed, never rewritten
+        file.write_all(&name_table)?;
+
+        let current_offset = (IndexHeader::DISK_SIZE
+            + chrom_count as usize * ChromDirectoryEntry::DISK_SIZE
+            + name_table.len()) as u64;
+
+        Ok(Self {
+            header,
+            entries: Vec::with_capacity(chrom_count as usize),
+            chrom_name_offsets,
+            current_offset,
+            file,
+        })
+    }
+
+    /// Write one chrom block to disk and record its directory entry.
+    /// The `ChromBlockBuilder` is consumed and its memory freed after this call.
+    pub fn add_chrom(&mut self, entry: ChromBlockBuilder) -> std::io::Result<()> {
+        let (chrom_name_offset, chrom_name_len) =
+            self.chrom_name_offsets[(entry.chrom_id - 1) as usize];
+
+        let tx_offset = self.current_offset;
+        let tx_bytes = entry.txs.len() * TxBase::DISK_SIZE;
+
+        for tx in &entry.txs {
+            tx.encode_to(&mut self.file)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        }
+        self.current_offset += tx_bytes as u64;
+
+        // write junction pool next to tx_bytes
+        let junction_pool_offset = tx_offset + tx_bytes as u64;
+        let junction_pool_len = entry
+            .junction_pool
+            .encode_to(&mut self.file)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+            as u32;
+        self.current_offset += junction_pool_len as u64;
+
+        // then string pol
+        let string_pool_offset = junction_pool_offset + junction_pool_len as u64;
+        let string_pool_len = entry
+            .string_pool
+            .encode_to(&mut self.file)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+            as u32;
+        self.current_offset += string_pool_len as u64;
+
+        // generate a chromsome directory entry
+        // and insert it into entries
+        // each add_chrom will generate one entry on the fly
+        self.entries.push(ChromDirectoryEntry {
+            chrom_id: entry.chrom_id,
+            chrom_name_offset,
+            chrom_name_len,
+            global_tx_count: entry.txs.len() as u32,
+            global_tx_offset: tx_offset as u32,
+            global_junction_pool_offset: junction_pool_offset as u32,
+            global_junction_count: junction_pool_len,
+            global_string_pool_offset: string_pool_offset as u32,
+            global_string_len: string_pool_len,
+        });
+
+        Ok(())
+    }
+
+    /// Seek back and write the real header and directory.
+    pub fn finalize(mut self) -> std::io::Result<()> {
+        self.file.seek(SeekFrom::Start(0))?;
+        self.header.encode_to(&mut self.file)?;
+
+        self.file
+            .seek(SeekFrom::Start(IndexHeader::DISK_SIZE as u64))?;
+        for entry in &self.entries {
+            entry.encode_to(&mut self.file)?;
+        }
+
+        self.file.flush()
+    }
+}

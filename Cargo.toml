@@ -1,0 +1,20 @@
+[package]
+name = "isomatch"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+noodles-gtf =  "0.35.0" 
+noodles-fasta = "0.46.0" 
+noodles-core = "0.15.0"
+clap = { version = "4.0", features = ["derive"] }
+serde = {version = "1.0.215", features=["derive"]}
+serde_json = "1.0"
+log = "0.4.27"
+env_logger = "0.11.6"
+thiserror = "2.0.18"
+anyhow = "1.0.102"
+ahash = "0.8.12"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+rustc-hash = "2.1.2"
+flate2 = "1.1.5"
