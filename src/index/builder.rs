@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 
-use crate::core::TxBase::TxBase;
+use crate::core::tx_base::TxBase;
 use crate::index::format::{ChromBlockBuilder, ChromDirectoryEntry, IndexHeader};
 use crate::traits::{DiskSize, Encodable};
 
@@ -78,7 +78,9 @@ impl IndexBuilder {
 
     /// Write one chrom block to disk and record its directory entry.
     /// The `ChromBlockBuilder` is consumed and its memory freed after this call.
-    pub fn add_chrom(&mut self, entry: ChromBlockBuilder) -> std::io::Result<()> {
+    pub fn add_chrom(&mut self, mut entry: ChromBlockBuilder) -> std::io::Result<()> {
+        entry.finalize();
+
         let (chrom_name_offset, chrom_name_len) =
             self.chrom_name_offsets[(entry.chrom_id - 1) as usize];
 
@@ -100,7 +102,7 @@ impl IndexBuilder {
             as u32;
         self.current_offset += junction_pool_len as u64;
 
-        // then string pol
+        // then string pool
         let string_pool_offset = junction_pool_offset + junction_pool_len as u64;
         let string_pool_len = entry
             .string_pool
@@ -108,6 +110,15 @@ impl IndexBuilder {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
             as u32;
         self.current_offset += string_pool_len as u64;
+
+        // then splice site pool
+        let splice_site_pool_offset = string_pool_offset + string_pool_len as u64;
+        let splice_site_pool_len = entry
+            .splice_site_pool
+            .encode_to(&mut self.file)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+            as u32;
+        self.current_offset += splice_site_pool_len as u64;
 
         // generate a chromsome directory entry
         // and insert it into entries
@@ -122,6 +133,8 @@ impl IndexBuilder {
             global_junction_count: junction_pool_len,
             global_string_pool_offset: string_pool_offset as u32,
             global_string_len: string_pool_len,
+            global_splice_site_pool_offset: splice_site_pool_offset as u32,
+            global_splice_site_pool_len: splice_site_pool_len,
         });
 
         Ok(())

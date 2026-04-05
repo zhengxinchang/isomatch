@@ -11,7 +11,7 @@ use crate::{
 pub use anyhow::Result;
 pub mod builder;
 pub mod format;
-pub mod indexError;
+pub mod index_error;
 pub mod reader;
 
 impl ArgValidate for IndexArgs {
@@ -76,7 +76,6 @@ impl ArgValidate for IndexArgs {
 
 pub fn run_index(args: &mut IndexArgs) -> Result<()> {
     args.validate();
-
 
     info!("Creating isomatch index for {}", args.input.display());
 

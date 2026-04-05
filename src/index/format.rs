@@ -1,7 +1,10 @@
-use crate::core::TxBase::{JunctionPool, StringPool, TxBase};
+use crate::core::junction_pool::JunctionPool;
+use crate::core::splice_site_pool::{SpliceSitePool, SpliceSiteSpan};
+use crate::core::string_pool::StringPool;
+use crate::core::tx_base::TxBase;
 use crate::fasta::FastaReader;
-use crate::gtf::{self, GTFTx};
-use crate::index::indexError::IndexError;
+use crate::gtf::GTFTx;
+use crate::index::index_error::IndexError;
 use crate::traits::{Decodable, DiskSize, Encodable};
 use crate::utils;
 use std::io::{Read, Write};
@@ -187,10 +190,12 @@ pub struct ChromDirectoryEntry {
     pub global_junction_count: u32,
     pub global_string_pool_offset: u32,
     pub global_string_len: u32,
+    pub global_splice_site_pool_offset: u32,
+    pub global_splice_site_pool_len: u32,
 }
 
 impl DiskSize for ChromDirectoryEntry {
-    const DISK_SIZE: usize = 34;
+    const DISK_SIZE: usize = 42;
 }
 
 impl Encodable for ChromDirectoryEntry {
@@ -206,6 +211,8 @@ impl Encodable for ChromDirectoryEntry {
         writer.write_all(&self.global_junction_count.to_le_bytes())?;
         writer.write_all(&self.global_string_pool_offset.to_le_bytes())?;
         writer.write_all(&self.global_string_len.to_le_bytes())?;
+        writer.write_all(&self.global_splice_site_pool_offset.to_le_bytes())?;
+        writer.write_all(&self.global_splice_site_pool_len.to_le_bytes())?;
         Ok(Self::DISK_SIZE)
     }
 }
@@ -228,6 +235,8 @@ impl Decodable for ChromDirectoryEntry {
             global_junction_count: u32::from_le_bytes(buf[22..26].try_into().unwrap()),
             global_string_pool_offset: u32::from_le_bytes(buf[26..30].try_into().unwrap()),
             global_string_len: u32::from_le_bytes(buf[30..34].try_into().unwrap()),
+            global_splice_site_pool_offset: u32::from_le_bytes(buf[34..38].try_into().unwrap()),
+            global_splice_site_pool_len: u32::from_le_bytes(buf[38..42].try_into().unwrap()),
         })
     }
 }
@@ -237,6 +246,7 @@ pub struct ChromBlockBuilder {
     pub chrom_id: u16,
     pub txs: Vec<TxBase>,
     pub junction_pool: JunctionPool,
+    pub splice_site_pool: SpliceSitePool,
     pub string_pool: StringPool,
 }
 
@@ -246,6 +256,7 @@ impl ChromBlockBuilder {
             chrom_id,
             txs: Vec::new(),
             junction_pool: JunctionPool::new(),
+            splice_site_pool: SpliceSitePool::new(),
             string_pool: StringPool::new(),
         }
     }
@@ -262,8 +273,7 @@ impl ChromBlockBuilder {
             .windows(2)
             .flat_map(|w| [w[0].1, w[1].0]) // [exon_n.end, exon_{n+1}.start, ...]
             .collect();
-        // println!("intron: {:?}", intron);
-        // println!("exons: {:?}", gtf_tx.exons);
+
         let junction_span =
             self.junction_pool
                 .add(&intron)
@@ -287,9 +297,9 @@ impl ChromBlockBuilder {
             }
         })?;
 
-        let refhash = if gtf_tx.exons.len() == 1 {
+        let (refhash, splice_site_pairs) = if gtf_tx.exons.len() == 1 {
             // if mono-exon, dont need to do this calculation
-            0
+            (0, Vec::new())
         } else {
             let reference_seq = refr
                 .fetch(
@@ -304,7 +314,19 @@ impl ChromBlockBuilder {
 
             // println!("{:?}",reference_seq);
 
-            let mut exon_offsets = gtf_tx.get_0based_exon_relative_offset();
+            let mut exon_offsets: Vec<(u32, u32)> = gtf_tx.get_0based_exon_relative_offset();
+
+            let mut splice_sites_offsets: Vec<(usize, usize, usize, usize)> = exon_offsets
+                .windows(2)
+                .map(|e| {
+                    (
+                        e[0].1 as usize,
+                        e[0].1 as usize + 2,
+                        e[1].0 as usize - 2,
+                        e[1].0 as usize,
+                    )
+                })
+                .collect();
             // println!("{:?}",gtf_tx.exons);
             // println!("{:?}",exon_offsets);
             // println!("{}",reference_seq.len());
@@ -340,8 +362,15 @@ impl ChromBlockBuilder {
                 tx_sequence.extend_from_slice(&bases);
             }
 
+            let mut splice_site_pairs = Vec::new();
+            for (lstart, lend, rstart, rend) in splice_sites_offsets.into_iter() {
+                let left = reference_seq[lstart..lend].to_vec();
+                let right = reference_seq[rstart..rend].to_vec();
+                splice_site_pairs.push((left, right));
+            }
+
             // refhash
-            utils::hash_u8_vec(&tx_sequence)
+            (utils::hash_u8_vec(&tx_sequence), splice_site_pairs)
         };
 
         // seqhash
@@ -353,8 +382,11 @@ impl ChromBlockBuilder {
                 } else {
                     let sequence = reader.fetch_all(&gtf_tx.tx_id, false)?;
 
-                    let tx_seq_len: usize =
-                        gtf_tx.exons.iter().map(|(s, e)| (*e - *s +1) as usize).sum();
+                    let tx_seq_len: usize = gtf_tx
+                        .exons
+                        .iter()
+                        .map(|(s, e)| (*e - *s + 1) as usize)
+                        .sum();
 
                     if sequence.len() != tx_seq_len {
                         dbg!(&gtf_tx);
@@ -396,6 +428,22 @@ impl ChromBlockBuilder {
             None => 0u128,
         };
 
+        // build splice site pairs from intron boundaries
+        // let splice_site_pairs: Vec<(&str, &str)> = Vec::new(); // TODO: extract donor/acceptor dinucleotides from reference
+        let splice_site_span = if splice_site_pairs.is_empty() {
+            SpliceSiteSpan {
+                offset: 0,
+                count: 0,
+            }
+        } else {
+            self.splice_site_pool
+                .add_pairs(&splice_site_pairs, gtf_tx.strand)
+                .map_err(|e| IndexError::AddGTFTx {
+                    id: gtf_tx.tx_id.clone(),
+                    reason: e.to_string(),
+                })?
+        };
+
         let tx_base = TxBase::new(
             gtf_tx.idx,
             self.chrom_id,
@@ -405,6 +453,7 @@ impl ChromBlockBuilder {
             seqhash,
             refhash,
             gtf_tx.exons.len() as u16,
+            splice_site_span,
             junction_span,
             tx_id_span,
             gene_id_span,
@@ -414,10 +463,12 @@ impl ChromBlockBuilder {
             reason: e.to_string(),
         })?;
 
-        // dbg!(&tx_base);
-
         self.txs.push(tx_base);
 
         Ok(())
+    }
+
+    pub fn finalize(&mut self) {
+        self.txs.sort_unstable();
     }
 }

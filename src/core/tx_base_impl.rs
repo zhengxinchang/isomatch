@@ -1,7 +1,10 @@
-use crate::core::TxBase::TxBaseFlags;
-use crate::core::TxBase::{JunctionSpan, StringSpan, TxBase, TxBaseTrait};
-use crate::core::TxBaseError::TxBaseError;
-use crate::core::TxBoundary::TxBoundary;
+use crate::core::junction_pool::JunctionSpan;
+use crate::core::splice_site_pool::SpliceSiteSpan;
+use crate::core::string_pool::StringSpan;
+use crate::core::tx_base::TxBaseFlags;
+use crate::core::tx_base::{TxBase, TxBaseTrait};
+use crate::core::tx_base_error::TxBaseError;
+use crate::core::tx_boundary::TxBoundary;
 use crate::traits::{DiskSize, Encodable, PartialLoad};
 
 impl TxBaseTrait for TxBase {
@@ -51,6 +54,10 @@ impl TxBaseTrait for TxBase {
         self.junctions
     }
 
+    fn splice_sites(&self) -> SpliceSiteSpan {
+        self.splice_sites
+    }
+
     fn transcript_span(&self) -> StringSpan {
         self.tx_id_span
     }
@@ -61,7 +68,8 @@ impl TxBaseTrait for TxBase {
 }
 
 impl DiskSize for TxBase {
-    const DISK_SIZE: usize = 84;
+    // 84 (old) + 4 (splice_sites.offset u32) + 2 (splice_sites.count u16) = 90
+    const DISK_SIZE: usize = 90;
 }
 
 impl Encodable for TxBase {
@@ -104,6 +112,12 @@ impl Encodable for TxBase {
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
         writer
             .write_all(&self.junctions.count.to_le_bytes())
+            .map_err(|e| TxBaseError::Io(e.to_string()))?;
+        writer
+            .write_all(&self.splice_sites.offset.to_le_bytes())
+            .map_err(|e| TxBaseError::Io(e.to_string()))?;
+        writer
+            .write_all(&self.splice_sites.count.to_le_bytes())
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
         writer
             .write_all(&self.tx_id_span.offset.to_le_bytes())
@@ -152,10 +166,12 @@ impl PartialLoad for TxBase {
         let n_exons = u16::from_le_bytes(buf[60..62].try_into().unwrap());
         let junctions_offset = u32::from_le_bytes(buf[62..66].try_into().unwrap());
         let junctions_count = u16::from_le_bytes(buf[66..68].try_into().unwrap());
-        let transcript_span_offset = u32::from_le_bytes(buf[68..72].try_into().unwrap());
-        let transcript_span_byte_len = u32::from_le_bytes(buf[72..76].try_into().unwrap());
-        let gene_span_offset = u32::from_le_bytes(buf[76..80].try_into().unwrap());
-        let gene_span_byte_len = u32::from_le_bytes(buf[80..84].try_into().unwrap());
+        let splice_sites_offset = u32::from_le_bytes(buf[68..72].try_into().unwrap());
+        let splice_sites_count = u16::from_le_bytes(buf[72..74].try_into().unwrap());
+        let transcript_span_offset = u32::from_le_bytes(buf[74..78].try_into().unwrap());
+        let transcript_span_byte_len = u32::from_le_bytes(buf[78..82].try_into().unwrap());
+        let gene_span_offset = u32::from_le_bytes(buf[82..86].try_into().unwrap());
+        let gene_span_byte_len = u32::from_le_bytes(buf[86..90].try_into().unwrap());
 
         Ok(Self {
             tx_idx: tx_id,
@@ -172,6 +188,10 @@ impl PartialLoad for TxBase {
             junctions: JunctionSpan {
                 offset: junctions_offset,
                 count: junctions_count,
+            },
+            splice_sites: SpliceSiteSpan {
+                offset: splice_sites_offset,
+                count: splice_sites_count,
             },
             tx_id_span: StringSpan {
                 offset: transcript_span_offset,
@@ -207,6 +227,10 @@ mod tests {
             junctions: JunctionSpan {
                 offset: 9,
                 count: 2,
+            },
+            splice_sites: SpliceSiteSpan {
+                offset: 0,
+                count: 0,
             },
             tx_id_span: StringSpan {
                 offset: 100,

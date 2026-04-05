@@ -203,18 +203,3 @@ fn read_sequence_stripped<R: BufRead>(reader: &mut R, len: usize) -> std::io::Re
     }
     Ok(buf)
 }
-
-fn rev_comp(seq: &[u8]) -> Vec<u8> {
-    seq.iter().rev().map(|&b| complement(b)).collect()
-}
-
-fn complement(b: u8) -> u8 {
-    match b.to_ascii_uppercase() {
-        b'A' => b'T',
-        b'T' => b'A',
-        b'G' => b'C',
-        b'C' => b'G',
-        b'N' => b'N',
-        other => other,
-    }
-}

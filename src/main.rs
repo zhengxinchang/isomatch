@@ -6,7 +6,6 @@ use serde::Serialize;
 pub mod utils;
 use utils::greetings2;
 pub mod core;
-use core::TxBase;
 
 use crate::index::run_index;
 pub mod fasta;
@@ -54,7 +53,7 @@ pub struct IndexArgs {
 
     // hide this because the tx seqs usually not have paried sequence.
     #[clap(skip = None)]
-    // #[clap(short = 's', long = "seqfa", help = "Sequence fasta file")]
+    // #[clap(short = 's', long = "seqfa", help = "Transcirpt sequence file in fasta format")]
     pub seqfa: Option<PathBuf>,
 
     #[clap(
@@ -163,9 +162,11 @@ fn main() {
             command: Commands::Index(mut args),
         } => {
             greetings2(&args);
-            run_index(&mut args).map_err(|e| {
-                error!("{}", e);
-            }).expect("Exit...");
+            run_index(&mut args)
+                .map_err(|e| {
+                    error!("{}", e);
+                })
+                .expect("Exit...");
         }
         Cli {
             command: Commands::Merge(args),

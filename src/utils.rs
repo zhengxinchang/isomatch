@@ -67,3 +67,54 @@ pub fn open_file_bufread<P: AsRef<Path>>(path: P) -> std::io::Result<Box<dyn Buf
         Ok(Box::new(file_reader))
     }
 }
+
+fn rev_comp(seq: &[u8]) -> Vec<u8> {
+    seq.iter().rev().map(|&b| complement(b)).collect()
+}
+
+fn complement(b: u8) -> u8 {
+    match b.to_ascii_uppercase() {
+        b'A' => b'T',
+        b'T' => b'A',
+        b'G' => b'C',
+        b'C' => b'G',
+        b'N' => b'N',
+        other => other,
+    }
+}
+
+fn upper_nuc(b: u8) -> u8 {
+    match b {
+        b'a' => b'A',
+        b't' => b'T',
+        b'c' => b'C',
+        b'g' => b'G',
+        b'n' => b'N',
+        other => other,
+    }
+}
+/// reverse site acoording to strand
+/// also convert bases to upaer cases
+pub fn normalized_site(site: &[u8], strand: u8) -> Vec<u8> {
+    if strand == 1 {
+        rev_comp(site)
+    } else {
+        site.iter().map(|&b| upper_nuc(b)).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalized_site;
+
+    #[test]
+    fn reverse_site_keeps_plus_strand_and_uppercases() {
+        assert_eq!(normalized_site(b"gTaC", 0), b"GTAC");
+    }
+
+    #[test]
+    fn reverse_site_reverse_complements_minus_strand() {
+        assert_eq!(normalized_site(b"ct", 1), b"AG");
+        assert_eq!(normalized_site(b"gTaC", 1), b"GTAC");
+    }
+}
