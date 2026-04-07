@@ -1,7 +1,7 @@
-use crate::core::junction_pool::JunctionSpan;
+use crate::core::junction_pool::{JunctionPool, JunctionSpan};
 use crate::core::splice_site_pool::SpliceSiteSpan;
 use crate::core::string_pool::StringSpan;
-use crate::core::tx_base::TxBaseFlags;
+use crate::core::tx_base_flag::TxBaseFlags;
 use crate::core::tx_base::{TxBase, TxBaseTrait};
 use crate::core::tx_base_error::TxBaseError;
 use crate::core::tx_boundary::TxBoundary;
@@ -50,20 +50,65 @@ impl TxBaseTrait for TxBase {
         self.n_exons
     }
 
-    fn junctions(&self) -> JunctionSpan {
-        self.junctions
+    fn junctions(&self, junction_pool: &mut JunctionPool) -> Vec<(u32, u32)> {
+        let raw = junction_pool.get(self.junctions).unwrap_or_else(|e| {
+            panic!(
+                "failed to resolve junction span for tx_idx {}: {}",
+                self.tx_idx, e
+            )
+        });
+
+        let chunks = raw.chunks_exact(2);
+        let remainder = chunks.remainder();
+        assert!(
+            remainder.is_empty(),
+            "junction coordinate count must be even for tx_idx {}, got {}",
+            self.tx_idx,
+            raw.len()
+        );
+
+        chunks.map(|pair| (pair[0], pair[1])).collect()
     }
 
-    fn splice_sites(&self) -> SpliceSiteSpan {
-        self.splice_sites
+    fn splice_sites(
+        &self,
+        splice_sites_pool: &mut super::splice_site_pool::SpliceSitePool,
+    ) -> Vec<u8> {
+        splice_sites_pool
+            .get_pair(self.splice_sites)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to resolve splice site span for tx_idx {}: {}",
+                    self.tx_idx, e
+                )
+            })
+            .iter()
+            .map(|pair| pair.0)
+            .collect()
     }
 
-    fn transcript_span(&self) -> StringSpan {
-        self.tx_id_span
+    fn source_tx_id(&self, string_pool: &mut super::string_pool::StringPool) -> String {
+        string_pool
+            .get(self.tx_id_span)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to resolve transcript_id span for tx_idx {}: {}",
+                    self.tx_idx, e
+                )
+            })
+            .to_owned()
     }
 
-    fn gene_span(&self) -> StringSpan {
-        self.gene_id_span
+    fn source_gene_id(&self, string_pool: &mut super::string_pool::StringPool) -> String {
+        string_pool
+            .get(self.gene_id_span)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to resolve gene_id span for tx_idx {}: {}",
+                    self.tx_idx, e
+                )
+            })
+            .to_owned()
     }
 }
 
@@ -175,7 +220,7 @@ impl PartialLoad for TxBase {
 
         Ok(Self {
             tx_idx: tx_id,
-            boundary: TxBoundary::new(start, end, flags.strand()),
+            boundary: TxBoundary::new(start, end, flags.get_strand()),
             chrom_id,
             start,
             end,
@@ -218,7 +263,7 @@ mod tests {
             chrom_id: 3,
             start: 101,
             end: 250,
-            flags: TxBaseFlags::new(1).unwrap(),
+            flags: TxBaseFlags::new(1, true).unwrap(),
             seq_hash: 11,
             ref_hash: 22,
             _gtf_offset: 1234,

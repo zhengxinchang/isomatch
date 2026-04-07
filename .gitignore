@@ -24,7 +24,7 @@ target
 # Added by cargo
 
 /target
-/dev_note.md
+/dev_note*
 /test/
 .claude/
 aa*

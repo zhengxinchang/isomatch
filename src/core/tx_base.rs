@@ -2,7 +2,8 @@ use std::cmp::Ordering;
 
 use crate::core::junction_pool::*;
 use crate::core::splice_site_pool::{SpliceSitePool, SpliceSiteSpan};
-use crate::core::string_pool::StringSpan;
+use crate::core::string_pool::{StringPool, StringSpan};
+use crate::core::tx_base_flag::TxBaseFlags;
 use crate::core::{tx_base_error::TxBaseError, tx_boundary::TxBoundary};
 pub trait TxBaseTrait {
     fn tx_idx(&self) -> u32;
@@ -18,12 +19,12 @@ pub trait TxBaseTrait {
     fn gtf_offset(&self) -> u64;
     fn gtf_len(&self) -> u32;
     fn n_exons(&self) -> u16;
-    fn junctions(&self) -> JunctionSpan;
-    fn splice_sites(&self) -> SpliceSiteSpan;
-    fn transcript_span(&self) -> StringSpan;
-    fn gene_span(&self) -> StringSpan;
+    fn junctions(&self,junction_pool:&mut JunctionPool) -> Vec<(u32,u32)>;
+    fn splice_sites(&self,splice_sites_pool:&mut SpliceSitePool) -> Vec<u8>;
+    fn source_tx_id(&self,string_pool:&mut StringPool) -> String;
+    fn source_gene_id(&self,string_pool:&mut StringPool) -> String;
     fn strand(&self) -> u8 {
-        self.flags().strand()
+        self.flags().get_strand()
     }
 }
 
@@ -79,7 +80,7 @@ impl TxBase {
             chrom_id,
             start,
             end,
-            flags: TxBaseFlags::new(strand)?,
+            flags: TxBaseFlags::new(strand, seq_hash != 0)?,
             seq_hash,
             ref_hash,
             _gtf_offset: 0,
@@ -93,7 +94,7 @@ impl TxBase {
     }
 
     pub fn strand(&self) -> u8 {
-        self.flags.strand()
+        self.flags.get_strand()
     }
 
     pub fn sort_key(&self) -> (u16, u32, u32, u8) {
@@ -122,50 +123,5 @@ impl Eq for TxBase {}
 impl PartialEq for TxBase {
     fn eq(&self, other: &Self) -> bool {
         self.start == other.start && self.end == other.end && (self.strand() == other.strand())
-    }
-}
-
-/// Flags for TxBase.
-/// bit 0: strand (0 for +, 1 for -)
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-#[repr(transparent)]
-pub struct TxBaseFlags(pub u16);
-
-impl TxBaseFlags {
-    const NEG_STRAND_BIT: u16 = 1;
-
-    pub fn new(strand: u8) -> Result<Self, TxBaseError> {
-        match strand {
-            0 => Ok(Self(0)),
-            1 => Ok(Self(Self::NEG_STRAND_BIT)),
-            _ => Err(TxBaseError::InvalidStrand { strand }),
-        }
-    }
-
-    pub fn strand(self) -> u8 {
-        if self.0 & Self::NEG_STRAND_BIT == Self::NEG_STRAND_BIT {
-            1
-        } else {
-            0
-        }
-    }
-
-    pub fn bits(self) -> u16 {
-        self.0
-    }
-
-    /// Set bit at position `bit` (0-indexed), returns new Flags.
-    pub fn set_bit(self, bit: u16) -> Self {
-        Self(self.0 | (1u16 << bit))
-    }
-
-    /// Clear bit at position `bit` (0-indexed), returns new Flags.
-    pub fn clear_bit(self, bit: u16) -> Self {
-        Self(self.0 & !(1u16 << bit))
-    }
-
-    /// Get the value of bit at position `bit` (0-indexed).
-    pub fn get_bit(self, bit: u16) -> bool {
-        (self.0 >> bit) & 1 == 1
     }
 }

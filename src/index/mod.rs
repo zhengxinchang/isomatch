@@ -114,7 +114,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
         default_out
     };
 
-    info!("Init Builder...");
+    info!("Initializing Builder...");
     let mut builder = builder::IndexBuilder::new(
         std::fs::File::create(&output_path).expect("Can not create output file"),
         chrom_names,
@@ -125,7 +125,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
     )
     .expect("Can not init index builder");
 
-    info!("Loading GTF...");
+    info!("Indexing GTF...");
     let gtf_reader = gtf::MyGTFReader::new(&args.input)
         .with_context(|| format!("Can not open GTF file: {}", args.input.display()))?;
 

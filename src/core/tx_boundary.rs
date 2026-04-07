@@ -38,12 +38,12 @@ impl TxBoundary {
         self.0
     }
 
-    /// Branchless overlap check: [l1, r1) overlap [l2, r2)  
+    /// Closed-interval overlap check: [l1, r1] overlap [l2, r2]
     ///  l1 =========== r1
     ///        l2========== r2
     ///  l2 =========== r2
     ///       l1========== r1
-    /// l1 < r2 && l2 < r1
+    /// l1 <= r2 && l2 <= r1
     #[inline(always)]
     pub fn overlaps(self, other: Self) -> bool {
         let l1 = self.0 >> 32;
@@ -51,14 +51,10 @@ impl TxBoundary {
         let l2 = other.0 >> 32;
         let r2 = (other.0 >> 1) & 0x7FFF_FFFF;
 
-        // wrapping_sub + 符号位: branchless 比较
-        // 对于非负整数 a < b <==> (a.wrapping_sub(b)) >> 63 == 1
-        let c1 = l1.wrapping_sub(r2) >> 63;
-        let c2 = l2.wrapping_sub(r1) >> 63;
-        (c1 & c2) != 0
+        l1 <= r2 && l2 <= r1
     }
 
-    /// Strand-aware overlap
+    /// Strand-aware closed-interval overlap
     #[inline(always)]
     pub fn overlaps_stranded(self, other: Self) -> bool {
         let l1 = self.0 >> 32;
@@ -66,11 +62,7 @@ impl TxBoundary {
         let l2 = other.0 >> 32;
         let r2 = (other.0 >> 1) & 0x7FFF_FFFF;
 
-        let c1 = l1.wrapping_sub(r2) >> 63;
-        let c2 = l2.wrapping_sub(r1) >> 63;
-        let strand_match = 1 - ((self.0 ^ other.0) & 1);
-
-        (c1 & c2 & strand_match) != 0
+        self.strand() == other.strand() && l1 <= r2 && l2 <= r1
     }
 
     /// 检查 self 是否完全包含 other: l1 <= l2 && r2 <= r1
@@ -109,7 +101,7 @@ impl std::fmt::Display for TxBoundary {
         } else {
             '-'
         };
-        write!(f, "[{}, {}){}", self.left(), self.right(), strand_ch)
+        write!(f, "[{}, {}]{}", self.left(), self.right(), strand_ch)
     }
 }
 
@@ -129,13 +121,13 @@ mod tests {
     fn test_overlap() {
         let a = TxBoundary::new(100, 200, 0);
         let b = TxBoundary::new(150, 300, 0);
-        let c = TxBoundary::new(200, 400, 0); // [200, 400) 不与 [100, 200) overlap（半开区间）
+        let c = TxBoundary::new(200, 400, 0); // [200, 400] 与 [100, 200] overlap（闭区间）
         let d = TxBoundary::new(50, 80, 0);
 
-        assert!(a.overlaps(b)); // [100,200) ∩ [150,300) ✓
+        assert!(a.overlaps(b)); // [100,200] ∩ [150,300] ✓
         assert!(b.overlaps(a)); // 对称
-        assert!(!a.overlaps(c)); // [100,200) ∩ [200,400) ✗ (半开)
-        assert!(!a.overlaps(d)); // [100,200) ∩ [50,80)   ✗
+        assert!(a.overlaps(c)); // [100,200] ∩ [200,400] ✓
+        assert!(!a.overlaps(d)); // [100,200] ∩ [50,80]   ✗
     }
 
     #[test]

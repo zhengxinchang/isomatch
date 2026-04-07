@@ -12,6 +12,7 @@ pub mod fasta;
 pub mod gtf;
 pub mod index;
 pub mod traits;
+pub mod merge;
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
     name = "isomatch",
