@@ -45,9 +45,9 @@ impl Flags {
     /// true = seq hash is valid
     pub fn set_seq_hash(&mut self, has_seq_hash: bool) {
         if has_seq_hash {
-            self.bits &= !Self::SEQ_HASH_BIT; // 
+            self.bits &= !Self::SEQ_HASH_BIT; //
         } else {
-            self.bits |= Self::SEQ_HASH_BIT; // 
+            self.bits |= Self::SEQ_HASH_BIT; //
         }
     }
 
@@ -62,7 +62,7 @@ impl Flags {
         if is_bgzipped {
             self.bits |= Self::GTF_FORMAT_BIT; // set → bgzipped
         } else {
-            self.bits &= !Self::GTF_FORMAT_BIT; // clear → plain text   
+            self.bits &= !Self::GTF_FORMAT_BIT; // clear → plain text
         }
     }
 
@@ -86,6 +86,8 @@ pub struct IndexHeader {
 }
 
 impl IndexHeader {
+    pub const CURRENT_VERSION: u8 = 1;
+
     pub fn new(
         chrom_count: u32,
         gtf_size: u64,
@@ -99,7 +101,7 @@ impl IndexHeader {
         flags.set_seq_hash(has_seq_hash);
         Self {
             magic: *b"ISOM",
-            version: 1,
+            version: Self::CURRENT_VERSION,
             flags,
             chrom_count,
             gtf_size,

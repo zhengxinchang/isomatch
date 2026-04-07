@@ -26,9 +26,6 @@ pub struct JunctionPool {
 }
 
 impl JunctionPool {
-    const CANONICAL_BIT: u32 = 1;
-    const COORD_MASK: u32 = !Self::CANONICAL_BIT;
-
     pub fn new() -> Self {
         Self {
             junctions: Vec::new(),
@@ -86,18 +83,6 @@ impl JunctionPool {
             return Err(TxBaseError::JunctionsNotStrictlyIncreasing);
         }
         Ok(())
-    }
-
-    pub fn encode_site(coord: u32, is_canonical: bool) -> u32 {
-        (coord << 1) | (is_canonical as u32)
-    }
-
-    pub fn decode_coord(raw: u32) -> u32 {
-        raw >> 1
-    }
-
-    pub fn decode_canonical(raw: u32) -> bool {
-        (raw & Self::CANONICAL_BIT) == 1
     }
 }
 

@@ -4,6 +4,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use xxhash_rust::xxh3::xxh3_128;
+
+const BUFREADER_CAPACITY: usize = 128 * 1024;
 pub fn greetings2<T: Serialize>(msg: &T) {
     match serde_json::to_string_pretty(&msg) {
         Ok(json) => eprintln!("Parsed arguments:\n{}", json),
@@ -58,11 +60,14 @@ pub fn pad_chrom_prefix(chrom: &str) -> String {
 }
 
 pub fn open_file_bufread<P: AsRef<Path>>(path: P) -> std::io::Result<Box<dyn BufRead>> {
-    let mut file_reader = BufReader::new(File::open(path)?);
+    let mut file_reader = BufReader::with_capacity(BUFREADER_CAPACITY, File::open(path)?);
     let is_gzip = file_reader.fill_buf()?.starts_with(&[0x1f, 0x8b]);
 
     if is_gzip {
-        Ok(Box::new(BufReader::new(MultiGzDecoder::new(file_reader))))
+        Ok(Box::new(BufReader::with_capacity(
+            BUFREADER_CAPACITY,
+            MultiGzDecoder::new(file_reader),
+        )))
     } else {
         Ok(Box::new(file_reader))
     }

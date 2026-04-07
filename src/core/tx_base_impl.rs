@@ -1,11 +1,16 @@
 use crate::core::junction_pool::{JunctionPool, JunctionSpan};
-use crate::core::splice_site_pool::SpliceSiteSpan;
-use crate::core::string_pool::StringSpan;
-use crate::core::tx_base_flag::TxBaseFlags;
+use crate::core::splice_site_pool::{SpliceSitePair, SpliceSitePool, SpliceSiteSpan};
+use crate::core::string_pool::{StringPool, StringSpan};
 use crate::core::tx_base::{TxBase, TxBaseTrait};
 use crate::core::tx_base_error::TxBaseError;
+use crate::core::tx_base_flag::TxBaseFlags;
 use crate::core::tx_boundary::TxBoundary;
 use crate::traits::{DiskSize, Encodable, PartialLoad};
+
+#[derive(Debug, Clone, Copy)]
+pub struct TxBaseLoadArgs {
+    pub chrom_id: u16,
+}
 
 impl TxBaseTrait for TxBase {
     fn tx_idx(&self) -> u32 {
@@ -39,19 +44,19 @@ impl TxBaseTrait for TxBase {
     }
 
     fn gtf_offset(&self) -> u64 {
-        self._gtf_offset
+        0
     }
 
     fn gtf_len(&self) -> u32 {
-        self._gtf_len
+        0
     }
 
     fn n_exons(&self) -> u16 {
         self.n_exons
     }
 
-    fn junctions(&self, junction_pool: &mut JunctionPool) -> Vec<(u32, u32)> {
-        let raw = junction_pool.get(self.junctions).unwrap_or_else(|e| {
+    fn junctions(&self, junction_pool: &JunctionPool) -> Vec<(u32, u32)> {
+        let raw = junction_pool.get(self.junctions_span).unwrap_or_else(|e| {
             panic!(
                 "failed to resolve junction span for tx_idx {}: {}",
                 self.tx_idx, e
@@ -70,24 +75,19 @@ impl TxBaseTrait for TxBase {
         chunks.map(|pair| (pair[0], pair[1])).collect()
     }
 
-    fn splice_sites(
-        &self,
-        splice_sites_pool: &mut super::splice_site_pool::SpliceSitePool,
-    ) -> Vec<u8> {
+    fn splice_sites(&self, splice_sites_pool: &SpliceSitePool) -> Vec<SpliceSitePair> {
         splice_sites_pool
-            .get_pair(self.splice_sites)
+            .get_pair(self.splice_sites_span)
             .unwrap_or_else(|e| {
                 panic!(
                     "failed to resolve splice site span for tx_idx {}: {}",
                     self.tx_idx, e
                 )
             })
-            .iter()
-            .map(|pair| pair.0)
-            .collect()
+            .to_vec()
     }
 
-    fn source_tx_id(&self, string_pool: &mut super::string_pool::StringPool) -> String {
+    fn source_tx_id(&self, string_pool: &StringPool) -> String {
         string_pool
             .get(self.tx_id_span)
             .unwrap_or_else(|e| {
@@ -99,7 +99,7 @@ impl TxBaseTrait for TxBase {
             .to_owned()
     }
 
-    fn source_gene_id(&self, string_pool: &mut super::string_pool::StringPool) -> String {
+    fn source_gene_id(&self, string_pool: &StringPool) -> String {
         string_pool
             .get(self.gene_id_span)
             .unwrap_or_else(|e| {
@@ -113,8 +113,8 @@ impl TxBaseTrait for TxBase {
 }
 
 impl DiskSize for TxBase {
-    // 84 (old) + 4 (splice_sites.offset u32) + 2 (splice_sites.count u16) = 90
-    const DISK_SIZE: usize = 90;
+    // Current layout drops on-disk chrom_id and the unused gtf_offset/gtf_len fields.
+    const DISK_SIZE: usize = 76;
 }
 
 impl Encodable for TxBase {
@@ -124,9 +124,6 @@ impl Encodable for TxBase {
     fn encode_to<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, Self::Error> {
         writer
             .write_all(&self.tx_idx.to_le_bytes())
-            .map_err(|e| TxBaseError::Io(e.to_string()))?;
-        writer
-            .write_all(&self.chrom_id.to_le_bytes())
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
         writer
             .write_all(&self.start.to_le_bytes())
@@ -144,25 +141,19 @@ impl Encodable for TxBase {
             .write_all(&self.ref_hash.to_le_bytes())
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
         writer
-            .write_all(&self._gtf_offset.to_le_bytes())
-            .map_err(|e| TxBaseError::Io(e.to_string()))?;
-        writer
-            .write_all(&self._gtf_len.to_le_bytes())
-            .map_err(|e| TxBaseError::Io(e.to_string()))?;
-        writer
             .write_all(&self.n_exons.to_le_bytes())
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
         writer
-            .write_all(&self.junctions.offset.to_le_bytes())
+            .write_all(&self.junctions_span.offset.to_le_bytes())
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
         writer
-            .write_all(&self.junctions.count.to_le_bytes())
+            .write_all(&self.junctions_span.count.to_le_bytes())
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
         writer
-            .write_all(&self.splice_sites.offset.to_le_bytes())
+            .write_all(&self.splice_sites_span.offset.to_le_bytes())
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
         writer
-            .write_all(&self.splice_sites.count.to_le_bytes())
+            .write_all(&self.splice_sites_span.count.to_le_bytes())
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
         writer
             .write_all(&self.tx_id_span.offset.to_le_bytes())
@@ -182,13 +173,13 @@ impl Encodable for TxBase {
 
 impl PartialLoad for TxBase {
     type Error = TxBaseError;
-    type Args = (); // TxBase is self-contained, no extra context needed
+    type Args = TxBaseLoadArgs;
 
     fn load_range<R: std::io::Read + std::io::Seek>(
         reader: &mut R,
         offset: u64,
         _len: usize, // always DISK_SIZE for fixed-size TxBase, ignored
-        _args: Self::Args,
+        args: Self::Args,
     ) -> Result<Self, Self::Error> {
         reader
             .seek(std::io::SeekFrom::Start(offset))
@@ -200,41 +191,36 @@ impl PartialLoad for TxBase {
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
 
         let tx_id = u32::from_le_bytes(buf[0..4].try_into().unwrap());
-        let chrom_id = u16::from_le_bytes(buf[4..6].try_into().unwrap());
-        let start = u32::from_le_bytes(buf[6..10].try_into().unwrap());
-        let end = u32::from_le_bytes(buf[10..14].try_into().unwrap());
-        let flags = TxBaseFlags(u16::from_le_bytes(buf[14..16].try_into().unwrap()));
-        let seq_hash = u128::from_le_bytes(buf[16..32].try_into().unwrap());
-        let ref_hash = u128::from_le_bytes(buf[32..48].try_into().unwrap());
-        let gtf_offset = u64::from_le_bytes(buf[48..56].try_into().unwrap());
-        let gtf_len = u32::from_le_bytes(buf[56..60].try_into().unwrap());
-        let n_exons = u16::from_le_bytes(buf[60..62].try_into().unwrap());
-        let junctions_offset = u32::from_le_bytes(buf[62..66].try_into().unwrap());
-        let junctions_count = u16::from_le_bytes(buf[66..68].try_into().unwrap());
-        let splice_sites_offset = u32::from_le_bytes(buf[68..72].try_into().unwrap());
-        let splice_sites_count = u16::from_le_bytes(buf[72..74].try_into().unwrap());
-        let transcript_span_offset = u32::from_le_bytes(buf[74..78].try_into().unwrap());
-        let transcript_span_byte_len = u32::from_le_bytes(buf[78..82].try_into().unwrap());
-        let gene_span_offset = u32::from_le_bytes(buf[82..86].try_into().unwrap());
-        let gene_span_byte_len = u32::from_le_bytes(buf[86..90].try_into().unwrap());
+        let start = u32::from_le_bytes(buf[4..8].try_into().unwrap());
+        let end = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+        let flags = TxBaseFlags(u16::from_le_bytes(buf[12..14].try_into().unwrap()));
+        let seq_hash = u128::from_le_bytes(buf[14..30].try_into().unwrap());
+        let ref_hash = u128::from_le_bytes(buf[30..46].try_into().unwrap());
+        let n_exons = u16::from_le_bytes(buf[46..48].try_into().unwrap());
+        let junctions_offset = u32::from_le_bytes(buf[48..52].try_into().unwrap());
+        let junctions_count = u16::from_le_bytes(buf[52..54].try_into().unwrap());
+        let splice_sites_offset = u32::from_le_bytes(buf[54..58].try_into().unwrap());
+        let splice_sites_count = u16::from_le_bytes(buf[58..60].try_into().unwrap());
+        let transcript_span_offset = u32::from_le_bytes(buf[60..64].try_into().unwrap());
+        let transcript_span_byte_len = u32::from_le_bytes(buf[64..68].try_into().unwrap());
+        let gene_span_offset = u32::from_le_bytes(buf[68..72].try_into().unwrap());
+        let gene_span_byte_len = u32::from_le_bytes(buf[72..76].try_into().unwrap());
 
         Ok(Self {
             tx_idx: tx_id,
             boundary: TxBoundary::new(start, end, flags.get_strand()),
-            chrom_id,
+            chrom_id: args.chrom_id,
             start,
             end,
             flags,
             seq_hash,
             ref_hash,
-            _gtf_offset: gtf_offset,
-            _gtf_len: gtf_len,
             n_exons,
-            junctions: JunctionSpan {
+            junctions_span: JunctionSpan {
                 offset: junctions_offset,
                 count: junctions_count,
             },
-            splice_sites: SpliceSiteSpan {
+            splice_sites_span: SpliceSiteSpan {
                 offset: splice_sites_offset,
                 count: splice_sites_count,
             },
@@ -266,14 +252,12 @@ mod tests {
             flags: TxBaseFlags::new(1, true).unwrap(),
             seq_hash: 11,
             ref_hash: 22,
-            _gtf_offset: 1234,
-            _gtf_len: 56,
             n_exons: 2,
-            junctions: JunctionSpan {
+            junctions_span: JunctionSpan {
                 offset: 9,
                 count: 2,
             },
-            splice_sites: SpliceSiteSpan {
+            splice_sites_span: SpliceSiteSpan {
                 offset: 0,
                 count: 0,
             },
@@ -291,12 +275,21 @@ mod tests {
         tx.encode_to(&mut buf).unwrap();
         assert_eq!(buf.len(), TxBase::DISK_SIZE);
 
-        let decoded = TxBase::load_range(&mut Cursor::new(buf), 0, TxBase::DISK_SIZE, ()).unwrap();
+        let decoded = TxBase::load_range(
+            &mut Cursor::new(buf),
+            0,
+            TxBase::DISK_SIZE,
+            TxBaseLoadArgs {
+                chrom_id: tx.chrom_id,
+            },
+        )
+        .unwrap();
 
         assert_eq!(decoded.tx_idx, tx.tx_idx);
+        assert_eq!(decoded.chrom_id, tx.chrom_id);
         assert_eq!(decoded.seq_hash, tx.seq_hash);
         assert_eq!(decoded.ref_hash, tx.ref_hash);
-        assert_eq!(decoded.gtf_offset(), tx.gtf_offset());
+        assert_eq!(decoded.gtf_offset(), 0);
         assert_eq!(decoded.tx_id_span, tx.tx_id_span);
         assert_eq!(decoded.gene_id_span, tx.gene_id_span);
     }

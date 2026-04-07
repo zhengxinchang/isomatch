@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::core::junction_pool::*;
-use crate::core::splice_site_pool::{SpliceSitePool, SpliceSiteSpan};
+use crate::core::splice_site_pool::{SpliceSitePair, SpliceSitePool, SpliceSiteSpan};
 use crate::core::string_pool::{StringPool, StringSpan};
 use crate::core::tx_base_flag::TxBaseFlags;
 use crate::core::{tx_base_error::TxBaseError, tx_boundary::TxBoundary};
@@ -19,10 +19,10 @@ pub trait TxBaseTrait {
     fn gtf_offset(&self) -> u64;
     fn gtf_len(&self) -> u32;
     fn n_exons(&self) -> u16;
-    fn junctions(&self,junction_pool:&mut JunctionPool) -> Vec<(u32,u32)>;
-    fn splice_sites(&self,splice_sites_pool:&mut SpliceSitePool) -> Vec<u8>;
-    fn source_tx_id(&self,string_pool:&mut StringPool) -> String;
-    fn source_gene_id(&self,string_pool:&mut StringPool) -> String;
+    fn junctions(&self, junction_pool: &JunctionPool) -> Vec<(u32, u32)>;
+    fn splice_sites(&self, splice_sites_pool: &SpliceSitePool) -> Vec<SpliceSitePair>;
+    fn source_tx_id(&self, string_pool: &StringPool) -> String;
+    fn source_gene_id(&self, string_pool: &StringPool) -> String;
     fn strand(&self) -> u8 {
         self.flags().get_strand()
     }
@@ -38,13 +38,11 @@ pub struct TxBase {
     pub flags: TxBaseFlags,
     pub seq_hash: u128,
     pub ref_hash: u128,
-    pub _gtf_offset: u64, // byte offset of the GTF record in the original GTF file
-    pub _gtf_len: u32,    // byte length of the GTF record in the original GTF file
     pub n_exons: u16,
-    pub junctions: JunctionSpan,
+    pub junctions_span: JunctionSpan,
 
     // new added
-    pub splice_sites: SpliceSiteSpan,
+    pub splice_sites_span: SpliceSiteSpan,
 
     /// Direct reference into the on-disk string section for GTF `transcript_id`.
     pub tx_id_span: StringSpan,
@@ -83,11 +81,9 @@ impl TxBase {
             flags: TxBaseFlags::new(strand, seq_hash != 0)?,
             seq_hash,
             ref_hash,
-            _gtf_offset: 0,
-            _gtf_len: 0,
             n_exons,
-            splice_sites: splice_site_span,
-            junctions: junction_span,
+            splice_sites_span: splice_site_span,
+            junctions_span: junction_span,
             tx_id_span: transcript_span,
             gene_id_span: gene_span,
         })
@@ -102,7 +98,7 @@ impl TxBase {
     }
 
     pub fn junction_slice<'a>(&self, pool: &'a JunctionPool) -> Result<&'a [u32], TxBaseError> {
-        pool.get(self.junctions)
+        pool.get(self.junctions_span)
     }
 }
 

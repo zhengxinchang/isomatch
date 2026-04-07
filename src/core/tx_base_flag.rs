@@ -1,6 +1,5 @@
 use crate::core::tx_base_error::TxBaseError;
 
-
 /// Flags for TxBase.
 /// bit 0: strand (0 for +, 1 for -)
 /// bit 1: seq_hash is valid

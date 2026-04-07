@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use log::error;
 use serde::Serialize;
 pub mod utils;
@@ -11,8 +11,8 @@ use crate::index::run_index;
 pub mod fasta;
 pub mod gtf;
 pub mod index;
-pub mod traits;
 pub mod merge;
+pub mod traits;
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
     name = "isomatch",
@@ -41,6 +41,12 @@ pub enum Commands {
     Annotate(AnnotateArgs),
 }
 
+#[derive(Copy, Clone, Debug, Serialize, ValueEnum)]
+pub enum ReprEndPolicy {
+    Outer,
+    Inner,
+}
+
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
     about = "index GTF files with sequence information, will be called by other subcommands, but can also be used independently
@@ -66,41 +72,99 @@ pub struct IndexArgs {
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
-#[clap(about = "merge multiple query transcript sets into union GTF")]
+#[clap(about = "merge multiple indexed transcript sets into a union GTF")]
 pub struct MergeArgs {
+    #[clap(
+        help = "Input transcript index files (.isomx)",
+        required = true,
+        num_args = 1..
+    )]
     pub inputs: Vec<PathBuf>,
 
     #[clap(
         short = 'd',
-        long = "donor-wobble-bp",
-        help = "Wobble base pairs for 5' splice sites",
-        default_value_t = 0
+        long = "dwob",
+        help = "Allowed donor-site coordinate wobble during junction comparison",
+        default_value_t = 3
     )]
-    pub donor_wobble_bp: u32,
+    pub dwob: u32,
 
     #[clap(
         short = 'a',
-        long = "acceptor-wobble-bp",
-        help = "Wobble base pairs for 3' splice sites",
-        default_value_t = 0
+        long = "awob",
+        help = "Allowed acceptor-site coordinate wobble during junction comparison",
+        default_value_t = 3
     )]
-    pub acceptor_wobble_bp: u32,
+    pub awob: u32,
 
     #[clap(
         short = 's',
-        long = "tss-tolerance",
-        help = "Transcription start site tolerance",
-        default_value_t = 0
+        long = "tss",
+        help = "TSS tolerance for final merge decisions",
+        default_value_t = 50
     )]
     pub tss: u32,
 
     #[clap(
         short = 'e',
-        long = "tes-tolerance",
-        help = "Transcription end site tolerance",
-        default_value_t = 0
+        long = "tes",
+        help = "TES tolerance for final merge decisions",
+        default_value_t = 100
     )]
     pub tes: u32,
+
+    #[clap(
+        long = "mono-ovlp",
+        help = "Minimum reciprocal overlap required for mono-exon merge",
+        default_value_t = 0.9
+    )]
+    pub mono_ovlp: f64,
+
+    #[clap(
+        long = "sx-max",
+        help = "Maximum exon length treated as a small-exon rescue candidate",
+        default_value_t = 15
+    )]
+    pub sx_max: u32,
+
+    #[clap(
+        long = "junc-diff",
+        help = "Maximum junction-count difference allowed for small-exon collapse rescue",
+        default_value_t = 1
+    )]
+    pub junc_diff: u32,
+
+    #[clap(
+        long = "shift-rescue",
+        help = "Enable rescue when only local small-exon boundaries shift",
+        action = ArgAction::Set,
+        default_value_t = true
+    )]
+    pub shift_rescue: bool,
+
+    #[clap(
+        long = "collapse-rescue",
+        help = "Enable rescue when one or a few small exons collapse or disappear",
+        action = ArgAction::Set,
+        default_value_t = false
+    )]
+    pub collapse_rescue: bool,
+
+    #[clap(
+        long = "hash-rescue",
+        help = "Require sequence or reference hash support before applying rescue rules",
+        action = ArgAction::Set,
+        default_value_t = true
+    )]
+    pub hash_rescue: bool,
+
+    #[clap(
+        long = "repr-ends",
+        help = "How representative transcript ends are chosen after merge",
+        value_enum,
+        default_value_t = ReprEndPolicy::Outer
+    )]
+    pub repr_ends: ReprEndPolicy,
 
     #[clap(short = 'o', long = "out", help = "Union output gtf file")]
     pub out: PathBuf,

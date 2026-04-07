@@ -59,10 +59,16 @@ impl SpliceSitePair {
     }
 
     pub fn is_canonical(&self) -> bool {
-        // canonical = GT-AG: donor (high nibble) == 0 (GT), acceptor (low nibble) == 1 (AG)
+        // canonical:
+        // GT-AG --> 0 1
+        // GC-AG --> 2 1
+        // AT-AC --> 3 4
+        // other 5
         let donor = self.0 >> 4;
         let acceptor = self.0 & 0x0F;
-        donor == 0 && acceptor == 1
+        (donor == 0 && acceptor == 1)
+            || (donor == 2 && acceptor == 1)
+            || (donor == 3 && acceptor == 4)
     }
 }
 
@@ -187,5 +193,41 @@ impl PartialLoad for SpliceSitePool {
         }
 
         Ok(Self { sites })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SpliceSitePair;
+
+    #[test]
+    fn canonical_pairs_on_plus_strand_are_recognized() {
+        let gt_ag = SpliceSitePair::pack(b"GT", b"AG", 0).unwrap();
+        let gc_ag = SpliceSitePair::pack(b"GC", b"AG", 0).unwrap();
+        let at_ac = SpliceSitePair::pack(b"AT", b"AC", 0).unwrap();
+
+        assert!(gt_ag.is_canonical());
+        assert!(gc_ag.is_canonical());
+        assert!(at_ac.is_canonical());
+    }
+
+    #[test]
+    fn canonical_pairs_on_minus_strand_are_recognized_after_normalization() {
+        let gt_ag = SpliceSitePair::pack(b"CT", b"AC", 1).unwrap();
+        let gc_ag = SpliceSitePair::pack(b"CT", b"GC", 1).unwrap();
+        let at_ac = SpliceSitePair::pack(b"GT", b"AT", 1).unwrap();
+
+        assert!(gt_ag.is_canonical());
+        assert!(gc_ag.is_canonical());
+        assert!(at_ac.is_canonical());
+    }
+
+    #[test]
+    fn noncanonical_pairs_are_not_marked_canonical() {
+        let gt_gc = SpliceSitePair::pack(b"GT", b"GC", 0).unwrap();
+        let other = SpliceSitePair::pack(b"AA", b"AA", 0).unwrap();
+
+        assert!(!gt_gc.is_canonical());
+        assert!(!other.is_canonical());
     }
 }

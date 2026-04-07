@@ -6,7 +6,7 @@ use std::{
 
 use crate::core::{
     junction_pool::JunctionPool, splice_site_pool::SpliceSitePool, string_pool::StringPool,
-    tx_base::TxBase,
+    tx_base::TxBase, tx_base_impl::TxBaseLoadArgs,
 };
 use crate::traits::{Decodable, DiskSize, PartialLoad};
 
@@ -160,8 +160,15 @@ impl ChromBlockReader {
         }
 
         let tx_offset = self.tx_base_offset + self.next_tx_idx as u64 * TxBase::DISK_SIZE as u64;
-        let tx = TxBase::load_range(&mut self.file, tx_offset, TxBase::DISK_SIZE, ())
-            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))?;
+        let tx = TxBase::load_range(
+            &mut self.file,
+            tx_offset,
+            TxBase::DISK_SIZE,
+            TxBaseLoadArgs {
+                chrom_id: self.chrom_id,
+            },
+        )
+        .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))?;
 
         self.next_tx_idx += 1;
         Ok(Some(tx))
@@ -248,13 +255,15 @@ mod tests {
                 assert!(!gene_id.is_empty());
 
                 // validate junction span
-                let junctions = jp.get(tx.junctions).expect("bad junction span");
-                assert_eq!(junctions.len(), tx.junctions.count as usize);
+                let junctions = jp.get(tx.junctions_span).expect("bad junction span");
+                assert_eq!(junctions.len(), tx.junctions_span.count as usize);
 
                 // validate splice site span
-                if !tx.splice_sites.is_empty() {
-                    let sites = ssp.get_pair(tx.splice_sites).expect("bad splice site span");
-                    assert_eq!(sites.len(), tx.splice_sites.count as usize);
+                if !tx.splice_sites_span.is_empty() {
+                    let sites = ssp
+                        .get_pair(tx.splice_sites_span)
+                        .expect("bad splice site span");
+                    assert_eq!(sites.len(), tx.splice_sites_span.count as usize);
                     // splice sites count should match junction pairs (n_exons - 1)
                     assert_eq!(sites.len(), (tx.n_exons - 1) as usize);
 

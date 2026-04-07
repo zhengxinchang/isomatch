@@ -1,6 +1,6 @@
 use std::{io::BufRead, path::Path};
 
-use log::error;
+use log::{error, warn};
 use rustc_hash::FxHashSet;
 
 use crate::utils::open_file_bufread;
@@ -35,10 +35,12 @@ pub fn profile_gtf<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<String>, GT
             .to_string();
         cols.next(); // skip source
         let feature = cols.next().ok_or(GTFError::InvalidGTFFormat { line_no })?;
+
         if feature != "transcript" {
             line.clear();
             continue;
         }
+
         let start = cols
             .next()
             .ok_or(GTFError::InvalidGTFFormat { line_no })?
@@ -47,12 +49,12 @@ pub fn profile_gtf<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<String>, GT
 
         if !prev_chrom.is_empty() && chrom_name != prev_chrom {
             if chrom_set.contains(&chrom_name) {
-                return Err(GTFError::UnsortedGTF {});
+                return Err(GTFError::UnsortedGTF { line: line });
             }
             prev_start = 0;
         }
         if chrom_name == prev_chrom && prev_start > start {
-            return Err(GTFError::UnsortedGTF {});
+            return Err(GTFError::UnsortedGTF { line: line });
         }
 
         if !chrom_set.contains(&chrom_name) {
@@ -221,13 +223,13 @@ impl Iterator for MyGTFReader {
 
             // validate the start and end coordinates of exons.
             // in case of invalide record has same start and end
-            if start >= end {
-                error!(
+            if start > end {
+                warn!(
                     "Invalid GTF record with start >= end, affected line: {}",
                     line
                 );
                 line.clear();
-                break;
+                continue;
             }
 
             if gtf_tx.is_empty {
@@ -350,8 +352,8 @@ pub enum GTFError {
     #[error("Can not read GTF file")]
     IoError {},
 
-    #[error("Unsorted GTF")]
-    UnsortedGTF {},
+    #[error("Unsorted GTF: {line}")]
+    UnsortedGTF { line: String },
 
     #[error("Invalid GTF format")]
     InvalidGTFFormat { line_no: usize },

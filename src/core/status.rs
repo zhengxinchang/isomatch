@@ -1,14 +1,11 @@
 use std::fmt::Display;
 
-
-
 pub enum TxType {
     MONO,
     ALLC,
     PRTC,
-    NOTC
+    NOTC,
 }
-
 
 pub enum MergeStatus {
     SNGL, // not merged, single
@@ -17,9 +14,8 @@ pub enum MergeStatus {
     ENDS, // junction matches and TSS TES in wobble region
     M2CA, // non-canonical to canonical by junction wobble compare
     SXSF, // small exon boundary shift
-    SXMS  // small exon mssing
+    SXMS, // small exon mssing
 }
-
 
 impl Display for MergeStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -32,6 +28,6 @@ impl Display for MergeStatus {
             MergeStatus::SXSF => &"SXSF",
             MergeStatus::SXMS => &"SXMS",
         };
-        write!(f,"{}",out)
+        write!(f, "{}", out)
     }
 }
