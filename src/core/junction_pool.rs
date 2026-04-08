@@ -79,7 +79,18 @@ impl JunctionPool {
     }
 
     fn validate_junctions(junctions: &[u32]) -> Result<(), TxBaseError> {
-        if junctions.windows(2).any(|window| window[0] >= window[1]) {
+        if junctions.len() % 2 != 0 {
+            return Err(TxBaseError::InvalidEncoding {
+                msg: format!(
+                    "junction coordinate count must be even, got {}",
+                    junctions.len()
+                ),
+            });
+        }
+
+        if junctions.chunks_exact(2).any(|pair| pair[0] >= pair[1])
+            || junctions.windows(2).any(|window| window[0] > window[1])
+        {
             return Err(TxBaseError::JunctionsNotStrictlyIncreasing);
         }
         Ok(())

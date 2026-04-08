@@ -70,6 +70,14 @@ impl SpliceSitePair {
             || (donor == 2 && acceptor == 1)
             || (donor == 3 && acceptor == 4)
     }
+    // /// This is
+    // pub fn is_canonical_from_u8(c: u8) -> bool {
+    //     let donor = c >> 4;
+    //     let acceptor = c & 0x0F;
+    //     (donor == 0 && acceptor == 1)
+    //         || (donor == 2 && acceptor == 1)
+    //         || (donor == 3 && acceptor == 4)
+    // }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -135,17 +143,6 @@ impl SpliceSitePool {
             count: span.count,
             pool_len: self.sites.len(),
         })
-    }
-
-    pub fn get_one(&self, idx: usize) -> Result<SpliceSitePair, TxBaseError> {
-        self.sites
-            .get(idx)
-            .copied()
-            .ok_or(TxBaseError::InvalidSpan {
-                offset: u32::try_from(idx).unwrap_or(u32::MAX),
-                count: 1,
-                pool_len: self.sites.len(),
-            })
     }
 
     pub fn len(&self) -> usize {

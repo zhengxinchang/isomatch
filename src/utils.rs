@@ -6,11 +6,15 @@ use std::path::Path;
 use xxhash_rust::xxh3::xxh3_128;
 
 const BUFREADER_CAPACITY: usize = 128 * 1024;
-pub fn greetings2<T: Serialize>(msg: &T) {
+pub fn print_json_block<T: Serialize>(title: &str, msg: &T) {
     match serde_json::to_string_pretty(&msg) {
-        Ok(json) => eprintln!("Parsed arguments:\n{}", json),
-        Err(e) => eprintln!("Failed to print arguments: {}", e),
+        Ok(json) => eprintln!("{}:\n{}", title, json),
+        Err(e) => eprintln!("Failed to print {}: {}", title, e),
     }
+}
+
+pub fn greetings2<T: Serialize>(msg: &T) {
+    print_json_block("Parsed arguments", msg);
 }
 
 pub fn checksum_file(path: &Path) -> std::io::Result<([u8; 16], u64)> {

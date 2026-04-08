@@ -33,7 +33,7 @@ pub trait Encodable {
 pub trait Decodable: Sized {
     type Error;
     type Args;
-    fn decode_from<R: Read>(reader: &mut R, args: Self::Args) -> Result<Self, Self::Error>;
+    fn decode_from<R: Read + Seek>(reader: &mut R, args: Self::Args) -> Result<Self, Self::Error>;
 }
 
 /// Read a portion of a section from a seekable source.

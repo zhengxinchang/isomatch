@@ -1,7 +1,7 @@
-use std::{io::BufRead, path::Path};
+use std::{collections::VecDeque, io::BufRead, path::Path};
 
-use log::{error, warn};
-use rustc_hash::FxHashSet;
+use log::warn;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::utils::open_file_bufread;
 use thiserror::Error;
@@ -172,7 +172,9 @@ impl GTFTx {
 pub struct MyGTFReader {
     pub bufreader: Box<dyn BufRead>,
     pub current_tx_idx: u32,
-    pub hold_line: Option<String>,
+    pub current_chrom: Option<String>,
+    pub chrom_txs: FxHashMap<String, GTFTx>,
+    pub ready_txs: VecDeque<GTFTx>,
 }
 
 impl MyGTFReader {
@@ -180,44 +182,127 @@ impl MyGTFReader {
         Ok(Self {
             bufreader: open_file_bufread(path)?,
             current_tx_idx: 0,
-            hold_line: None,
+            current_chrom: None,
+            chrom_txs: FxHashMap::default(),
+            ready_txs: VecDeque::new(),
         })
+    }
+
+    fn add_exon_to_current_chrom(
+        &mut self,
+        chrom: String,
+        start: u32,
+        end: u32,
+        strand: u8,
+        tx_id: String,
+        gene_id: String,
+    ) {
+        let tx = self.chrom_txs.entry(tx_id.clone()).or_insert_with(|| {
+            let mut tx = GTFTx::default();
+            tx.set_start(start);
+            tx.set_end(end);
+            tx.set_chrom(chrom.clone());
+            tx.set_strand(strand);
+            tx.set_tx_id(tx_id.clone());
+            tx.set_gene_id(gene_id.clone());
+            tx
+        });
+
+        if tx.gene_id != gene_id {
+            warn!(
+                "Transcript {} has inconsistent gene_id within chromosome {}: {} vs {}",
+                tx_id, chrom, tx.gene_id, gene_id
+            );
+        }
+
+        if tx.strand != strand {
+            warn!(
+                "Transcript {} has inconsistent strand within chromosome {}: {} vs {}",
+                tx_id, chrom, tx.strand, strand
+            );
+        }
+
+        tx.add_exon((start, end));
+    }
+
+    fn flush_current_chrom(&mut self) {
+        if self.chrom_txs.is_empty() {
+            self.current_chrom = None;
+            return;
+        }
+
+        let mut txs: Vec<GTFTx> = self
+            .chrom_txs
+            .drain()
+            .map(|(_, mut tx)| {
+                tx.sort_exons();
+                tx
+            })
+            .collect();
+
+        txs.sort_by(|a, b| {
+            (
+                a.start,
+                a.end,
+                a.strand,
+                a.tx_id.as_str(),
+                a.gene_id.as_str(),
+            )
+                .cmp(&(
+                    b.start,
+                    b.end,
+                    b.strand,
+                    b.tx_id.as_str(),
+                    b.gene_id.as_str(),
+                ))
+        });
+
+        for mut tx in txs {
+            tx.set_idx(self.current_tx_idx);
+            self.current_tx_idx += 1;
+            self.ready_txs.push_back(tx);
+        }
+
+        self.current_chrom = None;
     }
 }
 
 impl Iterator for MyGTFReader {
     type Item = GTFTx;
 
+    /// if the ready_txs is empty, this
+    /// next() will load all the records in next chromsome,
+    /// and rebuild the ready_txs.
+    /// this require the gtf sorted by at least the chromosome.
     fn next(&mut self) -> Option<Self::Item> {
-        let mut gtf_tx = GTFTx::default();
-
-        if let Some(hold_line) = self.hold_line.take() {
-            let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&hold_line);
-            if feat == "exon" {
-                gtf_tx.set_chrom(chrom);
-                gtf_tx.set_start(start);
-                gtf_tx.set_end(end);
-                gtf_tx.set_strand(strand);
-                gtf_tx.add_exon((start, end));
-                gtf_tx.set_tx_id(tx_id);
-                gtf_tx.set_gene_id(gene_id);
-            }
+        if let Some(tx) = self.ready_txs.pop_front() {
+            return Some(tx);
         }
 
         let mut line = String::new();
-        while let Ok(n) = self.bufreader.read_line(&mut line) {
+        loop {
+            line.clear();
+            let n = match self.bufreader.read_line(&mut line) {
+                Ok(n) => n,
+                Err(_) => {
+                    self.flush_current_chrom();
+                    return self.ready_txs.pop_front();
+                }
+            };
+
             if n == 0 {
-                break;
+                self.flush_current_chrom();
+                return self.ready_txs.pop_front();
             }
+
             if line.starts_with('#') {
-                line.clear();
                 continue;
             }
+
             let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&line);
 
             // only process exon lines
             if feat != "exon" {
-                line.clear();
                 continue;
             }
 
@@ -225,45 +310,27 @@ impl Iterator for MyGTFReader {
             // in case of invalide record has same start and end
             if start > end {
                 warn!(
-                    "Invalid GTF record with start >= end, affected line: {}",
+                    "Invalid GTF record with start > end, affected line: {}",
                     line
                 );
-                line.clear();
                 continue;
             }
 
-            if gtf_tx.is_empty {
-                gtf_tx.set_chrom(chrom);
-                gtf_tx.set_start(start);
-                gtf_tx.set_end(end);
-                gtf_tx.set_strand(strand);
-                gtf_tx.add_exon((start, end));
-                gtf_tx.set_tx_id(tx_id);
-                gtf_tx.set_gene_id(gene_id);
-                line.clear();
-                continue;
+            if let Some(current_chrom) = &self.current_chrom {
+                if current_chrom != &chrom {
+                    self.flush_current_chrom();
+                }
             }
 
-            if tx_id != gtf_tx.tx_id {
-                self.hold_line = Some(line.clone());
-                line.clear();
-                gtf_tx.set_idx(self.current_tx_idx);
-                self.current_tx_idx += 1;
-                gtf_tx.sort_exons();
-                return Some(gtf_tx);
-            } else {
-                gtf_tx.add_exon((start, end));
+            if self.current_chrom.is_none() {
+                self.current_chrom = Some(chrom.clone());
             }
-            line.clear();
-        }
 
-        if gtf_tx.is_empty {
-            None
-        } else {
-            gtf_tx.set_idx(self.current_tx_idx);
-            self.current_tx_idx += 1;
-            gtf_tx.sort_exons();
-            Some(gtf_tx)
+            self.add_exon_to_current_chrom(chrom, start, end, strand, tx_id, gene_id);
+
+            if let Some(tx) = self.ready_txs.pop_front() {
+                return Some(tx);
+            }
         }
     }
 }
@@ -430,6 +497,28 @@ mod tests {
         assert_eq!(records[0].tx_id, "tx1");
         assert_eq!(records[0].exons, vec![(1, 10), (21, 30)]);
         assert_eq!(records[1].tx_id, "tx2");
+
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn my_gtf_reader_merges_interleaved_exons_within_chromosome() {
+        let path = unique_temp_path("gtf");
+        let content = concat!(
+            "chr1\tsrc\texon\t1\t10\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
+            "chr1\tsrc\texon\t11\t20\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
+            "chr1\tsrc\texon\t41\t50\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
+            "chr1\tsrc\texon\t31\t40\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
+        );
+        write_plain_gtf(&path, content);
+
+        let records: Vec<_> = MyGTFReader::new(&path).unwrap().collect();
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].tx_id, "tx1");
+        assert_eq!(records[0].exons, vec![(1, 10), (41, 50)]);
+        assert_eq!(records[1].tx_id, "tx2");
+        assert_eq!(records[1].exons, vec![(11, 20), (31, 40)]);
 
         fs::remove_file(path).unwrap();
     }

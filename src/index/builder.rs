@@ -47,6 +47,7 @@ impl IndexBuilder {
         let header = IndexHeader::new(
             chrom_count,
             gtf_size,
+            0,
             md5,
             has_ref_hash,
             has_seq_hash,
@@ -142,6 +143,7 @@ impl IndexBuilder {
 
     /// Seek back and write the real header and directory.
     pub fn finalize(mut self) -> std::io::Result<()> {
+        self.header.index_size = self.current_offset;
         self.file.seek(SeekFrom::Start(0))?;
         self.header.encode_to(&mut self.file)?;
 

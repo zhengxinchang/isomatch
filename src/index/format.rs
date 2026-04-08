@@ -1,13 +1,15 @@
 use crate::core::junction_pool::JunctionPool;
-use crate::core::splice_site_pool::{SpliceSitePool, SpliceSiteSpan};
+use crate::core::splice_site_pool::{SpliceSitePair, SpliceSitePool, SpliceSiteSpan};
 use crate::core::string_pool::StringPool;
 use crate::core::tx_base::TxBase;
+use crate::core::tx_base_error::TxBaseError;
 use crate::fasta::FastaReader;
 use crate::gtf::GTFTx;
+use crate::index::IndexStats;
 use crate::index::index_error::IndexError;
 use crate::traits::{Decodable, DiskSize, Encodable};
 use crate::utils;
-use std::io::{Read, Write};
+use std::io::{Error, ErrorKind, Read, Seek, SeekFrom, Write};
 
 // Flag for index status
 // bit 0, sequence from reference genome (0) or tx sequence (1)
@@ -79,10 +81,11 @@ pub struct IndexHeader {
     pub flags: Flags,
     pub chrom_count: u32,
     pub gtf_size: u64,
+    pub index_size: u64,
     pub md5: [u8; 16],
     /// Byte length of the chrom name table that immediately follows the directory.
     pub chrom_name_table_len: u32,
-    pub reserved_to_4k: [u8; 4096 - 8 - 4 - 1 - 4 - 8 - 16 - 4], // 4051 bytes
+    pub reserved_to_4k: [u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4], // 4043 bytes
 }
 
 impl IndexHeader {
@@ -91,6 +94,7 @@ impl IndexHeader {
     pub fn new(
         chrom_count: u32,
         gtf_size: u64,
+        index_size: u64,
         md5: [u8; 16],
         has_ref_hash: bool,
         has_seq_hash: bool,
@@ -105,9 +109,10 @@ impl IndexHeader {
             flags,
             chrom_count,
             gtf_size,
+            index_size,
             md5,
             chrom_name_table_len,
-            reserved_to_4k: [0u8; 4096 - 8 - 4 - 1 - 4 - 8 - 16 - 4],
+            reserved_to_4k: [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4],
         }
     }
 }
@@ -126,6 +131,7 @@ impl Encodable for IndexHeader {
         buf.extend_from_slice(&self.flags.bits.to_le_bytes());
         buf.extend_from_slice(&self.chrom_count.to_le_bytes());
         buf.extend_from_slice(&self.gtf_size.to_le_bytes());
+        buf.extend_from_slice(&self.index_size.to_le_bytes());
         buf.extend_from_slice(&self.md5);
         buf.extend_from_slice(&self.chrom_name_table_len.to_le_bytes());
         buf.extend_from_slice(&self.reserved_to_4k);
@@ -138,12 +144,29 @@ impl Decodable for IndexHeader {
     type Error = std::io::Error;
     type Args = ();
 
-    fn decode_from<R: Read>(reader: &mut R, _args: Self::Args) -> Result<Self, Self::Error> {
+    fn decode_from<R: Read + Seek>(reader: &mut R, _args: Self::Args) -> Result<Self, Self::Error> {
         let mut magic = [0u8; 4];
         reader.read_exact(&mut magic)?;
+        if magic != *b"ISOM" {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Verify index file completeness failed. The index may be corrupted. Please rerun `isomatch index`",
+            ));
+        }
+
         let mut version_buf = [0u8; 1];
         reader.read_exact(&mut version_buf)?;
         let version = version_buf[0];
+        if version != Self::CURRENT_VERSION {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "unsupported index version: expected {}, got {}",
+                    Self::CURRENT_VERSION,
+                    version
+                ),
+            ));
+        }
 
         let mut flags_buf = [0u8; 8];
         reader.read_exact(&mut flags_buf)?;
@@ -158,6 +181,10 @@ impl Decodable for IndexHeader {
         reader.read_exact(&mut gtf_size_buf)?;
         let gtf_size = u64::from_le_bytes(gtf_size_buf);
 
+        let mut index_size_buf = [0u8; 8];
+        reader.read_exact(&mut index_size_buf)?;
+        let index_size = u64::from_le_bytes(index_size_buf);
+
         let mut md5 = [0u8; 16];
         reader.read_exact(&mut md5)?;
 
@@ -166,8 +193,33 @@ impl Decodable for IndexHeader {
         let chrom_name_table_len = u32::from_le_bytes(chrom_name_table_len_buf);
 
         // consume remaining reserved bytes to stay at 4 KB boundary
-        let mut reserved_to_4k = [0u8; 4096 - 8 - 4 - 1 - 4 - 8 - 16 - 4];
+        let mut reserved_to_4k = [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4];
         reader.read_exact(&mut reserved_to_4k)?;
+
+        if index_size < Self::DISK_SIZE as u64 {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "invalid index size in header: {} is smaller than header size {}",
+                    index_size,
+                    Self::DISK_SIZE
+                ),
+            ));
+        }
+
+        let next_pos = reader.stream_position()?;
+        let actual_index_size = reader.seek(SeekFrom::End(0))?;
+        reader.seek(SeekFrom::Start(next_pos))?;
+
+        if actual_index_size != index_size {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "index size mismatch: header says {}, actual file size is {}",
+                    index_size, actual_index_size
+                ),
+            ));
+        }
 
         Ok(Self {
             magic,
@@ -175,6 +227,7 @@ impl Decodable for IndexHeader {
             flags,
             chrom_count,
             gtf_size,
+            index_size,
             md5,
             chrom_name_table_len,
             reserved_to_4k,
@@ -223,7 +276,7 @@ impl Decodable for ChromDirectoryEntry {
     type Error = std::io::Error;
     type Args = ();
 
-    fn decode_from<R: Read>(reader: &mut R, _args: Self::Args) -> Result<Self, Self::Error> {
+    fn decode_from<R: Read + Seek>(reader: &mut R, _args: Self::Args) -> Result<Self, Self::Error> {
         let mut buf = [0u8; ChromDirectoryEntry::DISK_SIZE];
         reader.read_exact(&mut buf)?;
 
@@ -268,6 +321,7 @@ impl ChromBlockBuilder {
         gtf_tx: GTFTx,
         refr: &mut FastaReader,
         seqr: &mut Option<FastaReader>,
+        stats: &mut IndexStats,
     ) -> Result<(), IndexError> {
         // let intron:Vec<u32> = gtf_tx.exons.iter().flat_map(|(e1,e2)|[*e1,*e2]).collect::<Vec<_>>();
         let intron: Vec<u32> = gtf_tx
@@ -318,13 +372,13 @@ impl ChromBlockBuilder {
 
             let mut exon_offsets: Vec<(u32, u32)> = gtf_tx.get_0based_exon_relative_offset();
 
-            let mut splice_sites_offsets: Vec<(usize, usize, usize, usize)> = exon_offsets
+            let splice_sites_offsets: Vec<(usize, usize, usize, usize)> = exon_offsets
                 .windows(2)
                 .map(|e| {
                     (
                         e[0].1 as usize,
                         e[0].1 as usize + 2,
-                        e[1].0 as usize - 2,
+                        (e[1].0 as usize).saturating_sub(2),
                         e[1].0 as usize,
                     )
                 })
@@ -408,16 +462,25 @@ impl ChromBlockBuilder {
                     let first_exon_len = (first_exon.1 - first_exon.0 + 1) as usize;
                     let last_exon_len = (last_exon.1 - last_exon.0 + 1) as usize;
 
-                    // trim from the outer (TSS) side of the first exon
-                    let left_trim = if first_exon_len > 3 {
-                        first_exon_len - 3
+                    // exons are sorted by genomic position.
+                    // For minus strand the RNA 5'-terminal exon is genomically last,
+                    // and the RNA 3'-terminal exon is genomically first.
+                    let (tss_exon_len, tes_exon_len) = if gtf_tx.strand == 1 {
+                        (last_exon_len, first_exon_len)
+                    } else {
+                        (first_exon_len, last_exon_len)
+                    };
+
+                    // trim from the outer (TSS) side of the 5'-terminal exon
+                    let left_trim = if tss_exon_len > 3 {
+                        tss_exon_len - 3
                     } else {
                         0
                     };
 
-                    // trim from the outer (TES) side of the last exon
-                    let right_trim = if last_exon_len > 3 {
-                        sequence.len() - (last_exon_len - 3)
+                    // trim from the outer (TES) side of the 3'-terminal exon
+                    let right_trim = if tes_exon_len > 3 {
+                        sequence.len() - (tes_exon_len - 3)
                     } else {
                         sequence.len()
                     };
@@ -429,6 +492,22 @@ impl ChromBlockBuilder {
             }
             None => 0u128,
         };
+
+        let canonical_junction_count = splice_site_pairs
+            .iter()
+            .map(|(left, right)| SpliceSitePair::pack(left, right, gtf_tx.strand))
+            .try_fold(0usize, |count, pair| {
+                let pair = pair?;
+                Ok::<usize, TxBaseError>(if pair.is_canonical() {
+                    count + 1
+                } else {
+                    count
+                })
+            })
+            .map_err(|e| IndexError::AddGTFTx {
+                id: gtf_tx.tx_id.clone(),
+                reason: e.to_string(),
+            })?;
 
         // build splice site pairs from intron boundaries
         // let splice_site_pairs: Vec<(&str, &str)> = Vec::new(); // TODO: extract donor/acceptor dinucleotides from reference
@@ -465,6 +544,12 @@ impl ChromBlockBuilder {
             reason: e.to_string(),
         })?;
 
+        stats.observe_tx(
+            gtf_tx.strand,
+            gtf_tx.exons.len(),
+            canonical_junction_count,
+            &gtf_tx.gene_id,
+        );
         self.txs.push(tx_base);
 
         Ok(())

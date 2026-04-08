@@ -7,7 +7,7 @@ pub mod utils;
 use utils::greetings2;
 pub mod core;
 
-use crate::index::run_index;
+use crate::{index::run_index, merge::run_merge};
 pub mod fasta;
 pub mod gtf;
 pub mod index;
@@ -237,6 +237,11 @@ fn main() {
             command: Commands::Merge(args),
         } => {
             greetings2(&args);
+            run_merge(args)
+                .map_err(|e| {
+                    error!("{}", e);
+                })
+                .expect("Exit...");
         }
         Cli {
             command: Commands::Compare(args),

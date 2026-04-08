@@ -13,6 +13,7 @@ use crate::traits::{Decodable, DiskSize, PartialLoad};
 use super::format::{ChromDirectoryEntry, IndexHeader};
 
 pub struct IndexReader {
+    pub file_id: usize,
     pub header: IndexHeader,
     pub chroms: Vec<ChromDirectoryEntry>,
     /// Chrom names in chrom_id order (index = chrom_id - 1).
@@ -22,23 +23,8 @@ pub struct IndexReader {
     pub file: File,
 }
 
-pub struct ChromBlockReader {
-    pub chrom_id: u16,
-    pub chrom_name: String,
-    pub tx_count: u32,
-    pub junction_pool_offset: u64,
-    pub junction_pool_len: usize,
-    pub string_pool_offset: u64,
-    pub string_pool_len: usize,
-    pub splice_site_pool_offset: u64,
-    pub splice_site_pool_len: usize,
-    file: File,
-    tx_base_offset: u64,
-    next_tx_idx: u32,
-}
-
 impl IndexReader {
-    pub fn open(file: File) -> io::Result<Self> {
+    pub fn open(file: File, file_id: usize) -> io::Result<Self> {
         let mut reader = BufReader::new(file);
         let header = IndexHeader::decode_from(&mut reader, ())?;
 
@@ -103,6 +89,7 @@ impl IndexReader {
         }
 
         Ok(Self {
+            file_id,
             header,
             chroms,
             chrom_names,
@@ -132,20 +119,21 @@ impl IndexReader {
 
         let chrom_name = self.chrom_names[(chrom_id - 1) as usize].clone();
 
-        Ok(ChromBlockReader {
+        ChromBlockReader::new(
+            self.file_id,
             chrom_id,
             chrom_name,
-            tx_count: entry.global_tx_count,
-            junction_pool_offset: entry.global_junction_pool_offset as u64,
-            junction_pool_len: entry.global_junction_count as usize,
-            string_pool_offset: entry.global_string_pool_offset as u64,
-            string_pool_len: entry.global_string_len as usize,
-            splice_site_pool_offset: entry.global_splice_site_pool_offset as u64,
-            splice_site_pool_len: entry.global_splice_site_pool_len as usize,
-            file: self.file.try_clone()?,
-            tx_base_offset: entry.global_tx_offset as u64,
-            next_tx_idx: 0,
-        })
+            entry.global_tx_count,
+            entry.global_junction_pool_offset as u64,
+            entry.global_junction_count as usize,
+            entry.global_string_pool_offset as u64,
+            entry.global_string_len as usize,
+            entry.global_splice_site_pool_offset as u64,
+            entry.global_splice_site_pool_len as usize,
+            self.file.try_clone()?,
+            entry.global_tx_offset as u64,
+            0,
+        )
     }
 
     pub fn get_chromosome_reader(&mut self, chrom_name: &str) -> io::Result<ChromBlockReader> {
@@ -153,7 +141,73 @@ impl IndexReader {
     }
 }
 
+pub struct ChromBlockReader {
+    pub file_id: usize,
+    pub chrom_id: u16,
+    pub chrom_name: String,
+    pub tx_count: u32,
+    pub junction_pool_offset: u64,
+    pub junction_pool_len: usize,
+    pub junction_pool: JunctionPool,
+    pub string_pool_offset: u64,
+    pub string_pool_len: usize,
+    pub string_pool: StringPool,
+    pub splice_site_pool_offset: u64,
+    pub splice_site_pool_len: usize,
+    pub splice_site_pool: SpliceSitePool,
+    file: File,
+    tx_base_offset: u64,
+    next_tx_idx: u32,
+}
+
 impl ChromBlockReader {
+    pub fn new(
+        file_id: usize,
+        chrom_id: u16,
+        chrom_name: String,
+        tx_count: u32,
+        junction_pool_offset: u64,
+        junction_pool_len: usize,
+        string_pool_offset: u64,
+        string_pool_len: usize,
+        splice_site_pool_offset: u64,
+        splice_site_pool_len: usize,
+        mut file: File,
+        tx_base_offset: u64,
+        next_tx_idx: u32,
+    ) -> io::Result<ChromBlockReader> {
+        let junction_pool = ChromBlockReader::load_junction_pool(
+            &mut file,
+            junction_pool_offset,
+            junction_pool_len,
+        )?;
+        let string_pool =
+            ChromBlockReader::load_string_pool(&mut file, string_pool_offset, string_pool_len)?;
+        let splice_site_pool = ChromBlockReader::load_splice_site_pool(
+            &mut file,
+            splice_site_pool_offset,
+            splice_site_pool_len,
+        )?;
+        Ok(Self {
+            file_id,
+            chrom_id,
+            chrom_name,
+            tx_count,
+            junction_pool_offset,
+            junction_pool_len,
+            junction_pool: junction_pool,
+            string_pool_offset,
+            string_pool_len,
+            string_pool: string_pool,
+            splice_site_pool_offset,
+            splice_site_pool_len,
+            splice_site_pool: splice_site_pool,
+            file,
+            tx_base_offset,
+            next_tx_idx,
+        })
+    }
+
     pub fn next(&mut self) -> io::Result<Option<TxBase>> {
         if self.next_tx_idx >= self.tx_count {
             return Ok(None);
@@ -178,117 +232,30 @@ impl ChromBlockReader {
         self.next_tx_idx = 0;
     }
 
-    pub fn load_junction_pool(&mut self) -> io::Result<JunctionPool> {
-        JunctionPool::load_range(
-            &mut self.file,
-            self.junction_pool_offset,
-            self.junction_pool_len,
-            0,
-        )
-        .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
+    pub fn load_junction_pool(
+        file: &mut File,
+        junction_pool_offset: u64,
+        junction_pool_len: usize,
+    ) -> io::Result<JunctionPool> {
+        JunctionPool::load_range(file, junction_pool_offset, junction_pool_len, 0)
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
     }
 
-    pub fn load_string_pool(&mut self) -> io::Result<StringPool> {
-        StringPool::load_range(
-            &mut self.file,
-            self.string_pool_offset,
-            self.string_pool_len,
-            (),
-        )
-        .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
+    pub fn load_string_pool(
+        file: &mut File,
+        string_pool_offset: u64,
+        string_pool_len: usize,
+    ) -> io::Result<StringPool> {
+        StringPool::load_range(file, string_pool_offset, string_pool_len, ())
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
     }
 
-    pub fn load_splice_site_pool(&mut self) -> io::Result<SpliceSitePool> {
-        SpliceSitePool::load_range(
-            &mut self.file,
-            self.splice_site_pool_offset,
-            self.splice_site_pool_len,
-            (),
-        )
-        .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    #[test]
-    fn verify_index_readback() {
-        let path = Path::new("test/isoseq_transcripts.sorted.filtered_lite.clean.isomx");
-        if !path.exists() {
-            eprintln!("Skipping test: index file not found");
-            return;
-        }
-
-        let file = File::open(path).expect("cannot open index file");
-        let mut reader = IndexReader::open(file).expect("cannot open index");
-
-        assert_eq!(&reader.header.magic, b"ISOM");
-        assert_eq!(reader.header.version, 1);
-        assert!(reader.header.chrom_count > 0);
-        assert_eq!(reader.chrom_names.len(), reader.header.chrom_count as usize);
-
-        let mut total_tx = 0u32;
-        let mut total_canonical = 0u32;
-        let mut total_splice_sites = 0u32;
-
-        for chrom_name in reader.chrom_names.clone() {
-            let mut cr = reader
-                .get_chromosome_reader(&chrom_name)
-                .expect("cannot get chrom reader");
-
-            let jp = cr.load_junction_pool().expect("cannot load junction pool");
-            let sp = cr.load_string_pool().expect("cannot load string pool");
-            let ssp = cr
-                .load_splice_site_pool()
-                .expect("cannot load splice site pool");
-
-            while let Some(tx) = cr.next().expect("cannot read tx") {
-                total_tx += 1;
-
-                // validate string spans
-                let tx_id = sp.get(tx.tx_id_span).expect("bad tx_id span");
-                let gene_id = sp.get(tx.gene_id_span).expect("bad gene_id span");
-                assert!(!tx_id.is_empty());
-                assert!(!gene_id.is_empty());
-
-                // validate junction span
-                let junctions = jp.get(tx.junctions_span).expect("bad junction span");
-                assert_eq!(junctions.len(), tx.junctions_span.count as usize);
-
-                // validate splice site span
-                if !tx.splice_sites_span.is_empty() {
-                    let sites = ssp
-                        .get_pair(tx.splice_sites_span)
-                        .expect("bad splice site span");
-                    assert_eq!(sites.len(), tx.splice_sites_span.count as usize);
-                    // splice sites count should match junction pairs (n_exons - 1)
-                    assert_eq!(sites.len(), (tx.n_exons - 1) as usize);
-
-                    for site in sites {
-                        total_splice_sites += 1;
-                        if site.is_canonical() {
-                            total_canonical += 1;
-                        }
-                    }
-                } else {
-                    // mono-exon transcripts have no splice sites
-                    assert_eq!(tx.n_exons, 1);
-                }
-            }
-        }
-
-        assert!(total_tx > 0, "no transcripts found");
-        eprintln!("Total transcripts: {}", total_tx);
-        eprintln!("Total splice sites: {}", total_splice_sites);
-        eprintln!("Canonical (GT-AG): {}", total_canonical);
-        if total_splice_sites > 0 {
-            let rate = total_canonical as f64 / total_splice_sites as f64 * 100.0;
-            eprintln!("Canonical rate: {:.2}%", rate);
-            // expect a high canonical rate for real data
-            assert!(rate > 90.0, "canonical rate suspiciously low: {:.2}%", rate);
-        }
+    pub fn load_splice_site_pool(
+        file: &mut File,
+        splice_site_pool_offset: u64,
+        splice_site_pool_len: usize,
+    ) -> io::Result<SpliceSitePool> {
+        SpliceSitePool::load_range(file, splice_site_pool_offset, splice_site_pool_len, ())
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
     }
 }

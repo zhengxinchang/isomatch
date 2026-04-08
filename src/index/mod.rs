@@ -1,5 +1,8 @@
+use std::collections::HashSet;
+
 use anyhow::Context;
 use log::{error, info};
+use serde::Serialize;
 
 use crate::{
     IndexArgs,
@@ -7,12 +10,70 @@ use crate::{
     gtf::{self, profile_gtf},
     index::format::ChromBlockBuilder,
     traits::ArgValidate,
+    utils::print_json_block,
 };
 pub use anyhow::Result;
 pub mod builder;
 pub mod format;
 pub mod index_error;
 pub mod reader;
+
+#[derive(Debug, Default, Serialize)]
+pub struct IndexStats {
+    pub transcript_count: u64,
+    pub gene_count: u64,
+    pub plus_strand_count: u64,
+    pub minus_strand_count: u64,
+    pub mono_exon_count: u64,
+    pub multi_exon_count: u64,
+    pub junction_count: u64,
+    pub canonical_junction_count: u64,
+    pub noncanonical_junction_count: u64,
+    pub canonical_junction_ratio: f64,
+    #[serde(skip_serializing)]
+    gene_ids: HashSet<String>,
+}
+
+impl IndexStats {
+    pub fn observe_tx(
+        &mut self,
+        strand: u8,
+        exon_count: usize,
+        canonical_junction_count: usize,
+        gene_id: &str,
+    ) {
+        self.transcript_count += 1;
+        self.gene_ids.insert(gene_id.to_string());
+
+        match strand {
+            1 => self.minus_strand_count += 1,
+            _ => self.plus_strand_count += 1,
+        }
+
+        if exon_count <= 1 {
+            self.mono_exon_count += 1;
+            return;
+        }
+
+        self.multi_exon_count += 1;
+
+        let junction_count = (exon_count - 1) as u64;
+        let canonical_junction_count = canonical_junction_count as u64;
+
+        self.junction_count += junction_count;
+        self.canonical_junction_count += canonical_junction_count;
+        self.noncanonical_junction_count += junction_count - canonical_junction_count;
+    }
+
+    pub fn finalize(&mut self) {
+        self.gene_count = self.gene_ids.len() as u64;
+        self.canonical_junction_ratio = if self.junction_count == 0 {
+            0.0
+        } else {
+            self.canonical_junction_count as f64 / self.junction_count as f64
+        };
+    }
+}
 
 impl ArgValidate for IndexArgs {
     fn validate(&self) {
@@ -76,6 +137,7 @@ impl ArgValidate for IndexArgs {
 
 pub fn run_index(args: &mut IndexArgs) -> Result<()> {
     args.validate();
+    let mut stats = IndexStats::default();
 
     info!("Creating isomatch index for {}", args.input.display());
 
@@ -110,7 +172,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
         out.clone()
     } else {
         let mut default_out = args.input.clone();
-        default_out.set_extension("isomx");
+        default_out.add_extension("isomx");
         default_out
     };
 
@@ -146,14 +208,17 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
         chrom_block
             .as_mut()
             .expect("Can not access chromblock")
-            .add_tx(tx_record, &mut ref_far, &mut seq_far)?;
+            .add_tx(tx_record, &mut ref_far, &mut seq_far, &mut stats)?;
     }
 
     if let Some(cb) = chrom_block.take() {
         builder.add_chrom(cb)?;
     }
     builder.finalize()?;
+    stats.finalize();
 
     info!("Index written to {:?}", output_path);
+    print_json_block("Index summary", &stats);
+    info!("Fnished!");
     Ok(())
 }

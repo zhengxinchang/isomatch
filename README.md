@@ -1,14 +1,23 @@
 # isomatch
 
-Isomatch compares, merges, and annotates transcripts using sequence-context comparison, motif-aware correction, and population-scale processing.
+Isomatch: evidence-baesd transcirpts merging and classification.
 
-Key features:
+evidence based merge
+    1. not solely based on coordinates, 
+    2. consider the canonical splice site pattern,
+    3. transcirpt sequence for further comparison, 
+    4. TES/TSS motifs from FANTOM5 or CAGE-seq data, 
+    5. population evidence (isopedia derived evidence)
 
-- **Sequence-context comparison**: Compares transcripts by their actual sequence, resolving misalignment artifacts caused by short exons.
-- **Motif-aware correction**: Corrects splice sites using canonical motif information, improving the accuracy of isoform structure inference.
-- **Long-read native**: Leverages full-length transcript sequences from long-read RNA-seq for more faithful comparison.
-- **Dual classification system**: Supports both GFFcompare and SQANTI3 classification schemes in a single run.
-- **Population-scale processing**: Handles datasets spanning thousands of samples in GTF format.
+multi classification system anntation:
+    1. GFFcompare classification
+    2. SQANTI3 classification
+    3. IsoSeq classification
+
+
+other feature
+    1. full level sample tracking
+    2. large-scale processing capability (thousands of samples in GTF format)
 
 
 
