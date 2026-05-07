@@ -245,11 +245,11 @@ mod tests {
     fn txbase_roundtrip_preserves_ref_hash() {
         let tx = TxBase {
             tx_idx: 7,
-            boundary: TxBoundary::new(101, 250, 1),
+            boundary: TxBoundary::new(101, 250, crate::core::tx_strand::ISOMSTRAND::Minus),
             chrom_id: 3,
             start: 101,
             end: 250,
-            flags: TxBaseFlags::new(1, true).unwrap(),
+            flags: TxBaseFlags::new(crate::core::tx_strand::ISOMSTRAND::Minus, true).unwrap(),
             seq_hash: 11,
             ref_hash: 22,
             n_exons: 2,

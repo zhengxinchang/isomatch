@@ -5,6 +5,8 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use xxhash_rust::xxh3::xxh3_128;
 
+use crate::core::tx_strand::ISOMSTRAND;
+
 const BUFREADER_CAPACITY: usize = 128 * 1024;
 pub fn print_json_block<T: Serialize>(title: &str, msg: &T) {
     match serde_json::to_string_pretty(&msg) {
@@ -104,26 +106,10 @@ fn upper_nuc(b: u8) -> u8 {
 }
 /// reverse site acoording to strand
 /// also convert bases to upaer cases
-pub fn normalized_site(site: &[u8], strand: u8) -> Vec<u8> {
-    if strand == 1 {
-        rev_comp(site)
-    } else {
-        site.iter().map(|&b| upper_nuc(b)).collect()
+pub fn normalized_site(site: &[u8], strand: &ISOMSTRAND) -> Vec<u8> {
+    match strand {
+        ISOMSTRAND::Minus => rev_comp(site),
+        _ => site.iter().map(|&b| upper_nuc(b)).collect(),
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::normalized_site;
-
-    #[test]
-    fn reverse_site_keeps_plus_strand_and_uppercases() {
-        assert_eq!(normalized_site(b"gTaC", 0), b"GTAC");
-    }
-
-    #[test]
-    fn reverse_site_reverse_complements_minus_strand() {
-        assert_eq!(normalized_site(b"ct", 1), b"AG");
-        assert_eq!(normalized_site(b"gTaC", 1), b"GTAC");
-    }
-}

@@ -5,12 +5,7 @@ use log::{error, info};
 use serde::Serialize;
 
 use crate::{
-    IndexArgs,
-    fasta::{self, FastaReader},
-    gtf::{self, profile_gtf},
-    index::format::ChromBlockBuilder,
-    traits::ArgValidate,
-    utils::print_json_block,
+    IndexArgs, core::tx_strand::ISOMSTRAND, fasta::{self, FastaReader}, gtf::{self, profile_gtf}, index::format::ChromBlockBuilder, traits::ArgValidate, utils::print_json_block
 };
 pub use anyhow::Result;
 pub mod builder;
@@ -24,6 +19,7 @@ pub struct IndexStats {
     pub gene_count: u64,
     pub plus_strand_count: u64,
     pub minus_strand_count: u64,
+    pub unknown_strand_count:u64,
     pub mono_exon_count: u64,
     pub multi_exon_count: u64,
     pub junction_count: u64,
@@ -37,7 +33,7 @@ pub struct IndexStats {
 impl IndexStats {
     pub fn observe_tx(
         &mut self,
-        strand: u8,
+        strand: ISOMSTRAND,
         exon_count: usize,
         canonical_junction_count: usize,
         gene_id: &str,
@@ -46,8 +42,9 @@ impl IndexStats {
         self.gene_ids.insert(gene_id.to_string());
 
         match strand {
-            1 => self.minus_strand_count += 1,
-            _ => self.plus_strand_count += 1,
+            ISOMSTRAND::Minus => self.minus_strand_count += 1,
+            ISOMSTRAND::Plus => self.plus_strand_count += 1,
+            ISOMSTRAND::Unknown => self.unknown_strand_count += 1,
         }
 
         if exon_count <= 1 {

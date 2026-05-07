@@ -1,9 +1,11 @@
 use std::{collections::VecDeque, io::BufRead, path::Path};
 
+// use clap::error;
 use log::warn;
+use log::error;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::utils::open_file_bufread;
+use crate::{core::tx_strand::ISOMSTRAND, utils::open_file_bufread};
 use thiserror::Error;
 
 /// Scan the GTF once to collect ordered unique chrom names (transcript lines only).
@@ -76,7 +78,7 @@ pub struct GTFTx {
     pub chrom: String,
     pub start: u32,
     pub end: u32,
-    pub strand: u8,
+    pub strand: ISOMSTRAND,
     pub exons: Vec<(u32, u32)>,
     pub tx_id: String,
     pub gene_id: String,
@@ -90,7 +92,7 @@ impl GTFTx {
             chrom: "".to_string(),
             start: 0,
             end: 0,
-            strand: 0,
+            strand: ISOMSTRAND::Unknown,
             exons: Vec::new(),
             tx_id: "".to_string(),
             gene_id: "".to_string(),
@@ -126,7 +128,7 @@ impl GTFTx {
         self.is_empty = false;
     }
 
-    pub fn set_strand(&mut self, strand: u8) {
+    pub fn set_strand(&mut self, strand: ISOMSTRAND) {
         self.strand = strand;
         self.is_empty = false;
     }
@@ -193,7 +195,7 @@ impl MyGTFReader {
         chrom: String,
         start: u32,
         end: u32,
-        strand: u8,
+        strand: ISOMSTRAND,
         tx_id: String,
         gene_id: String,
     ) {
@@ -244,14 +246,14 @@ impl MyGTFReader {
             (
                 a.start,
                 a.end,
-                a.strand,
+                a.strand.clone(),
                 a.tx_id.as_str(),
                 a.gene_id.as_str(),
             )
                 .cmp(&(
                     b.start,
                     b.end,
-                    b.strand,
+                    b.strand.clone(),
                     b.tx_id.as_str(),
                     b.gene_id.as_str(),
                 ))
@@ -344,7 +346,7 @@ pub fn process_gtf_line(
     String, // feature_type (col 2): "transcript" / "exon" / ...
     u32,    // start (1-based)
     u32,    // end   (1-based, inclusive)
-    u8,     // strand: 0=+, 1=-
+    ISOMSTRAND,     // strand: 0=+, 1=-
     String, // transcript_id
     String, // gene_id
 ) {
@@ -367,8 +369,13 @@ pub fn process_gtf_line(
     let end = parts[4].parse::<u32>().expect("invalid end coordinate");
     // col 6: strand
     let strand = match parts[6] {
-        "-" => 1u8,
-        _ => 0u8, // '+' or '.' → forward
+        "-" => ISOMSTRAND::Minus,
+        "+" => ISOMSTRAND::Plus,
+        "." => ISOMSTRAND::Unknown,
+        _ => {
+            error!("Unknown Strand for transcript: {s} ");
+            std::process::exit(1);
+        }
     };
     // col 8: attributes
     let (tx_id, gene_id) = parse_gtf_attributes(parts[8]);

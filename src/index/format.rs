@@ -3,6 +3,7 @@ use crate::core::splice_site_pool::{SpliceSitePair, SpliceSitePool, SpliceSiteSp
 use crate::core::string_pool::StringPool;
 use crate::core::tx_base::TxBase;
 use crate::core::tx_base_error::TxBaseError;
+use crate::core::tx_strand::ISOMSTRAND;
 use crate::fasta::FastaReader;
 use crate::gtf::GTFTx;
 use crate::index::IndexStats;
@@ -465,7 +466,7 @@ impl ChromBlockBuilder {
                     // exons are sorted by genomic position.
                     // For minus strand the RNA 5'-terminal exon is genomically last,
                     // and the RNA 3'-terminal exon is genomically first.
-                    let (tss_exon_len, tes_exon_len) = if gtf_tx.strand == 1 {
+                    let (tss_exon_len, tes_exon_len) = if gtf_tx.strand == ISOMSTRAND::Minus {
                         (last_exon_len, first_exon_len)
                     } else {
                         (first_exon_len, last_exon_len)

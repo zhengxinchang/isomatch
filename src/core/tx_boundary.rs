@@ -1,21 +1,21 @@
 use std::cmp::Ordering;
 
+use crate::core::tx_strand::ISOMSTRAND;
+
 /// Encodes a transcript boundary as a single u64:
-/// [left: 32bit | right: 31bit | strand: 1bit]
+/// [left: 32bit | right: 30bit | strand: 2bit]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct TxBoundary(u64);
 
 impl TxBoundary {
-    /// Strand encoding
-    pub const PLUS: u8 = 0;
-    pub const MINUS: u8 = 1;
+    const STRAND_MASK: u64 = 0b11;
+    const RIGHT_MASK: u64 = 0x3FFF_FFFF;
 
     #[inline(always)]
-    pub fn new(left: u32, right: u32, strand: u8) -> Self {
-        assert!(strand <= 1, "Strand must be 0 (plus) or 1 (minus)");
-        assert!(right <= 0x7FFF_FFFF, "Right boundary must fit in 31 bits");
-        Self(((left as u64) << 32) | ((right as u64) << 1) | (strand as u64))
+    pub fn new(left: u32, right: u32, strand: ISOMSTRAND) -> Self {
+        assert!(right <= Self::RIGHT_MASK as u32, "Right boundary must fit in 30 bits");
+        Self(((left as u64) << 32) | ((right as u64) << 2) | (strand.to_bit() as u64))
     }
 
     #[inline(always)]
@@ -25,12 +25,12 @@ impl TxBoundary {
 
     #[inline(always)]
     pub fn right(self) -> u32 {
-        ((self.0 >> 1) & 0x7FFF_FFFF) as u32
+        ((self.0 >> 2) & Self::RIGHT_MASK) as u32
     }
 
     #[inline(always)]
-    pub fn strand(self) -> u8 {
-        (self.0 & 1) as u8
+    pub fn strand(self) -> ISOMSTRAND {
+        ISOMSTRAND::from_bit((self.0 & Self::STRAND_MASK) as u8).unwrap()
     }
 
     #[inline(always)]
@@ -47,9 +47,9 @@ impl TxBoundary {
     #[inline(always)]
     pub fn overlaps(self, other: Self) -> bool {
         let l1 = self.0 >> 32;
-        let r1 = (self.0 >> 1) & 0x7FFF_FFFF;
+        let r1 = (self.0 >> 2) & Self::RIGHT_MASK;
         let l2 = other.0 >> 32;
-        let r2 = (other.0 >> 1) & 0x7FFF_FFFF;
+        let r2 = (other.0 >> 2) & Self::RIGHT_MASK;
 
         l1 <= r2 && l2 <= r1
     }
@@ -58,9 +58,9 @@ impl TxBoundary {
     #[inline(always)]
     pub fn overlaps_stranded(self, other: Self) -> bool {
         let l1 = self.0 >> 32;
-        let r1 = (self.0 >> 1) & 0x7FFF_FFFF;
+        let r1 = (self.0 >> 2) & Self::RIGHT_MASK;
         let l2 = other.0 >> 32;
-        let r2 = (other.0 >> 1) & 0x7FFF_FFFF;
+        let r2 = (other.0 >> 2) & Self::RIGHT_MASK;
 
         self.strand() == other.strand() && l1 <= r2 && l2 <= r1
     }
@@ -69,9 +69,9 @@ impl TxBoundary {
     #[inline(always)]
     pub fn contains(self, other: Self) -> bool {
         let l1 = self.0 >> 32;
-        let r1 = (self.0 >> 1) & 0x7FFF_FFFF;
+        let r1 = (self.0 >> 2) & Self::RIGHT_MASK;
         let l2 = other.0 >> 32;
-        let r2 = (other.0 >> 1) & 0x7FFF_FFFF;
+        let r2 = (other.0 >> 2) & Self::RIGHT_MASK;
 
         // a <= b <==> (b.wrapping_sub(a)) >> 63 == 0
         let c1 = l2.wrapping_sub(l1) >> 63; // 0 if l1 <= l2
@@ -96,10 +96,10 @@ impl PartialOrd for TxBoundary {
 
 impl std::fmt::Display for TxBoundary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let strand_ch = if self.strand() == Self::PLUS {
-            '+'
-        } else {
-            '-'
+        let strand_ch = match self.strand() {
+            ISOMSTRAND::Plus => '+',
+            ISOMSTRAND::Minus => '-',
+            ISOMSTRAND::Unknown => '.',
         };
         write!(f, "[{}, {}]{}", self.left(), self.right(), strand_ch)
     }
@@ -111,18 +111,18 @@ mod tests {
 
     #[test]
     fn test_roundtrip() {
-        let b = TxBoundary::new(1000, 2000, TxBoundary::PLUS);
+        let b = TxBoundary::new(1000, 2000, ISOMSTRAND::Plus);
         assert_eq!(b.left(), 1000);
         assert_eq!(b.right(), 2000);
-        assert_eq!(b.strand(), 0);
+        assert_eq!(b.strand(), ISOMSTRAND::Plus);
     }
 
     #[test]
     fn test_overlap() {
-        let a = TxBoundary::new(100, 200, 0);
-        let b = TxBoundary::new(150, 300, 0);
-        let c = TxBoundary::new(200, 400, 0); // [200, 400] 与 [100, 200] overlap（闭区间）
-        let d = TxBoundary::new(50, 80, 0);
+        let a = TxBoundary::new(100, 200, ISOMSTRAND::Plus);
+        let b = TxBoundary::new(150, 300, ISOMSTRAND::Plus);
+        let c = TxBoundary::new(200, 400, ISOMSTRAND::Plus); // [200, 400] 与 [100, 200] overlap（闭区间）
+        let d = TxBoundary::new(50, 80, ISOMSTRAND::Plus);
 
         assert!(a.overlaps(b)); // [100,200] ∩ [150,300] ✓
         assert!(b.overlaps(a)); // 对称
@@ -132,9 +132,9 @@ mod tests {
 
     #[test]
     fn test_contains() {
-        let outer = TxBoundary::new(100, 500, 0);
-        let inner = TxBoundary::new(200, 400, 0);
-        let partial = TxBoundary::new(200, 600, 0);
+        let outer = TxBoundary::new(100, 500, ISOMSTRAND::Plus);
+        let inner = TxBoundary::new(200, 400, ISOMSTRAND::Plus);
+        let partial = TxBoundary::new(200, 600, ISOMSTRAND::Plus);
 
         assert!(outer.contains(inner));
         assert!(!outer.contains(partial));
@@ -144,9 +144,9 @@ mod tests {
     #[test]
     fn test_sort_by_left() {
         let mut v = vec![
-            TxBoundary::new(500, 600, 0),
-            TxBoundary::new(100, 200, 0),
-            TxBoundary::new(100, 150, 0),
+            TxBoundary::new(500, 600, ISOMSTRAND::Plus),
+            TxBoundary::new(100, 200, ISOMSTRAND::Plus),
+            TxBoundary::new(100, 150, ISOMSTRAND::Plus),
         ];
         v.sort();
         assert_eq!(v[0].left(), 100);

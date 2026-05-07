@@ -8,3 +8,4 @@ pub mod tx_base_error;
 pub mod tx_base_flag;
 pub mod tx_base_impl;
 pub mod tx_boundary;
+pub mod tx_strand;

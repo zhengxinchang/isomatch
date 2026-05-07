@@ -1,5 +1,5 @@
 use crate::{
-    core::tx_base_error::TxBaseError,
+    core::{tx_base_error::TxBaseError, tx_strand::ISOMSTRAND},
     traits::{Encodable, PartialLoad},
     utils::normalized_site,
 };
@@ -18,40 +18,47 @@ use crate::{
 pub struct SpliceSitePair(pub u8);
 
 impl SpliceSitePair {
-    pub fn pack(left: &[u8], right: &[u8], strand: u8) -> Result<Self, TxBaseError> {
+    pub fn pack(left: &[u8], right: &[u8], strand: ISOMSTRAND) -> Result<Self, TxBaseError> {
         if left.len() != 2 || right.len() != 2 {
             return Err(TxBaseError::InvalidSpliceSite {
                 site: format!("{:?},{:?}", left, right),
             });
         }
 
-        let norm_left = normalized_site(left, strand);
-        let norm_right = normalized_site(right, strand);
+        match strand {
+            ISOMSTRAND::Unknown => { // for unkown strand transcript, the splice site is not valid. always return 5
+                Ok(Self(5))
+            }
+            _ => {
+                let norm_left = normalized_site(left, &strand);
+                let norm_right = normalized_site(right,& strand);
 
-        let left_code: u8 = match norm_left[0..2] {
-            [b'G', b'T'] => 0,
-            [b'A', b'G'] => 1,
-            [b'G', b'C'] => 2,
-            [b'A', b'T'] => 3,
-            [b'A', b'C'] => 4,
-            _ => 5,
-        };
+                let left_code: u8 = match norm_left[0..2] {
+                    [b'G', b'T'] => 0,
+                    [b'A', b'G'] => 1,
+                    [b'G', b'C'] => 2,
+                    [b'A', b'T'] => 3,
+                    [b'A', b'C'] => 4,
+                    _ => 5,
+                };
 
-        let right_code: u8 = match norm_right[0..2] {
-            [b'G', b'T'] => 0,
-            [b'A', b'G'] => 1,
-            [b'G', b'C'] => 2,
-            [b'A', b'T'] => 3,
-            [b'A', b'C'] => 4,
-            _ => 5,
-        };
+                let right_code: u8 = match norm_right[0..2] {
+                    [b'G', b'T'] => 0,
+                    [b'A', b'G'] => 1,
+                    [b'G', b'C'] => 2,
+                    [b'A', b'T'] => 3,
+                    [b'A', b'C'] => 4,
+                    _ => 5,
+                };
 
-        let pack = if strand == 1 {
-            right_code << 4 | left_code
-        } else {
-            left_code << 4 | right_code
-        };
-        Ok(Self(pack))
+                let pack = if strand == ISOMSTRAND::Minus {
+                    right_code << 4 | left_code
+                } else {
+                    left_code << 4 | right_code
+                };
+                Ok(Self(pack))
+            }
+        }
     }
 
     pub fn from_packed(p: u8) -> Result<Self, TxBaseError> {
@@ -115,7 +122,7 @@ impl SpliceSitePool {
     pub fn add_pairs(
         &mut self,
         pairs: &[(Vec<u8>, Vec<u8>)],
-        strand: u8,
+        strand: ISOMSTRAND,
     ) -> Result<SpliceSiteSpan, TxBaseError> {
         let offset = u32::try_from(self.sites.len()).map_err(|_| TxBaseError::PoolTooLarge)?;
         let count = u16::try_from(pairs.len()).map_err(|_| TxBaseError::InvalidEncoding {
@@ -196,12 +203,13 @@ impl PartialLoad for SpliceSitePool {
 #[cfg(test)]
 mod tests {
     use super::SpliceSitePair;
+    use crate::core::tx_strand::ISOMSTRAND;
 
     #[test]
     fn canonical_pairs_on_plus_strand_are_recognized() {
-        let gt_ag = SpliceSitePair::pack(b"GT", b"AG", 0).unwrap();
-        let gc_ag = SpliceSitePair::pack(b"GC", b"AG", 0).unwrap();
-        let at_ac = SpliceSitePair::pack(b"AT", b"AC", 0).unwrap();
+        let gt_ag = SpliceSitePair::pack(b"GT", b"AG", ISOMSTRAND::Plus).unwrap();
+        let gc_ag = SpliceSitePair::pack(b"GC", b"AG", ISOMSTRAND::Plus).unwrap();
+        let at_ac = SpliceSitePair::pack(b"AT", b"AC", ISOMSTRAND::Plus).unwrap();
 
         assert!(gt_ag.is_canonical());
         assert!(gc_ag.is_canonical());
@@ -210,9 +218,9 @@ mod tests {
 
     #[test]
     fn canonical_pairs_on_minus_strand_are_recognized_after_normalization() {
-        let gt_ag = SpliceSitePair::pack(b"CT", b"AC", 1).unwrap();
-        let gc_ag = SpliceSitePair::pack(b"CT", b"GC", 1).unwrap();
-        let at_ac = SpliceSitePair::pack(b"GT", b"AT", 1).unwrap();
+        let gt_ag = SpliceSitePair::pack(b"CT", b"AC", ISOMSTRAND::Minus).unwrap();
+        let gc_ag = SpliceSitePair::pack(b"CT", b"GC", ISOMSTRAND::Minus).unwrap();
+        let at_ac = SpliceSitePair::pack(b"GT", b"AT", ISOMSTRAND::Minus).unwrap();
 
         assert!(gt_ag.is_canonical());
         assert!(gc_ag.is_canonical());
@@ -221,8 +229,8 @@ mod tests {
 
     #[test]
     fn noncanonical_pairs_are_not_marked_canonical() {
-        let gt_gc = SpliceSitePair::pack(b"GT", b"GC", 0).unwrap();
-        let other = SpliceSitePair::pack(b"AA", b"AA", 0).unwrap();
+        let gt_gc = SpliceSitePair::pack(b"GT", b"GC", ISOMSTRAND::Plus).unwrap();
+        let other = SpliceSitePair::pack(b"AA", b"AA", ISOMSTRAND::Plus).unwrap();
 
         assert!(!gt_gc.is_canonical());
         assert!(!other.is_canonical());

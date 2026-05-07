@@ -1,14 +1,14 @@
 //! merged ptir
 //! one object for one GTF transcript
 
-use crate::core::ptir::PTIR;
+use crate::core::{ptir::PTIR, tx_strand::ISOMSTRAND};
 
 /// MergedPTIR is the representation of a merged transcript
 /// it has the prepresentive
 pub struct MPTIR {
     repr_start: u32,
     repr_end: u32,
-    strand: u8, // 0== plus, 1 == minus
+    strand: ISOMSTRAND,
     n_exon: u16,
     junctions: Vec<(u32, u32)>,
     ptir_count: u32, // how many ptir been merged
@@ -31,14 +31,17 @@ impl MPTIR {
         }
     }
 
-    pub fn merge_ptir(&mut self, other_ptir:&PTIR) {
+    pub fn merge_ptir(&mut self, _other_ptir:&PTIR) {
 
         
 
     }
 
     pub fn is_same_junctions(&self, ptir2:&PTIR) -> bool {
-
+        match ptir2.junction_vec.as_ref() {
+            Some(junctions) => self.junctions == *junctions,
+            None => false,
+        }
     }
 
     pub fn finalize (&mut self) {

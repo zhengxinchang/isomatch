@@ -10,13 +10,14 @@ use crate::core::{
     string_pool::StringPool,
     tx_base::{TxBase, TxBaseTrait},
     tx_boundary::TxBoundary,
+    tx_strand::ISOMSTRAND,
 };
 
 pub struct PTIR {
     pub tx_boundary: TxBoundary,
     pub start: u32,
     pub end: u32,
-    pub strand: u8,
+    pub strand: ISOMSTRAND,
     pub n_exons: u16,
     pub refhash: u128,
     pub seqhash: Option<u128>,

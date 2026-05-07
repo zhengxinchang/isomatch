@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum TxBaseError {
-    #[error("strand must be 0 (+) or 1 (-), got {strand}")]
+    #[error("strand must be 0 (+), 1 (-), or 2 (unknown), got {strand}")]
     InvalidStrand { strand: u8 },
 
     #[error("tx start {start} is greater than end {end}")]

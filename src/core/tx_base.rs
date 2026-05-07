@@ -4,6 +4,7 @@ use crate::core::junction_pool::*;
 use crate::core::splice_site_pool::{SpliceSitePair, SpliceSitePool, SpliceSiteSpan};
 use crate::core::string_pool::{StringPool, StringSpan};
 use crate::core::tx_base_flag::TxBaseFlags;
+use crate::core::tx_strand::ISOMSTRAND;
 use crate::core::{tx_base_error::TxBaseError, tx_boundary::TxBoundary};
 pub trait TxBaseTrait {
     fn tx_idx(&self) -> u32;
@@ -23,7 +24,7 @@ pub trait TxBaseTrait {
     fn splice_sites(&self, splice_sites_pool: &SpliceSitePool) -> Vec<SpliceSitePair>;
     fn source_tx_id(&self, string_pool: &StringPool) -> String;
     fn source_gene_id(&self, string_pool: &StringPool) -> String;
-    fn strand(&self) -> u8 {
+    fn strand(&self) -> ISOMSTRAND {
         self.flags().get_strand()
     }
 }
@@ -56,7 +57,7 @@ impl TxBase {
         chrom_id: u16,
         start: u32,
         end: u32,
-        strand: u8,
+        strand: ISOMSTRAND,
         seq_hash: u128,
         ref_hash: u128,
         n_exons: u16,
@@ -89,11 +90,11 @@ impl TxBase {
         })
     }
 
-    pub fn strand(&self) -> u8 {
+    pub fn strand(&self) -> ISOMSTRAND {
         self.flags.get_strand()
     }
 
-    pub fn sort_key(&self) -> (u16, u32, u32, u8) {
+    pub fn sort_key(&self) -> (u16, u32, u32, ISOMSTRAND) {
         (self.chrom_id, self.start, self.end, self.strand())
     }
 

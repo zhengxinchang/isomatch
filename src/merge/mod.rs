@@ -2,6 +2,7 @@ use std::{collections::HashSet, fs::File};
 
 use crate::core::ptir::PTIR;
 use crate::core::tx_base::TxBase;
+use crate::core::tx_strand::ISOMSTRAND;
 use crate::index::reader::ChromBlockReader;
 use crate::merge::policy::merge_cluster;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
@@ -118,14 +119,14 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     Ok(())
 }
 
-pub fn process_super_cluster(scluster: &mut Vec<PTIR>, args: &MergeArgs) {
-    println!("super cluster size {}", scluster.len());
+pub fn process_super_cluster(super_cluster: &mut Vec<PTIR>, args: &MergeArgs) {
+    println!("super cluster size {}", super_cluster.len());
 
     // build junc cluster
-
-    let mut clusters: std::collections::HashMap<(u8, u16), Vec<usize>, rustc_hash::FxBuildHasher> =
+    // cluter has same strand and junction number, which is the merge unit
+    let mut clusters: std::collections::HashMap<(ISOMSTRAND, u16), Vec<usize>, rustc_hash::FxBuildHasher> =
         FxHashMap::default();
-    for (sclu_idx, ptir) in scluster.iter().enumerate() {
+    for (ptir_idx, ptir) in super_cluster.iter().enumerate() {
         // println!(
         //     "{}<{},{},n={}>",
         //     ptir.tx_boundary,
@@ -133,9 +134,9 @@ pub fn process_super_cluster(scluster: &mut Vec<PTIR>, args: &MergeArgs) {
         //     ptir.source_geneid,
         //     ptir.n_exons,
         // );
-        let key: (u8, u16) = (ptir.strand, ptir.n_exons);
+        let key: (ISOMSTRAND, u16) = (ptir.strand, ptir.n_exons);
         let cluster = clusters.entry(key).or_insert(Vec::new());
-        cluster.push(sclu_idx);
+        cluster.push(ptir_idx);
     }
 
     // make sure clusters are sorted by strand and then n_exon(desending).
@@ -149,11 +150,11 @@ pub fn process_super_cluster(scluster: &mut Vec<PTIR>, args: &MergeArgs) {
         for sclu_idx in sclu_idxs {
             println!(
                 "junc_cluster {}|{}, ptir: {}",
-                n_exons, strand, scluster[*sclu_idx]
+                n_exons, strand, super_cluster[*sclu_idx]
             );
         }
 
-        merge_cluster(*n_exons, *strand, sclu_idxs, scluster, args);
+        merge_cluster(*n_exons, *strand, sclu_idxs, super_cluster, args);
     }
 }
 
