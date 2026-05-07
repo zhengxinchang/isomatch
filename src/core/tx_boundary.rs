@@ -14,7 +14,10 @@ impl TxBoundary {
 
     #[inline(always)]
     pub fn new(left: u32, right: u32, strand: ISOMSTRAND) -> Self {
-        assert!(right <= Self::RIGHT_MASK as u32, "Right boundary must fit in 30 bits");
+        assert!(
+            right <= Self::RIGHT_MASK as u32,
+            "Right boundary must fit in 30 bits"
+        );
         Self(((left as u64) << 32) | ((right as u64) << 2) | (strand.to_bit() as u64))
     }
 

@@ -50,18 +50,22 @@ pub fn merge_cluster(
     todo!()
 }
 
-// Merge canonical transcripts into at least one MPTIR, each one is a 
+// Merge canonical transcripts into at least one MPTIR, each one is a
 // backbone
 // for canonical transcirpt, no wobble are allowed by default.
-pub fn merge_canonical(canonical_vec: Vec<&usize>,super_cluster:&[PTIR], args: &MergeArgs) -> Vec<MPTIR> {
+pub fn merge_canonical(
+    canonical_vec: Vec<&usize>,
+    super_cluster: &[PTIR],
+    args: &MergeArgs,
+) -> Vec<MPTIR> {
     // the ptir has same strand, same exons and all canonical
     // only consider the TSS and TES distance is ok
     // because all canonical should be able to correctly splice
 
     for anchor_idx in 0..canonical_vec.len() {
-        for cmp_idx in anchor_idx+1 .. canonical_vec.len() {
+        for cmp_idx in anchor_idx + 1..canonical_vec.len() {
             let anchor = canonical_vec[anchor_idx];
-            let cmp  = canonical_vec[anchor_idx];
+            let cmp = canonical_vec[anchor_idx];
             let anchor_ptir = &super_cluster[*anchor];
             let cmp_ptir = &super_cluster[*cmp];
 
@@ -74,26 +78,23 @@ pub fn merge_canonical(canonical_vec: Vec<&usize>,super_cluster:&[PTIR], args: &
 
             // }
 
-            match (anchor_ptir.junction_vec.as_ref(), cmp_ptir.junction_vec.as_ref()) {
-                (Some(a),Some(b)) => {
+            match (
+                anchor_ptir.junction_vec.as_ref(),
+                cmp_ptir.junction_vec.as_ref(),
+            ) {
+                (Some(a), Some(b)) => {
                     let mut sj_identical = true;
-                    for exon_idx in 0..a.len() -1 {
-                        
+                    for exon_idx in 0..a.len() - 1 {
                         if a[exon_idx].0 != b[exon_idx].0 || a[exon_idx].1 != b[exon_idx].1 {
                             sj_identical = false;
                         }
                     }
-
-                 
-
-
                 }
                 _ => {
                     error!("Junction is missing for transcript...");
                     std::process::exit(1);
                 }
             }
-
         }
     }
     todo!()
@@ -107,11 +108,15 @@ pub fn noncannonical_to_canonical<'a>(
     todo!()
 }
 
-pub fn merge_rest_noncanonical(rest_non_canon: Vec<&usize>, scluster:&[PTIR], args: &MergeArgs) -> Vec<MPTIR> {
+pub fn merge_rest_noncanonical(
+    rest_non_canon: Vec<&usize>,
+    scluster: &[PTIR],
+    args: &MergeArgs,
+) -> Vec<MPTIR> {
     todo!()
 }
 
-pub fn merge_mono_exon(mono_vec: Vec<&usize>, scluster:&[PTIR],args: &MergeArgs) -> Vec<MPTIR> {
+pub fn merge_mono_exon(mono_vec: Vec<&usize>, scluster: &[PTIR], args: &MergeArgs) -> Vec<MPTIR> {
     todo!()
 }
 

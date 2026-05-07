@@ -26,12 +26,13 @@ impl SpliceSitePair {
         }
 
         match strand {
-            ISOMSTRAND::Unknown => { // for unkown strand transcript, the splice site is not valid. always return 5
+            ISOMSTRAND::Unknown => {
+                // for unkown strand transcript, the splice site is not valid. always return 5
                 Ok(Self(5))
             }
             _ => {
                 let norm_left = normalized_site(left, &strand);
-                let norm_right = normalized_site(right,& strand);
+                let norm_right = normalized_site(right, &strand);
 
                 let left_code: u8 = match norm_left[0..2] {
                     [b'G', b'T'] => 0,

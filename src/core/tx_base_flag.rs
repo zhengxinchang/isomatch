@@ -1,5 +1,5 @@
-use crate::core::tx_strand::ISOMSTRAND;
 use crate::core::tx_base_error::TxBaseError;
+use crate::core::tx_strand::ISOMSTRAND;
 
 /// Flags for TxBase.
 /// bit 0-1: strand (0 for +, 1 for -, 2 for unknown)

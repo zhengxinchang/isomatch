@@ -1,8 +1,8 @@
 use std::{collections::VecDeque, io::BufRead, path::Path};
 
 // use clap::error;
-use log::warn;
 use log::error;
+use log::warn;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{core::tx_strand::ISOMSTRAND, utils::open_file_bufread};
@@ -342,13 +342,13 @@ impl Iterator for MyGTFReader {
 pub fn process_gtf_line(
     s: &str,
 ) -> (
-    String, // chrom (col 0)
-    String, // feature_type (col 2): "transcript" / "exon" / ...
-    u32,    // start (1-based)
-    u32,    // end   (1-based, inclusive)
-    ISOMSTRAND,     // strand: 0=+, 1=-
-    String, // transcript_id
-    String, // gene_id
+    String,     // chrom (col 0)
+    String,     // feature_type (col 2): "transcript" / "exon" / ...
+    u32,        // start (1-based)
+    u32,        // end   (1-based, inclusive)
+    ISOMSTRAND, // strand: 0=+, 1=-
+    String,     // transcript_id
+    String,     // gene_id
 ) {
     let parts: Vec<&str> = s.split('\t').collect();
 

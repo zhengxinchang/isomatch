@@ -5,7 +5,13 @@ use log::{error, info};
 use serde::Serialize;
 
 use crate::{
-    IndexArgs, core::tx_strand::ISOMSTRAND, fasta::{self, FastaReader}, gtf::{self, profile_gtf}, index::format::ChromBlockBuilder, traits::ArgValidate, utils::print_json_block
+    IndexArgs,
+    core::tx_strand::ISOMSTRAND,
+    fasta::{self, FastaReader},
+    gtf::{self, profile_gtf},
+    index::format::ChromBlockBuilder,
+    traits::ArgValidate,
+    utils::print_json_block,
 };
 pub use anyhow::Result;
 pub mod builder;
@@ -19,7 +25,7 @@ pub struct IndexStats {
     pub gene_count: u64,
     pub plus_strand_count: u64,
     pub minus_strand_count: u64,
-    pub unknown_strand_count:u64,
+    pub unknown_strand_count: u64,
     pub mono_exon_count: u64,
     pub multi_exon_count: u64,
     pub junction_count: u64,

@@ -124,8 +124,11 @@ pub fn process_super_cluster(super_cluster: &mut Vec<PTIR>, args: &MergeArgs) {
 
     // build junc cluster
     // cluter has same strand and junction number, which is the merge unit
-    let mut clusters: std::collections::HashMap<(ISOMSTRAND, u16), Vec<usize>, rustc_hash::FxBuildHasher> =
-        FxHashMap::default();
+    let mut clusters: std::collections::HashMap<
+        (ISOMSTRAND, u16),
+        Vec<usize>,
+        rustc_hash::FxBuildHasher,
+    > = FxHashMap::default();
     for (ptir_idx, ptir) in super_cluster.iter().enumerate() {
         // println!(
         //     "{}<{},{},n={}>",
@@ -140,7 +143,7 @@ pub fn process_super_cluster(super_cluster: &mut Vec<PTIR>, args: &MergeArgs) {
     }
 
     // make sure clusters are sorted by strand and then n_exon(desending).
-    // then when a cluster has small exon, it can get next 
+    // then when a cluster has small exon, it can get next
     let mut cluster_items: Vec<_> = clusters.iter().collect();
     cluster_items.sort_by_key(|((strand, n_exons), _)| (*strand, std::cmp::Reverse(*n_exons)));
 

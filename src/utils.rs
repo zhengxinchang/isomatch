@@ -112,4 +112,3 @@ pub fn normalized_site(site: &[u8], strand: &ISOMSTRAND) -> Vec<u8> {
         _ => site.iter().map(|&b| upper_nuc(b)).collect(),
     }
 }
-
