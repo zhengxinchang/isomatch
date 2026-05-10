@@ -1,5 +1,5 @@
 use crate::{
-    core::tx_base_error::TxBaseError,
+    core::core_error::TxBaseError,
     traits::{Encodable, PartialLoad},
 };
 

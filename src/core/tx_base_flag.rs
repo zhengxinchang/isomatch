@@ -1,4 +1,4 @@
-use crate::core::tx_base_error::TxBaseError;
+use crate::core::core_error::TxBaseError;
 use crate::core::tx_strand::ISOMSTRAND;
 
 /// Flags for TxBase.

@@ -21,3 +21,39 @@ other feature
 
 
 
+# How isomatch merge transcripts
+
+1. treat the splice junction chain as first priority evidence.
+1.1 all canonical transcripts will have higher score than non-all canonical tx
+1.2 for a junction in all transcripts that sightly differnt, most common of the splice junction will be choosen.
+1.3 non-all canonical tx will be attached into the canonical transcirpt
+1.4 the rest of non-all canonical tx will be further merged based on the splice junction wobble and tss tes threshold 
+
+## multi exon & plus minus strand
+
+    wobble sj
+
+    wobble tss tes 
+
+    splice site canonical or not 
+
+    guided splice junction
+    guided tss tes
+
+    ref squence hash for rescue tx 
+
+    sample sequence hash for ?? 
+
+## multi exon unstrand
+
+## mono exon plus mimnus
+
+## mono exon unstrand
+
+
+guided 会默认比其他policy 更优先，
+如果guidesd失败，则还是会选择policy，所以policy是一直存在的。
+
+
+case1
+合并long read RNA，都是canonical 有1-2bp的差异，则合并？ 

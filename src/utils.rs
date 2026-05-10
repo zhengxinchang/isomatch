@@ -1,8 +1,11 @@
+use ahash::RandomState;
 use flate2::bufread::MultiGzDecoder;
 use serde::Serialize;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
+use std::sync::LazyLock;
 use xxhash_rust::xxh3::xxh3_128;
 
 use crate::core::tx_strand::ISOMSTRAND;
@@ -48,6 +51,15 @@ pub fn hash_u8_vec(v: &Vec<u8>) -> u128 {
 
 pub fn hash_u8_slice(v: &[u8]) -> u128 {
     xxh3_128(v)
+}
+
+static HASHER: LazyLock<RandomState> =
+    LazyLock::new(|| RandomState::with_seeds(9336, 5920, 6784, 4496));
+
+/// ONLY used in memory, DO NOT used in persistance purpose.
+/// the hash is not stable in different paltform, language.
+pub fn ahash_vec<T: Hash>(value: &T) -> u64 {
+    HASHER.hash_one(value)
 }
 
 pub fn trim_chr_prefix_to_upper(chrom: &str) -> String {
@@ -111,4 +123,11 @@ pub fn normalized_site(site: &[u8], strand: &ISOMSTRAND) -> Vec<u8> {
         ISOMSTRAND::Minus => rev_comp(site),
         _ => site.iter().map(|&b| upper_nuc(b)).collect(),
     }
+}
+
+pub fn is_gzipped(p: &Path) -> bool {
+    p.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("gz"))
+        .unwrap_or(false)
 }

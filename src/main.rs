@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{ArgAction, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Parser, Subcommand};
 use log::error;
 use serde::Serialize;
 pub mod utils;
@@ -13,12 +13,13 @@ pub mod gtf;
 pub mod index;
 pub mod merge;
 pub mod traits;
+use crate::merge::policy::{MergePolicy, TerminalMergeMode};
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
     name = "isomatch",
     version = "0.1.0",
     author = "xinchang zheng <zhengxc93@gmail.com>",
-    about = "A verstile tool for isoform comparison and correction",
+    about = "A versatile tool for isoform comparison and correction",
     after_long_help = "
 
 > [Examples]
@@ -37,25 +38,20 @@ pub struct Cli {
 pub enum Commands {
     Index(IndexArgs),
     Merge(MergeArgs),
-    Compare(CompareArgs),
+    // Bench(BenchArgs),
     Annotate(AnnotateArgs),
-}
-
-#[derive(Copy, Clone, Debug, Serialize, ValueEnum)]
-pub enum ReprEndPolicy {
-    Outer,
-    Inner,
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
-    about = "index GTF files with sequence information, will be called by other subcommands, but can also be used independently
+    about = "Index GTF files with sequence information. This command is used by other subcommands, but can also be run independently.
 "
 )]
 pub struct IndexArgs {
+    #[clap(help = "Input GTF file")]
     pub input: PathBuf,
 
-    #[clap(short = 'r', long = "reffa", help = "Reference fasta file")]
+    #[clap(short = 'r', long = "reffa", help = "Reference FASTA file")]
     pub reffa: PathBuf,
 
     // hide this because the tx seqs usually not have paried sequence.
@@ -66,7 +62,7 @@ pub struct IndexArgs {
     #[clap(
         short = 'o',
         long = "out",
-        help = "index file, default is input file with .idx suffix"
+        help = "Output index file path; defaults to the input path with an .isomx suffix"
     )]
     pub out: Option<PathBuf>,
 }
@@ -82,36 +78,156 @@ pub struct MergeArgs {
     pub inputs: Vec<PathBuf>,
 
     #[clap(
-        short = 'd',
-        long = "dwob",
-        help = "Allowed donor-site coordinate wobble during junction comparison",
+        short = 'r',
+        long = "refsites",
+        help = "Reference splice sites in BED format for splice-site wobble comparison (optional)"
+    )]
+    pub refsites: Option<PathBuf>,
+
+    #[clap(
+        long = "reftss",
+        help = "Reference TSS sites in BED format for splice-site wobble comparison (optional)"
+    )]
+    pub reftss: Option<PathBuf>,
+
+    #[clap(
+        long = "reftes",
+        help = "Reference TES sites in BED format for splice-site wobble comparison (optional)"
+    )]
+    pub reftes: Option<PathBuf>,
+
+    #[clap(
+        short = 'D',
+        long = "wob-d-nc",
+        help = "Allowed donor-site wobble when attaching noncanonical transcripts to canonical backbones",
         default_value_t = 3
     )]
-    pub dwob: u32,
+    pub wob_d_nc: u32,
+
+    // Those
+    #[clap(
+        short = 'A',
+        long = "wob-a-nc",
+        help = "Allowed acceptor-site wobble when attaching noncanonical transcripts to canonical backbones",
+        default_value_t = 3
+    )]
+    pub wob_a_nc: u32,
+
+    #[clap(
+        short = 'U',
+        long = "wob-u-nc",
+        visible_alias = "wob_u_nc",
+        help = "Wobble for non canonical unstrand transcript",
+        default_value_t = 3
+    )]
+    pub wob_u_nc: u32,
+
+    #[clap(
+        short = 'd',
+        long = "wob-d",
+        visible_alias = "wob_d",
+        help = "Allowed donor-site wobble when merging canonical transcripts",
+        default_value_t = 0
+    )]
+    pub wob_d: u32,
 
     #[clap(
         short = 'a',
-        long = "awob",
-        help = "Allowed acceptor-site coordinate wobble during junction comparison",
+        long = "wob-a",
+        visible_alias = "wob_d",
+        help = "Allowed acceptor-site wobble when merging canonical transcripts",
+        default_value_t = 0
+    )]
+    pub wob_a: u32,
+
+    #[clap(
+        short = 'u',
+        long = "wob-u",
+        visible_alias = "wob_u",
+        help = "Wobble for canonical unstrand transcript",
         default_value_t = 3
     )]
-    pub awob: u32,
+    pub wob_u: u32,
 
     #[clap(
         short = 's',
-        long = "tss",
-        help = "TSS tolerance for final merge decisions",
+        long = "tss-wob",
+        visible_alias = "tss_wob",
+        help = "Wobble for merging tss in canonical transcirpts",
         default_value_t = 50
     )]
-    pub tss: u32,
+    pub tss_wob: u32,
 
     #[clap(
         short = 'e',
-        long = "tes",
-        help = "TES tolerance for final merge decisions",
-        default_value_t = 100
+        long = "tes-wob",
+        visible_alias = "tes_wob",
+        help = "Wobble for merging tes in canonical transcirpts",
+        default_value_t = 50
     )]
-    pub tes: u32,
+    pub tes_wob: u32,
+
+    #[clap(
+        short = 'S',
+        long = "tss-wob-nc",
+        visible_alias = "tss_wob_nc",
+        help = "Wobble for merging tss in non canonical transcirpts",
+        default_value_t = 50
+    )]
+    pub tss_wob_nc: u32,
+
+    #[clap(
+        short = 'E',
+        long = "tes-wob-nc",
+        visible_alias = "tes_wob_nc",
+        help = "Wobble for merging tes in non canonical transcirpts",
+        default_value_t = 50
+    )]
+    pub tes_wob_nc: u32,
+
+    #[clap(
+        short = 't',
+        long = "terminal-merge",
+        visible_alias = "terminal_merge",
+        help = "Terminal merge mode for canonical transcirpts",
+        value_enum,
+        default_value = "both"
+    )]
+    pub terminal_merge: TerminalMergeMode,
+
+    #[clap(
+        short = 'T',
+        long = "terminal-merge-nc",
+        visible_alias = "terminal_merge_nc",
+        help = "Terminal merge mode for non canonical transcirpts",
+        value_enum,
+        default_value = "both"
+    )]
+    pub terminal_merge_nc: TerminalMergeMode,
+
+    #[clap(
+        long = "tss-policy",
+        help = "How to choose the representative TSS after transcripts have already been merged into one group",
+        value_enum,
+        default_value_t = MergePolicy::Major
+    )]
+    pub tss_policy: MergePolicy,
+
+    #[clap(
+        long = "tes-policy",
+        help = "How to choose the representative TES after transcripts have already been merged into one group",
+        value_enum,
+        default_value_t = MergePolicy::Major
+    )]
+    pub tes_policy: MergePolicy,
+
+    #[clap(
+        long = "splice-policy",
+        help = "How to choose the representative splice junction after transcripts have already been merged into one group",
+        value_enum,
+        default_value_t = MergePolicy::Major
+    )]
+    pub splice_policy: MergePolicy,
 
     #[clap(
         long = "mono-ovlp",
@@ -119,6 +235,22 @@ pub struct MergeArgs {
         default_value_t = 0.9
     )]
     pub mono_ovlp: f64,
+
+    #[clap(
+        long = "mono-policy",
+        help = "How to choose the representative start and end for monon exon transcripts have already been merged into one group",
+        value_enum,
+        default_value_t = MergePolicy::Major
+    )]
+    pub mono_policy: MergePolicy,
+
+    #[clap(
+        long = "unstranded-terminal-wobble",
+        visible_alias = "uterminalwob",
+        help = "Terminal wobble for unstranded transcripts",
+        default_value_t = 50
+    )]
+    pub unstrand_terminal_wob: u32,
 
     #[clap(
         long = "sx-max",
@@ -158,52 +290,28 @@ pub struct MergeArgs {
     )]
     pub hash_rescue: bool,
 
-    #[clap(
-        long = "repr-ends",
-        help = "How representative transcript ends are chosen after merge",
-        value_enum,
-        default_value_t = ReprEndPolicy::Outer
-    )]
-    pub repr_ends: ReprEndPolicy,
-
     #[clap(short = 'o', long = "out", help = "Union output gtf file")]
     pub out: PathBuf,
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
-#[clap(
-    about = "compare multiple query transcript sets in GTF format and report summary statistics
-"
-)]
-pub struct CompareArgs {
-    #[clap(help = "GTF files to compare, at lest two files", required = true, num_args = 2..)]
-    pub input: Vec<PathBuf>,
-
-    #[clap(
-        short = 'o',
-        long = "out",
-        help = "Output prefix for comparison results"
-    )]
-    pub out: PathBuf,
-}
-
-#[derive(Parser, Debug, Serialize, Clone)]
-#[clap(about = "annotate query transcripts with reference annotation
+#[clap(about = "Annotate query transcripts with a reference annotation
 ")]
 pub struct AnnotateArgs {
+    #[clap(help = "Input GTF file to annotate")]
     pub input: PathBuf,
 
     #[clap(
         short = 'r',
         long = "annotation",
-        help = "Reference annotation gtf file"
+        help = "Reference annotation GTF file"
     )]
     pub annotation: PathBuf,
 
     #[clap(
         short = 'o',
         long = "out",
-        help = "Output gtf file with classification results"
+        help = "Output GTF file with classification results"
     )]
     pub out: PathBuf,
 
@@ -217,12 +325,10 @@ pub struct AnnotateArgs {
 }
 
 fn main() {
-    let mut cli = Cli::parse();
-
     // set env logger level to info by default, can be overridden by RUST_LOG env var
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    match cli {
+    match Cli::parse() {
         Cli {
             command: Commands::Index(mut args),
         } => {
@@ -243,11 +349,11 @@ fn main() {
                 })
                 .expect("Exit...");
         }
-        Cli {
-            command: Commands::Compare(args),
-        } => {
-            greetings2(&args);
-        }
+        // Cli {
+        //     command: Commands::Bench(args),
+        // } => {
+        //     greetings2(&args);
+        // }
         Cli {
             command: Commands::Annotate(args),
         } => {

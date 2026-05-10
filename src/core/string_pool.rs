@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    core::tx_base_error::*,
+    core::core_error::*,
     traits::{Encodable, PartialLoad},
 };
 

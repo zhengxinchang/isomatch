@@ -1,8 +1,10 @@
+use crate::core::core_error::TxBaseError;
 use crate::core::junction_pool::{JunctionPool, JunctionSpan};
-use crate::core::splice_site_pool::{SpliceSitePair, SpliceSitePool, SpliceSiteSpan};
+use crate::core::splice_site_pair::SpliceSitePair;
+use crate::core::splice_site_pool::SpliceSitePool;
+use crate::core::splice_site_span::SpliceSiteSpan;
 use crate::core::string_pool::{StringPool, StringSpan};
 use crate::core::tx_base::{TxBase, TxBaseTrait};
-use crate::core::tx_base_error::TxBaseError;
 use crate::core::tx_base_flag::TxBaseFlags;
 use crate::core::tx_boundary::TxBoundary;
 use crate::traits::{DiskSize, Encodable, PartialLoad};

@@ -3,7 +3,6 @@ use std::{
     path::Path,
 };
 
-use crate::utils::trim_chr_prefix_to_upper;
 use noodles_core::{Position, region::Interval};
 use noodles_fasta as fasta;
 use rustc_hash::FxHashMap;
@@ -36,16 +35,13 @@ pub enum FaType {
 pub struct FastaReader {
     reader: fasta::io::IndexedReader<fasta::io::BufReader<std::fs::File>>,
 
-    /// Maps lookup-name → index into the fai::Index Vec.
-    ///
-    /// For `FaType::Ref`: key = normalized name (chr-stripped, uppercased).
-    /// For `FaType::Seq`: key = original name (identity).
+    /// Maps raw FASTA seqid → index into the fai::Index Vec.
     name_to_idx: FxHashMap<String, u32>,
 }
 
 impl FastaReader {
     /// Open a FASTA file. The `.fai` index must exist at `<path>.fai`.
-    pub fn open<P: AsRef<Path>>(path: P, fa_type: FaType) -> Result<Self, FastaError> {
+    pub fn open<P: AsRef<Path>>(path: P, _fa_type: FaType) -> Result<Self, FastaError> {
         let reader = fasta::io::indexed_reader::Builder::default().build_from_path(&path)?;
 
         let mut name_to_idx: FxHashMap<String, u32> = FxHashMap::default();
@@ -53,17 +49,12 @@ impl FastaReader {
         for (idx, record) in reader.index().as_ref().iter().enumerate() {
             let name = String::from_utf8_lossy(record.name()).into_owned();
 
-            let lookup_key = match fa_type {
-                FaType::Ref => trim_chr_prefix_to_upper(&name),
-                FaType::Seq => name.clone(),
-            };
-
-            if name_to_idx.contains_key(&lookup_key) {
+            if name_to_idx.contains_key(&name) {
                 return Err(FastaError::DuplicateSeqId(name));
             }
 
             name_to_idx.insert(
-                lookup_key,
+                name,
                 u32::try_from(idx).expect("fai index exceeds u32::MAX entries"),
             );
         }
@@ -85,14 +76,8 @@ impl FastaReader {
         start: usize,
         end: usize,
         // strand: u8,
-        trim_chr: bool,
+        _trim_chr: bool,
     ) -> Result<Vec<u8>, FastaError> {
-        let seqid = if trim_chr {
-            &trim_chr_prefix_to_upper(seqid)
-        } else {
-            seqid
-        };
-
         let idx =
             self.name_to_idx
                 .get(seqid)
@@ -144,14 +129,8 @@ impl FastaReader {
     }
 
     pub fn fetch_all(&mut self, seqid: &str, trim_chr: bool) -> Result<Vec<u8>, FastaError> {
-        let lookup = if trim_chr {
-            trim_chr_prefix_to_upper(seqid)
-        } else {
-            seqid.to_string()
-        };
-
         let len = self
-            .seq_len(&lookup)
+            .seq_len(seqid)
             .ok_or_else(|| FastaError::SeqIdNotFound(seqid.to_string()))?;
 
         self.fetch(seqid, 0, len, trim_chr)
@@ -162,11 +141,7 @@ impl FastaReader {
     }
 
     pub fn seq_len(&self, seqid: &str) -> Option<usize> {
-        let idx = if let Some(&idx) = self.name_to_idx.get(seqid) {
-            idx
-        } else {
-            *self.name_to_idx.get(&trim_chr_prefix_to_upper(seqid))?
-        } as usize;
+        let idx = *self.name_to_idx.get(seqid)? as usize;
         Some(self.reader.index().as_ref()[idx].length() as usize)
     }
 

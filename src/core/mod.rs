@@ -1,10 +1,12 @@
+pub mod core_error;
 pub mod junction_pool;
 pub mod ptir;
+pub mod splice_site_pair;
 pub mod splice_site_pool;
+pub mod splice_site_span;
 pub mod status;
 pub mod string_pool;
 pub mod tx_base;
-pub mod tx_base_error;
 pub mod tx_base_flag;
 pub mod tx_base_impl;
 pub mod tx_boundary;

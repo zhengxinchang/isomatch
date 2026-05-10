@@ -1,108 +1,10 @@
 use crate::{
-    core::{tx_base_error::TxBaseError, tx_strand::ISOMSTRAND},
+    core::{
+        core_error::TxBaseError, splice_site_pair::SpliceSitePair,
+        splice_site_span::SpliceSiteSpan, tx_strand::ISOMSTRAND,
+    },
     traits::{Encodable, PartialLoad},
-    utils::normalized_site,
 };
-
-/// Packed Splice Site
-/// Negative strand bases will be reverse complement
-/// Site projection:
-/// GT --> 0
-/// AG --> 1
-/// GC --> 2
-/// AT --> 3
-/// AC --> 4
-/// other -->5
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-#[repr(transparent)]
-pub struct SpliceSitePair(pub u8);
-
-impl SpliceSitePair {
-    pub fn pack(left: &[u8], right: &[u8], strand: ISOMSTRAND) -> Result<Self, TxBaseError> {
-        if left.len() != 2 || right.len() != 2 {
-            return Err(TxBaseError::InvalidSpliceSite {
-                site: format!("{:?},{:?}", left, right),
-            });
-        }
-
-        match strand {
-            ISOMSTRAND::Unknown => {
-                // for unkown strand transcript, the splice site is not valid. always return 5
-                Ok(Self(5))
-            }
-            _ => {
-                let norm_left = normalized_site(left, &strand);
-                let norm_right = normalized_site(right, &strand);
-
-                let left_code: u8 = match norm_left[0..2] {
-                    [b'G', b'T'] => 0,
-                    [b'A', b'G'] => 1,
-                    [b'G', b'C'] => 2,
-                    [b'A', b'T'] => 3,
-                    [b'A', b'C'] => 4,
-                    _ => 5,
-                };
-
-                let right_code: u8 = match norm_right[0..2] {
-                    [b'G', b'T'] => 0,
-                    [b'A', b'G'] => 1,
-                    [b'G', b'C'] => 2,
-                    [b'A', b'T'] => 3,
-                    [b'A', b'C'] => 4,
-                    _ => 5,
-                };
-
-                let pack = if strand == ISOMSTRAND::Minus {
-                    right_code << 4 | left_code
-                } else {
-                    left_code << 4 | right_code
-                };
-                Ok(Self(pack))
-            }
-        }
-    }
-
-    pub fn from_packed(p: u8) -> Result<Self, TxBaseError> {
-        Ok(Self(p))
-    }
-
-    pub fn is_canonical(&self) -> bool {
-        // canonical:
-        // GT-AG --> 0 1
-        // GC-AG --> 2 1
-        // AT-AC --> 3 4
-        // other 5
-        let donor = self.0 >> 4;
-        let acceptor = self.0 & 0x0F;
-        (donor == 0 && acceptor == 1)
-            || (donor == 2 && acceptor == 1)
-            || (donor == 3 && acceptor == 4)
-    }
-    // /// This is
-    // pub fn is_canonical_from_u8(c: u8) -> bool {
-    //     let donor = c >> 4;
-    //     let acceptor = c & 0x0F;
-    //     (donor == 0 && acceptor == 1)
-    //         || (donor == 2 && acceptor == 1)
-    //         || (donor == 3 && acceptor == 4)
-    // }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct SpliceSiteSpan {
-    pub offset: u32,
-    pub count: u16,
-}
-
-impl SpliceSiteSpan {
-    pub fn is_empty(self) -> bool {
-        self.count == 0
-    }
-
-    pub fn end_offset(self) -> u32 {
-        self.offset + u32::from(self.count)
-    }
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct SpliceSitePool {
@@ -235,5 +137,22 @@ mod tests {
 
         assert!(!gt_gc.is_canonical());
         assert!(!other.is_canonical());
+    }
+
+    #[test]
+    fn canonical_pairs_on_unknown_strand_are_recognized_from_plus_or_minus_orientation() {
+        let plus_like = SpliceSitePair::pack(b"GT", b"AG", ISOMSTRAND::Unknown).unwrap();
+        let minus_like = SpliceSitePair::pack(b"CT", b"AC", ISOMSTRAND::Unknown).unwrap();
+
+        assert!(plus_like.is_canonical());
+        assert!(minus_like.is_canonical());
+    }
+
+    #[test]
+    fn noncanonical_pairs_on_unknown_strand_fall_back_to_unknown_marker() {
+        let pair = SpliceSitePair::pack(b"AA", b"AA", ISOMSTRAND::Unknown).unwrap();
+
+        assert_eq!(pair.0, 5);
+        assert!(!pair.is_canonical());
     }
 }

@@ -212,14 +212,14 @@ impl MyGTFReader {
 
         if tx.gene_id != gene_id {
             warn!(
-                "Transcript {} has inconsistent gene_id within chromosome {}: {} vs {}",
+                "Transcript {} has inconsistent gene_idin it's exon record. {}: {} vs {}",
                 tx_id, chrom, tx.gene_id, gene_id
             );
         }
 
         if tx.strand != strand {
             warn!(
-                "Transcript {} has inconsistent strand within chromosome {}: {} vs {}",
+                "Transcript {} has inconsistent strand in it's exon record. chr{} {} vs {}",
                 tx_id, chrom, tx.strand, strand
             );
         }

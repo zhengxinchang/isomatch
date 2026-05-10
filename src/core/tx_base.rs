@@ -1,11 +1,13 @@
 use std::cmp::Ordering;
 
 use crate::core::junction_pool::*;
-use crate::core::splice_site_pool::{SpliceSitePair, SpliceSitePool, SpliceSiteSpan};
+use crate::core::splice_site_pair::SpliceSitePair;
+use crate::core::splice_site_pool::SpliceSitePool;
+use crate::core::splice_site_span::SpliceSiteSpan;
 use crate::core::string_pool::{StringPool, StringSpan};
 use crate::core::tx_base_flag::TxBaseFlags;
 use crate::core::tx_strand::ISOMSTRAND;
-use crate::core::{tx_base_error::TxBaseError, tx_boundary::TxBoundary};
+use crate::core::{core_error::TxBaseError, tx_boundary::TxBoundary};
 pub trait TxBaseTrait {
     fn tx_idx(&self) -> u32;
     fn tx_boundary(&self) -> TxBoundary {

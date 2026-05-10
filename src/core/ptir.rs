@@ -5,7 +5,8 @@
 
 use crate::core::{
     junction_pool::JunctionPool,
-    splice_site_pool::{SpliceSitePair, SpliceSitePool},
+    splice_site_pair::SpliceSitePair,
+    splice_site_pool::SpliceSitePool,
     status::TxType,
     string_pool::StringPool,
     tx_base::{TxBase, TxBaseTrait},
@@ -77,6 +78,26 @@ impl PTIR {
 
     pub fn overlap(&self, other: &PTIR) -> bool {
         self.tx_boundary.overlaps(other.tx_boundary)
+    }
+
+    pub fn junctions(&self) -> Option<&[(u32, u32)]> {
+        self.junction_vec.as_deref()
+    }
+
+    pub fn tss(&self) -> u32 {
+        match self.strand {
+            ISOMSTRAND::Plus => self.start,
+            ISOMSTRAND::Minus => self.end,
+            ISOMSTRAND::Unknown => self.start,
+        }
+    }
+
+    pub fn tes(&self) -> u32 {
+        match self.strand {
+            ISOMSTRAND::Plus => self.end,
+            ISOMSTRAND::Minus => self.start,
+            ISOMSTRAND::Unknown => self.end,
+        }
     }
 }
 

@@ -55,3 +55,9 @@ impl TxBaseError {
         Self::Io(err.to_string())
     }
 }
+
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum PTIRError {
+    #[error("strand must be 0 (+), 1 (-), or 2 (unknown), got {strand}")]
+    InvalidStrand { strand: u8 },
+}

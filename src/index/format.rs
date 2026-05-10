@@ -1,8 +1,10 @@
+use crate::core::core_error::TxBaseError;
 use crate::core::junction_pool::JunctionPool;
-use crate::core::splice_site_pool::{SpliceSitePair, SpliceSitePool, SpliceSiteSpan};
+use crate::core::splice_site_pair::SpliceSitePair;
+use crate::core::splice_site_pool::SpliceSitePool;
+use crate::core::splice_site_span::SpliceSiteSpan;
 use crate::core::string_pool::StringPool;
 use crate::core::tx_base::TxBase;
-use crate::core::tx_base_error::TxBaseError;
 use crate::core::tx_strand::ISOMSTRAND;
 use crate::fasta::FastaReader;
 use crate::gtf::GTFTx;
@@ -365,7 +367,7 @@ impl ChromBlockBuilder {
                     gtf_tx.end as usize,
                     true,
                 )
-                .map_err(|e| IndexError::FetchSeq {
+                .map_err(|e: crate::fasta::FastaError| IndexError::FetchSeq {
                     reason: e.to_string(),
                 })?;
 
@@ -498,7 +500,7 @@ impl ChromBlockBuilder {
             .iter()
             .map(|(left, right)| SpliceSitePair::pack(left, right, gtf_tx.strand))
             .try_fold(0usize, |count, pair| {
-                let pair = pair?;
+                let pair: SpliceSitePair = pair?;
                 Ok::<usize, TxBaseError>(if pair.is_canonical() {
                     count + 1
                 } else {

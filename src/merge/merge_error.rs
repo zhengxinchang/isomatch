@@ -1,4 +1,4 @@
-use crate::core::tx_base_error::TxBaseError;
+use crate::core::core_error::TxBaseError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -14,4 +14,13 @@ pub enum MergeError {
 
     #[error(transparent)]
     Core(#[from] TxBaseError),
+
+    #[error("Strand is not correct:{reason}")]
+    InvaidStrand { reason: String },
+
+    #[error("No junction found")]
+    NoJunctionFound,
+
+    #[error("Select representative failed")]
+    SelectReprFailed,
 }

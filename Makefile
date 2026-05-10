@@ -1,7 +1,7 @@
 
 
 build:
-	cargo build --release
+	cargo fmt && cargo build --release
 
 
 index: build
@@ -15,15 +15,18 @@ index2: build
 		test/gencode.v49.basic.annotation.sorted.gtf.gz 
 
 
-INPUT := test/isoseq_transcripts.sorted.filtered_lite.clean.gtf
-N := 
+
 
 merge: build
 	/usr/bin/time -v target/release/isomatch merge \
-		-o test/merge.gtf \
-		test/gencode.v49.basic.annotation.sorted.gtf.gz \
-		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf 
+		-o test/merge.gtf.gz --splice-policy major --tss-wob 400 --tes-wob 400 \
+		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf \
+# 		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz \
+# 		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz  \
+# 		test/gencode.v49.basic.annotation.sorted.gtf.gz \
 
+INPUT := test/isoseq_transcripts.sorted.filtered_lite.clean.gtf
+N := 100
 
 merge2: build
 	/usr/bin/time -v target/release/isomatch merge \

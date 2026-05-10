@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::core::tx_base_error::TxBaseError;
+use crate::core::core_error::TxBaseError;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

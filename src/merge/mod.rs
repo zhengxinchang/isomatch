@@ -1,3 +1,5 @@
+use std::io::BufWriter;
+use std::io::Write;
 use std::{collections::HashSet, fs::File};
 
 use crate::core::ptir::PTIR;
@@ -5,13 +7,16 @@ use crate::core::tx_base::TxBase;
 use crate::core::tx_strand::ISOMSTRAND;
 use crate::index::reader::ChromBlockReader;
 use crate::merge::policy::merge_cluster;
+use crate::utils::is_gzipped;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
+pub mod grouped_ptirs;
 pub mod merge_error;
-pub mod mptir;
 pub mod policy;
 use anyhow::Context;
 use anyhow::Result as AnyResult;
 use anyhow::anyhow;
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use log::info;
 use merge_error::MergeError;
 use rustc_hash::FxHashMap;
@@ -63,10 +68,24 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         }
     }
 
+    // choose if output should be gzipped based on the suffix of the output
+
+    let mut bufwriter: Box<dyn Write> = match is_gzipped(&args.out) {
+        true => {
+            let f = File::create(&args.out)?;
+            Box::new(BufWriter::new(GzEncoder::new(f, Compression::default())))
+        }
+        false => {
+            let f = File::create(&args.out)?;
+            Box::new(BufWriter::new(f))
+        }
+    };
+
     // init min-heap
 
     // get chromsome names and get chromblockreader from all indexxreader, for each chromsome do:
-
+    let mut global_scluster_id = 0u32;
+    let mut global_tx_id = 0u32;
     for chrom_name in &chrom_names {
         info!("Merging chromosome {}", chrom_name);
         let mut chrom_block_readers: Vec<ChromBlockReader> = Vec::new();
@@ -98,30 +117,53 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
                 super_cluster.push(ptir);
                 continue;
             }
-
-            process_super_cluster(&mut super_cluster, &args);
+            // global_scluster_id += 1;
+            process_super_cluster(
+                chrom_name,
+                &mut super_cluster,
+                &mut global_scluster_id,
+                &mut global_tx_id,
+                &args,
+                bufwriter.as_mut(),
+            )?;
             super_cluster.clear();
             cluster_max_end = ptir.end;
             super_cluster.push(ptir); // first ptir for next super cluster
         }
-        process_super_cluster(&mut super_cluster, &args);
         // process the last super cluster
-
-        // build the junction-level custer
-
-        // merge canonical tx
-
-        // non-canoniical tx to canonical tx
+        // global_scluster_id += 1;
+        process_super_cluster(
+            chrom_name,
+            &mut super_cluster,
+            &mut global_scluster_id,
+            &mut global_tx_id,
+            &args,
+            bufwriter.as_mut(),
+        )?;
 
         // report to unified GTF
     }
+
+    bufwriter.flush()?;
+    drop(bufwriter);
+    info!(
+        "Output file have been seved at: {}",
+        &args.out.to_string_lossy()
+    );
     info!("Fnished!");
     Ok(())
 }
 
-pub fn process_super_cluster(super_cluster: &mut Vec<PTIR>, args: &MergeArgs) {
-    println!("super cluster size {}", super_cluster.len());
-
+pub fn process_super_cluster(
+    chrom_name: &str,
+    super_cluster: &mut Vec<PTIR>,
+    global_scluster_id: &mut u32,
+    global_tx_id: &mut u32,
+    args: &MergeArgs,
+    bufwriter: &mut dyn Write,
+) -> Result<(), MergeError> {
+    // println!("super cluster size {}", super_cluster.len());
+    *global_scluster_id += 1;
     // build junc cluster
     // cluter has same strand and junction number, which is the merge unit
     let mut clusters: std::collections::HashMap<
@@ -130,13 +172,6 @@ pub fn process_super_cluster(super_cluster: &mut Vec<PTIR>, args: &MergeArgs) {
         rustc_hash::FxBuildHasher,
     > = FxHashMap::default();
     for (ptir_idx, ptir) in super_cluster.iter().enumerate() {
-        // println!(
-        //     "{}<{},{},n={}>",
-        //     ptir.tx_boundary,
-        //     ptir.source_file_id,
-        //     ptir.source_geneid,
-        //     ptir.n_exons,
-        // );
         let key: (ISOMSTRAND, u16) = (ptir.strand, ptir.n_exons);
         let cluster = clusters.entry(key).or_insert(Vec::new());
         cluster.push(ptir_idx);
@@ -149,16 +184,16 @@ pub fn process_super_cluster(super_cluster: &mut Vec<PTIR>, args: &MergeArgs) {
 
     // process each junc cluster
     for ((strand, n_exons), sclu_idxs) in cluster_items {
-        // println!("");
-        for sclu_idx in sclu_idxs {
-            println!(
-                "junc_cluster {}|{}, ptir: {}",
-                n_exons, strand, super_cluster[*sclu_idx]
-            );
-        }
+        let mut grpptirs = merge_cluster(*n_exons, *strand, sclu_idxs, super_cluster, args)?;
 
-        merge_cluster(*n_exons, *strand, sclu_idxs, super_cluster, args);
+        for grpptir in grpptirs.iter_mut() {
+            *global_tx_id += 1;
+            grpptir.update_ids(*global_scluster_id, *global_tx_id);
+            grpptir.write_gtf_block(chrom_name, super_cluster, bufwriter)?;
+        }
     }
+
+    Ok(())
 }
 
 pub struct KwayMerger {
