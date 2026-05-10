@@ -8,6 +8,7 @@ use utils::greetings2;
 pub mod core;
 
 use crate::{index::run_index, merge::run_merge};
+pub mod constants;
 pub mod fasta;
 pub mod gtf;
 pub mod index;
@@ -71,7 +72,8 @@ pub struct IndexArgs {
 #[clap(about = "merge multiple indexed transcript sets into a union GTF")]
 pub struct MergeArgs {
     #[clap(
-        help = "Input transcript index files (.isomx)",
+        help_heading = "Input",
+        help = "Input transcript sets to merge",
         required = true,
         num_args = 1..
     )]
@@ -80,53 +82,30 @@ pub struct MergeArgs {
     #[clap(
         short = 'r',
         long = "refsites",
-        help = "Reference splice sites in BED format for splice-site wobble comparison (optional)"
+        help_heading = "Guide Merge",
+        help = "Optional BED file of reference splice sites"
     )]
     pub refsites: Option<PathBuf>,
 
     #[clap(
         long = "reftss",
-        help = "Reference TSS sites in BED format for splice-site wobble comparison (optional)"
+        help_heading = "Guide Merge",
+        help = "Optional BED file of reference TSS sites"
     )]
     pub reftss: Option<PathBuf>,
 
     #[clap(
         long = "reftes",
-        help = "Reference TES sites in BED format for splice-site wobble comparison (optional)"
+        help_heading = "Guide Merge",
+        help = "Optional BED file of reference TES sites"
     )]
     pub reftes: Option<PathBuf>,
 
     #[clap(
-        short = 'D',
-        long = "wob-d-nc",
-        help = "Allowed donor-site wobble when attaching noncanonical transcripts to canonical backbones",
-        default_value_t = 3
-    )]
-    pub wob_d_nc: u32,
-
-    // Those
-    #[clap(
-        short = 'A',
-        long = "wob-a-nc",
-        help = "Allowed acceptor-site wobble when attaching noncanonical transcripts to canonical backbones",
-        default_value_t = 3
-    )]
-    pub wob_a_nc: u32,
-
-    #[clap(
-        short = 'U',
-        long = "wob-u-nc",
-        visible_alias = "wob_u_nc",
-        help = "Wobble for non canonical unstrand transcript",
-        default_value_t = 3
-    )]
-    pub wob_u_nc: u32,
-
-    #[clap(
         short = 'd',
         long = "wob-d",
-        visible_alias = "wob_d",
-        help = "Allowed donor-site wobble when merging canonical transcripts",
+        help_heading = "Canonical Transcript Merge",
+        help = "Donor wobble for canonical splice-junction merge",
         default_value_t = 0
     )]
     pub wob_d: u32,
@@ -134,8 +113,8 @@ pub struct MergeArgs {
     #[clap(
         short = 'a',
         long = "wob-a",
-        visible_alias = "wob_d",
-        help = "Allowed acceptor-site wobble when merging canonical transcripts",
+        help_heading = "Canonical Transcript Merge",
+        help = "Acceptor wobble for canonical splice-junction merge",
         default_value_t = 0
     )]
     pub wob_a: u32,
@@ -143,8 +122,8 @@ pub struct MergeArgs {
     #[clap(
         short = 'u',
         long = "wob-u",
-        visible_alias = "wob_u",
-        help = "Wobble for canonical unstrand transcript",
+        help_heading = "Canonical Transcript Merge",
+        help = "Wobble for unstranded canonical splice-junction merge",
         default_value_t = 3
     )]
     pub wob_u: u32,
@@ -152,8 +131,8 @@ pub struct MergeArgs {
     #[clap(
         short = 's',
         long = "tss-wob",
-        visible_alias = "tss_wob",
-        help = "Wobble for merging tss in canonical transcirpts",
+        help_heading = "Canonical Transcript Merge",
+        help = "TSS wobble for canonical terminal refinement",
         default_value_t = 50
     )]
     pub tss_wob: u32,
@@ -161,17 +140,54 @@ pub struct MergeArgs {
     #[clap(
         short = 'e',
         long = "tes-wob",
-        visible_alias = "tes_wob",
-        help = "Wobble for merging tes in canonical transcirpts",
+        help_heading = "Canonical Transcript Merge",
+        help = "TES wobble for canonical terminal refinement",
         default_value_t = 50
     )]
     pub tes_wob: u32,
 
     #[clap(
+        short = 't',
+        long = "terminal-merge",
+        help_heading = "Canonical Transcript Merge",
+        help = "How canonical groups are refined by TSS/TES",
+        value_enum,
+        default_value = "both"
+    )]
+    pub terminal_merge: TerminalMergeMode,
+
+    #[clap(
+        short = 'D',
+        long = "wob-d-nc",
+        help_heading = "Non-Canonical Transcript Merge",
+        help = "Donor wobble for non-canonical attachment/merge",
+        default_value_t = 3
+    )]
+    pub wob_d_nc: u32,
+
+    #[clap(
+        short = 'A',
+        long = "wob-a-nc",
+        help_heading = "Non-Canonical Transcript Merge",
+        help = "Acceptor wobble for non-canonical attachment/merge",
+        default_value_t = 3
+    )]
+    pub wob_a_nc: u32,
+
+    #[clap(
+        short = 'U',
+        long = "wob-u-nc",
+        help_heading = "Non-Canonical Transcript Merge",
+        help = "Wobble for unstranded non-canonical splice-junction merge",
+        default_value_t = 3
+    )]
+    pub wob_u_nc: u32,
+
+    #[clap(
         short = 'S',
         long = "tss-wob-nc",
-        visible_alias = "tss_wob_nc",
-        help = "Wobble for merging tss in non canonical transcirpts",
+        help_heading = "Non-Canonical Transcript Merge",
+        help = "TSS wobble for non-canonical terminal refinement",
         default_value_t = 50
     )]
     pub tss_wob_nc: u32,
@@ -179,35 +195,35 @@ pub struct MergeArgs {
     #[clap(
         short = 'E',
         long = "tes-wob-nc",
-        visible_alias = "tes_wob_nc",
-        help = "Wobble for merging tes in non canonical transcirpts",
+        help_heading = "Non-Canonical Transcript Merge",
+        help = "TES wobble for non-canonical terminal refinement",
         default_value_t = 50
     )]
     pub tes_wob_nc: u32,
 
     #[clap(
-        short = 't',
-        long = "terminal-merge",
-        visible_alias = "terminal_merge",
-        help = "Terminal merge mode for canonical transcirpts",
-        value_enum,
-        default_value = "both"
-    )]
-    pub terminal_merge: TerminalMergeMode,
-
-    #[clap(
         short = 'T',
         long = "terminal-merge-nc",
-        visible_alias = "terminal_merge_nc",
-        help = "Terminal merge mode for non canonical transcirpts",
+        help_heading = "Non-Canonical Transcript Merge",
+        help = "How non-canonical groups are refined by TSS/TES",
         value_enum,
         default_value = "both"
     )]
     pub terminal_merge_nc: TerminalMergeMode,
 
     #[clap(
+        long = "splice-policy",
+        help_heading = "Representative Selection",
+        help = "How to choose the representative splice junction",
+        value_enum,
+        default_value_t = MergePolicy::Major
+    )]
+    pub splice_policy: MergePolicy,
+
+    #[clap(
         long = "tss-policy",
-        help = "How to choose the representative TSS after transcripts have already been merged into one group",
+        help_heading = "Representative Selection",
+        help = "How to choose the representative TSS",
         value_enum,
         default_value_t = MergePolicy::Major
     )]
@@ -215,83 +231,62 @@ pub struct MergeArgs {
 
     #[clap(
         long = "tes-policy",
-        help = "How to choose the representative TES after transcripts have already been merged into one group",
+        help_heading = "Representative Selection",
+        help = "How to choose the representative TES",
         value_enum,
         default_value_t = MergePolicy::Major
     )]
     pub tes_policy: MergePolicy,
 
     #[clap(
-        long = "splice-policy",
-        help = "How to choose the representative splice junction after transcripts have already been merged into one group",
-        value_enum,
-        default_value_t = MergePolicy::Major
-    )]
-    pub splice_policy: MergePolicy,
-
-    #[clap(
-        long = "mono-ovlp",
-        help = "Minimum reciprocal overlap required for mono-exon merge",
-        default_value_t = 0.9
-    )]
-    pub mono_ovlp: f64,
-
-    #[clap(
         long = "mono-policy",
-        help = "How to choose the representative start and end for monon exon transcripts have already been merged into one group",
+        help_heading = "Representative Selection",
+        help = "How to choose the representative mono-exon boundary pair",
         value_enum,
         default_value_t = MergePolicy::Major
     )]
     pub mono_policy: MergePolicy,
 
     #[clap(
-        long = "unstranded-terminal-wobble",
-        visible_alias = "uterminalwob",
-        help = "Terminal wobble for unstranded transcripts",
-        default_value_t = 50
+        short = 'o',
+        long = "out",
+        help_heading = "Output",
+        help = "Output union GTF path"
     )]
-    pub unstrand_terminal_wob: u32,
+    pub out: PathBuf,
+
+    #[clap(
+        long = "mono-ovlp",
+        help_heading = "Other",
+        help = "Minimum reciprocal overlap for mono-exon merge",
+        default_value_t = 0.9
+    )]
+    pub mono_ovlp: f64,
 
     #[clap(
         long = "sx-max",
-        help = "Maximum exon length treated as a small-exon rescue candidate",
+        help_heading = "Other",
+        help = "Maximum exon length considered a small-exon rescue target",
         default_value_t = 15
     )]
     pub sx_max: u32,
 
     #[clap(
         long = "junc-diff",
-        help = "Maximum junction-count difference allowed for small-exon collapse rescue",
+        help_heading = "Other",
+        help = "Maximum junction-count difference for collapse rescue",
         default_value_t = 1
     )]
     pub junc_diff: u32,
 
     #[clap(
         long = "shift-rescue",
-        help = "Enable rescue when only local small-exon boundaries shift",
+        help_heading = "Other",
+        help = "Enable rescue for local small-exon boundary shifts",
         action = ArgAction::Set,
         default_value_t = true
     )]
     pub shift_rescue: bool,
-
-    #[clap(
-        long = "collapse-rescue",
-        help = "Enable rescue when one or a few small exons collapse or disappear",
-        action = ArgAction::Set,
-        default_value_t = false
-    )]
-    pub collapse_rescue: bool,
-
-    #[clap(
-        long = "hash-rescue",
-        help = "Require sequence or reference hash support before applying rescue rules",
-        action = ArgAction::Set,
-        default_value_t = true
-    )]
-    pub hash_rescue: bool,
-
-    #[clap(short = 'o', long = "out", help = "Union output gtf file")]
-    pub out: PathBuf,
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]

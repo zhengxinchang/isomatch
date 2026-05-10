@@ -19,7 +19,7 @@ index2: build
 
 merge: build
 	/usr/bin/time -v target/release/isomatch merge \
-		-o test/merge.gtf.gz --splice-policy major --tss-wob 400 --tes-wob 400 \
+		-o test/merge.gtf.gz --splice-policy major -d 3 -a 3 -s 200 -e 50\
 		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf \
 # 		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz \
 # 		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz  \

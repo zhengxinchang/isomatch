@@ -1,7 +1,4 @@
-use std::io::BufWriter;
-use std::io::Write;
-use std::{collections::HashSet, fs::File};
-
+use crate::constants::ISOM_GTF_SCHEMA;
 use crate::core::ptir::PTIR;
 use crate::core::tx_base::TxBase;
 use crate::core::tx_strand::ISOMSTRAND;
@@ -9,6 +6,9 @@ use crate::index::reader::ChromBlockReader;
 use crate::merge::policy::merge_cluster;
 use crate::utils::is_gzipped;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
+use std::io::BufWriter;
+use std::io::Write;
+use std::{collections::HashSet, fs::File};
 pub mod grouped_ptirs;
 pub mod merge_error;
 pub mod policy;
@@ -82,6 +82,8 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     };
 
     // init min-heap
+
+    add_output_header(&mut bufwriter, &args)?;
 
     // get chromsome names and get chromblockreader from all indexxreader, for each chromsome do:
     let mut global_scluster_id = 0u32;
@@ -252,4 +254,53 @@ impl Iterator for KwayMerger {
             }
         }
     }
+}
+pub fn add_output_header(bufwriter: &mut dyn Write, args: &MergeArgs) -> AnyResult<()> {
+    // ##ISOM <VERSION> version = 1.0; link = "github.."
+    // ##ISOM <SAMPLE> ID="S1"; Name="xxx.gtf.gz"
+    // ##ISOM <SAMPLE> ID="S2"; Name="xxx.gtf.gz"
+    // ##ISOM <FORMAT> ISOM_COUNT = ""
+    // ##ISOM <FORMAT> ISOM_SRC = ""
+    // ##ISOM <COMMAND> isomatch ...
+
+    let escape = |value: &str| value.replace('\\', "\\\\").replace('"', "\\\"");
+
+    writeln!(
+        bufwriter,
+        "##ISOM <VERSION> version=\"{}\"; program=\"{}\"; schema=\"{}\"",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_NAME"),
+        ISOM_GTF_SCHEMA
+    )?;
+
+    for (idx, input) in args.inputs.iter().enumerate() {
+        writeln!(
+            bufwriter,
+            "##ISOM <SAMPLE> id=\"S{}\"; input=\"{}\";",
+            idx + 1,
+            escape(&input.to_string_lossy())
+        )?;
+    }
+
+    writeln!(
+        bufwriter,
+        "##ISOM <FORMAT> ID=\"ISOM_COUNT\"; Description=\"number of source transcripts merged into this output transcript\";"
+    )?;
+    writeln!(
+        bufwriter,
+        "##ISOM <FORMAT> ID=\"ISOM_SRC\"; Description=\"comma-separated source transcript records in the form S#:tx_id:start:end:tx_type:donor_diff:acceptor_diff\";"
+    )?;
+    writeln!(
+        bufwriter,
+        "##ISOM <FORMAT> ID=\"ISOM_POLICY\"; Description=\"representative selection policies recorded as TX_EXON_TYPE:SJ_POLICY:TSS_POLICY:TES_POLICY:MONO_POLICY, with NA for non-applicable fields\";"
+    )?;
+
+    let command = std::env::args_os()
+        .map(|arg| escape(&arg.to_string_lossy()))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    writeln!(bufwriter, "##ISOM <COMMAND> cmd={}", command)?;
+
+    Ok(())
 }
