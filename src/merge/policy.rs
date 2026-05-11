@@ -3,6 +3,7 @@ use crate::{
     core::{ptir::PTIR, status::TxType, tx_strand::ISOMSTRAND},
     merge::{
         grouped_ptirs::{GroupedPTIR, GroupedPTIREntry},
+        guide::GuideDb,
         merge_error::MergeError,
     },
 };
@@ -11,10 +12,28 @@ use rustc_hash::FxHashMap;
 use serde::Serialize;
 
 #[derive(Copy, Clone, Debug, Serialize, ValueEnum)]
-pub enum MergePolicy {
+pub enum MergePolicyArg {
     Outer,
     Inner,
     Major,
+}
+
+#[derive(Copy, Clone, Debug, Serialize)]
+pub enum MergePolicyUsed {
+    Outer,
+    Inner,
+    Major,
+    Guide,
+}
+
+impl MergePolicyUsed {
+    pub fn from_arg_policy(arg_policy: &MergePolicyArg) -> Self {
+        match *arg_policy {
+            MergePolicyArg::Outer => MergePolicyUsed::Outer,
+            MergePolicyArg::Inner => MergePolicyUsed::Inner,
+            MergePolicyArg::Major => MergePolicyUsed::Major,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Serialize, ValueEnum)]
@@ -26,11 +45,14 @@ pub enum TerminalMergeMode {
 }
 
 pub fn merge_cluster(
+    chrom: &str,
     n_exon: u16,
     strand: ISOMSTRAND,
     cluster_idx: &Vec<usize>,
     scluster: &[PTIR],
     args: &MergeArgs,
+    guide_tss: &Option<GuideDb>,
+    guide_tes: &Option<GuideDb>,
 ) -> Result<Vec<GroupedPTIR>, MergeError> {
     // match strand {
     //     ISOMSTRAND::Plus | ISOMSTRAND::Minus | ISOMSTRAND::Unknown => {
@@ -63,9 +85,10 @@ pub fn merge_cluster(
 
         // furhter split grpptirs based on tss and tes in args
         let mut grpptirs: Vec<GroupedPTIR> = refine_canonical_grouped_ptir(grpptirs, &strand, args);
+
         // process the canonical
         for grpptir in grpptirs.iter_mut() {
-            grpptir.profile_canonical_ptirs(args)?;
+            grpptir.profile_canonical_ptirs(chrom, args, guide_tss, guide_tes)?;
         }
 
         // println!("noncanonical_vec:{:?}", &non_canonical_global_idxs,);
@@ -88,7 +111,7 @@ pub fn merge_cluster(
         let mut rest_grpptirs = refine_non_canonical_grouped_ptir(rest_grpptirs, &strand, args);
 
         for grpptir in rest_grpptirs.iter_mut() {
-            grpptir.profile_non_canonical_ptirs(args)?;
+            grpptir.profile_non_canonical_ptirs(chrom, args, guide_tss, guide_tes)?;
         }
 
         grpptirs.extend(rest_grpptirs.into_iter());
@@ -255,8 +278,8 @@ fn refine_grouped_entries_by_terminals(
         return vec![entries];
     }
 
-    entries.sort_by_key(|(_, left, right, _)| {
-        let (tss, tes) = entry_terminals(*left, *right, strand);
+    entries.sort_by_key(|entry| {
+        let (tss, tes) = entry_terminals(entry.left, entry.right, strand);
         (tss, tes)
     });
 
@@ -266,8 +289,7 @@ fn refine_grouped_entries_by_terminals(
     let mut anchor_tes = 0;
 
     for entry in entries {
-        let (_, left, right, _) = &entry;
-        let (curr_tss, curr_tes) = entry_terminals(*left, *right, strand);
+        let (curr_tss, curr_tes) = entry_terminals(entry.left, entry.right, strand);
 
         if current_group.is_empty() {
             anchor_tss = curr_tss;

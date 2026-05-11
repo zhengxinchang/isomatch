@@ -23,4 +23,7 @@ pub enum MergeError {
 
     #[error("Select representative failed")]
     SelectReprFailed,
+
+    #[error("Not same junction")]
+    NoSameJunction,
 }

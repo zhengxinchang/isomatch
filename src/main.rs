@@ -14,18 +14,16 @@ pub mod gtf;
 pub mod index;
 pub mod merge;
 pub mod traits;
-use crate::merge::policy::{MergePolicy, TerminalMergeMode};
+use crate::merge::policy::{MergePolicyArg, TerminalMergeMode};
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
     name = "isomatch",
     version = "0.1.0",
     author = "xinchang zheng <zhengxc93@gmail.com>",
-    about = "A versatile tool for isoform comparison and correction",
+    about = "Isoform comparison and correction tools",
     after_long_help = "
 
 > [Examples]
-
-
 
 
 "
@@ -45,14 +43,14 @@ pub enum Commands {
 
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
-    about = "Index GTF files with sequence information. This command is used by other subcommands, but can also be run independently.
+    about = "Build an indexed transcript set from a GTF and reference FASTA.
 "
 )]
 pub struct IndexArgs {
-    #[clap(help = "Input GTF file")]
+    #[clap(help = "Input GTF")]
     pub input: PathBuf,
 
-    #[clap(short = 'r', long = "reffa", help = "Reference FASTA file")]
+    #[clap(short = 'r', long = "reffa", help = "Reference FASTA")]
     pub reffa: PathBuf,
 
     // hide this because the tx seqs usually not have paried sequence.
@@ -63,49 +61,87 @@ pub struct IndexArgs {
     #[clap(
         short = 'o',
         long = "out",
-        help = "Output index file path; defaults to the input path with an .isomx suffix"
+        help = "Output index path; defaults to <input>.isomx"
     )]
     pub out: Option<PathBuf>,
+
+    #[clap(
+        long = "skip-missing-ref-chr",
+        action = ArgAction::SetTrue,
+        help = "Skip transcripts on seqids absent from the reference FASTA"
+    )]
+    pub skip_missing_ref_chr: bool,
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
-#[clap(about = "merge multiple indexed transcript sets into a union GTF")]
+#[clap(about = "Merge indexed transcript sets into a union GTF")]
 pub struct MergeArgs {
     #[clap(
         help_heading = "Input",
-        help = "Input transcript sets to merge",
+        help = "Indexed transcript sets to merge",
         required = true,
         num_args = 1..
     )]
     pub inputs: Vec<PathBuf>,
 
+    // #[clap(
+    //     short='l',
+    //     long="list",
+    //     help_heading = "Input",
+    //     help = "Input manifest file for multiple transcript sets to merge. override default input. Format path \t name(optional)",
+    //     required = false,
+    // )]
+
+    // pub inputs_list: Option<PathBuf>,
+    // #[clap(
+    //     short = 'r',
+    //     long = "refsites",
+    //     help_heading = "Guide Merge",
+    //     help = "Optional BED file of reference splice sites"
+    // )]
+    // pub refsites: Option<PathBuf>,
     #[clap(
-        short = 'r',
-        long = "refsites",
+        long = "guide-tss",
         help_heading = "Guide Merge",
-        help = "Optional BED file of reference splice sites"
+        help = "Guide TSS BED file"
     )]
-    pub refsites: Option<PathBuf>,
+    pub guide_tss: Option<PathBuf>,
 
     #[clap(
-        long = "reftss",
+        long = "guide-tes",
         help_heading = "Guide Merge",
-        help = "Optional BED file of reference TSS sites"
+        help = "Guide TES BED file"
     )]
-    pub reftss: Option<PathBuf>,
+    pub guide_tes: Option<PathBuf>,
 
     #[clap(
-        long = "reftes",
+        long = "guide-tss-flank",
         help_heading = "Guide Merge",
-        help = "Optional BED file of reference TES sites"
+        help = "TSS evidence search flank in bp; used only with --guide-tss",
+        default_value_t = 10
     )]
-    pub reftes: Option<PathBuf>,
+    pub guide_tss_flank: u32,
+
+    #[clap(
+        long = "guide-tes-flank",
+        help_heading = "Guide Merge",
+        help = "TES evidence search flank in bp; used only with --guide-tes",
+        default_value_t = 10
+    )]
+    pub guide_tes_flank: u32,
+
+    #[clap(
+        long = "chrmap",
+        help_heading = "Guide Merge",
+        help = "Chromosome name map (UCSC -> Ensembl); use when inputs lack chr prefixes"
+    )]
+    pub chrmap: Option<PathBuf>,
 
     #[clap(
         short = 'd',
         long = "wob-d",
         help_heading = "Canonical Transcript Merge",
-        help = "Donor wobble for canonical splice-junction merge",
+        help = "Canonical donor wobble in bp",
         default_value_t = 0
     )]
     pub wob_d: u32,
@@ -114,7 +150,7 @@ pub struct MergeArgs {
         short = 'a',
         long = "wob-a",
         help_heading = "Canonical Transcript Merge",
-        help = "Acceptor wobble for canonical splice-junction merge",
+        help = "Canonical acceptor wobble in bp",
         default_value_t = 0
     )]
     pub wob_a: u32,
@@ -123,7 +159,7 @@ pub struct MergeArgs {
         short = 'u',
         long = "wob-u",
         help_heading = "Canonical Transcript Merge",
-        help = "Wobble for unstranded canonical splice-junction merge",
+        help = "Canonical unstranded splice wobble in bp",
         default_value_t = 3
     )]
     pub wob_u: u32,
@@ -132,7 +168,7 @@ pub struct MergeArgs {
         short = 's',
         long = "tss-wob",
         help_heading = "Canonical Transcript Merge",
-        help = "TSS wobble for canonical terminal refinement",
+        help = "Canonical TSS wobble in bp",
         default_value_t = 50
     )]
     pub tss_wob: u32,
@@ -141,7 +177,7 @@ pub struct MergeArgs {
         short = 'e',
         long = "tes-wob",
         help_heading = "Canonical Transcript Merge",
-        help = "TES wobble for canonical terminal refinement",
+        help = "Canonical TES wobble in bp",
         default_value_t = 50
     )]
     pub tes_wob: u32,
@@ -150,7 +186,7 @@ pub struct MergeArgs {
         short = 't',
         long = "terminal-merge",
         help_heading = "Canonical Transcript Merge",
-        help = "How canonical groups are refined by TSS/TES",
+        help = "Canonical terminal merge mode",
         value_enum,
         default_value = "both"
     )]
@@ -160,7 +196,7 @@ pub struct MergeArgs {
         short = 'D',
         long = "wob-d-nc",
         help_heading = "Non-Canonical Transcript Merge",
-        help = "Donor wobble for non-canonical attachment/merge",
+        help = "Non-canonical donor wobble in bp",
         default_value_t = 3
     )]
     pub wob_d_nc: u32,
@@ -169,7 +205,7 @@ pub struct MergeArgs {
         short = 'A',
         long = "wob-a-nc",
         help_heading = "Non-Canonical Transcript Merge",
-        help = "Acceptor wobble for non-canonical attachment/merge",
+        help = "Non-canonical acceptor wobble in bp",
         default_value_t = 3
     )]
     pub wob_a_nc: u32,
@@ -178,7 +214,7 @@ pub struct MergeArgs {
         short = 'U',
         long = "wob-u-nc",
         help_heading = "Non-Canonical Transcript Merge",
-        help = "Wobble for unstranded non-canonical splice-junction merge",
+        help = "Non-canonical unstranded splice wobble in bp",
         default_value_t = 3
     )]
     pub wob_u_nc: u32,
@@ -187,7 +223,7 @@ pub struct MergeArgs {
         short = 'S',
         long = "tss-wob-nc",
         help_heading = "Non-Canonical Transcript Merge",
-        help = "TSS wobble for non-canonical terminal refinement",
+        help = "Non-canonical TSS wobble in bp",
         default_value_t = 50
     )]
     pub tss_wob_nc: u32,
@@ -196,7 +232,7 @@ pub struct MergeArgs {
         short = 'E',
         long = "tes-wob-nc",
         help_heading = "Non-Canonical Transcript Merge",
-        help = "TES wobble for non-canonical terminal refinement",
+        help = "Non-canonical TES wobble in bp",
         default_value_t = 50
     )]
     pub tes_wob_nc: u32,
@@ -205,7 +241,7 @@ pub struct MergeArgs {
         short = 'T',
         long = "terminal-merge-nc",
         help_heading = "Non-Canonical Transcript Merge",
-        help = "How non-canonical groups are refined by TSS/TES",
+        help = "Non-canonical terminal merge mode",
         value_enum,
         default_value = "both"
     )]
@@ -214,44 +250,44 @@ pub struct MergeArgs {
     #[clap(
         long = "splice-policy",
         help_heading = "Representative Selection",
-        help = "How to choose the representative splice junction",
+        help = "Representative splice-junction policy",
         value_enum,
-        default_value_t = MergePolicy::Major
+        default_value_t = MergePolicyArg::Major
     )]
-    pub splice_policy: MergePolicy,
+    pub splice_policy: MergePolicyArg,
 
     #[clap(
         long = "tss-policy",
         help_heading = "Representative Selection",
-        help = "How to choose the representative TSS",
+        help = "Representative TSS policy",
         value_enum,
-        default_value_t = MergePolicy::Major
+        default_value_t = MergePolicyArg::Major
     )]
-    pub tss_policy: MergePolicy,
+    pub tss_policy: MergePolicyArg,
 
     #[clap(
         long = "tes-policy",
         help_heading = "Representative Selection",
-        help = "How to choose the representative TES",
+        help = "Representative TES policy",
         value_enum,
-        default_value_t = MergePolicy::Major
+        default_value_t = MergePolicyArg::Major
     )]
-    pub tes_policy: MergePolicy,
+    pub tes_policy: MergePolicyArg,
 
     #[clap(
         long = "mono-policy",
         help_heading = "Representative Selection",
-        help = "How to choose the representative mono-exon boundary pair",
+        help = "Representative mono-exon boundary policy",
         value_enum,
-        default_value_t = MergePolicy::Major
+        default_value_t = MergePolicyArg::Major
     )]
-    pub mono_policy: MergePolicy,
+    pub mono_policy: MergePolicyArg,
 
     #[clap(
         short = 'o',
         long = "out",
         help_heading = "Output",
-        help = "Output union GTF path"
+        help = "Output union GTF"
     )]
     pub out: PathBuf,
 
@@ -266,7 +302,7 @@ pub struct MergeArgs {
     #[clap(
         long = "sx-max",
         help_heading = "Other",
-        help = "Maximum exon length considered a small-exon rescue target",
+        help = "Max exon length for small-exon rescue",
         default_value_t = 15
     )]
     pub sx_max: u32,
@@ -274,7 +310,7 @@ pub struct MergeArgs {
     #[clap(
         long = "junc-diff",
         help_heading = "Other",
-        help = "Maximum junction-count difference for collapse rescue",
+        help = "Max junction-count difference for collapse rescue",
         default_value_t = 1
     )]
     pub junc_diff: u32,
@@ -282,7 +318,7 @@ pub struct MergeArgs {
     #[clap(
         long = "shift-rescue",
         help_heading = "Other",
-        help = "Enable rescue for local small-exon boundary shifts",
+        help = "Enable local small-exon shift rescue",
         action = ArgAction::Set,
         default_value_t = true
     )]
@@ -293,27 +329,19 @@ pub struct MergeArgs {
 #[clap(about = "Annotate query transcripts with a reference annotation
 ")]
 pub struct AnnotateArgs {
-    #[clap(help = "Input GTF file to annotate")]
+    #[clap(help = "Query GTF")]
     pub input: PathBuf,
 
-    #[clap(
-        short = 'r',
-        long = "annotation",
-        help = "Reference annotation GTF file"
-    )]
+    #[clap(short = 'r', long = "annotation", help = "Reference annotation GTF")]
     pub annotation: PathBuf,
 
-    #[clap(
-        short = 'o',
-        long = "out",
-        help = "Output GTF file with classification results"
-    )]
+    #[clap(short = 'o', long = "out", help = "Output annotated GTF")]
     pub out: PathBuf,
 
     #[clap(
         short = 'c',
         long = "classification",
-        help = "Classification system to use (squant3, gffcompare, both), default is 'both'",
+        help = "Classification mode: squant3, gffcompare, or both",
         default_value = "both"
     )]
     pub classification: String,
@@ -328,21 +356,19 @@ fn main() {
             command: Commands::Index(mut args),
         } => {
             greetings2(&args);
-            run_index(&mut args)
-                .map_err(|e| {
-                    error!("{}", e);
-                })
-                .expect("Exit...");
+            if let Err(e) = run_index(&mut args) {
+                error!("{}", e);
+                std::process::exit(1);
+            }
         }
         Cli {
             command: Commands::Merge(args),
         } => {
             greetings2(&args);
-            run_merge(args)
-                .map_err(|e| {
-                    error!("{}", e);
-                })
-                .expect("Exit...");
+            if let Err(e) = run_merge(args) {
+                error!("{}", e);
+                std::process::exit(1);
+            }
         }
         // Cli {
         //     command: Commands::Bench(args),

@@ -3,6 +3,7 @@ use crate::core::ptir::PTIR;
 use crate::core::tx_base::TxBase;
 use crate::core::tx_strand::ISOMSTRAND;
 use crate::index::reader::ChromBlockReader;
+use crate::merge::guide::GuideDb;
 use crate::merge::policy::merge_cluster;
 use crate::utils::is_gzipped;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
@@ -10,6 +11,7 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::{collections::HashSet, fs::File};
 pub mod grouped_ptirs;
+pub mod guide;
 pub mod merge_error;
 pub mod policy;
 use anyhow::Context;
@@ -33,7 +35,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     // open all files (isomx) into a vec
     args.validate();
     let n_inputs = args.inputs.len();
-    info!("Loading {n_inputs} gtf(s)...");
+    info!("Loading {n_inputs} gtf(s)");
     let mut fhs: Vec<IndexReader> = Vec::with_capacity(n_inputs);
     for (file_id, input_path) in args.inputs.iter().enumerate() {
         let mut index_path = input_path.clone();
@@ -56,7 +58,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         fhs.push(reader);
     }
 
-    info!("Loading chromosome names...");
+    info!("Loading chromosome names");
     // collect all chromsome from all files and build a unique list
     let mut chrom_names = Vec::new();
     let mut seen_chroms = HashSet::new();
@@ -67,6 +69,28 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             }
         }
     }
+
+    // load the guide files if provided
+
+    let guide_tss_index = if let Some(tss_p) = args.guide_tss.clone() {
+        Some(GuideDb::from_bed_path(
+            tss_p,
+            guide::GuideBEDType::Tss,
+            &args.chrmap,
+        )?)
+    } else {
+        None
+    };
+
+    let guide_tes_index = if let Some(tes_p) = args.guide_tes.clone() {
+        Some(GuideDb::from_bed_path(
+            tes_p,
+            guide::GuideBEDType::Tes,
+            &args.chrmap,
+        )?)
+    } else {
+        None
+    };
 
     // choose if output should be gzipped based on the suffix of the output
 
@@ -127,6 +151,8 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
                 &mut global_tx_id,
                 &args,
                 bufwriter.as_mut(),
+                &guide_tss_index,
+                &guide_tes_index,
             )?;
             super_cluster.clear();
             cluster_max_end = ptir.end;
@@ -141,6 +167,8 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             &mut global_tx_id,
             &args,
             bufwriter.as_mut(),
+            &guide_tss_index,
+            &guide_tes_index,
         )?;
 
         // report to unified GTF
@@ -163,6 +191,8 @@ pub fn process_super_cluster(
     global_tx_id: &mut u32,
     args: &MergeArgs,
     bufwriter: &mut dyn Write,
+    guide_tss: &Option<GuideDb>,
+    guide_tes: &Option<GuideDb>,
 ) -> Result<(), MergeError> {
     // println!("super cluster size {}", super_cluster.len());
     *global_scluster_id += 1;
@@ -186,7 +216,16 @@ pub fn process_super_cluster(
 
     // process each junc cluster
     for ((strand, n_exons), sclu_idxs) in cluster_items {
-        let mut grpptirs = merge_cluster(*n_exons, *strand, sclu_idxs, super_cluster, args)?;
+        let mut grpptirs = merge_cluster(
+            chrom_name,
+            *n_exons,
+            *strand,
+            sclu_idxs,
+            super_cluster,
+            args,
+            guide_tss,
+            guide_tes,
+        )?;
 
         for grpptir in grpptirs.iter_mut() {
             *global_tx_id += 1;
@@ -284,15 +323,20 @@ pub fn add_output_header(bufwriter: &mut dyn Write, args: &MergeArgs) -> AnyResu
 
     writeln!(
         bufwriter,
+        "##ISOM <FORMAT> ID=\"ISOM_EXONS\"; Description=\"number of exons for this transcript\";"
+    )?;
+
+    writeln!(
+        bufwriter,
         "##ISOM <FORMAT> ID=\"ISOM_COUNT\"; Description=\"number of source transcripts merged into this output transcript\";"
     )?;
     writeln!(
         bufwriter,
-        "##ISOM <FORMAT> ID=\"ISOM_SRC\"; Description=\"comma-separated source transcript records in the form S#:tx_id:start:end:tx_type:donor_diff:acceptor_diff\";"
+        "##ISOM <FORMAT> ID=\"ISOM_SRC\"; Description=\"vertical line separated source transcript records in the form S#:tx_id:start:end:tx_type:donor_diff:acceptor_diff:(exon_number,left_offset,right_offset),(exon_number,left_offset,right_offset)... Only exons has difference will be shown.\";"
     )?;
     writeln!(
         bufwriter,
-        "##ISOM <FORMAT> ID=\"ISOM_POLICY\"; Description=\"representative selection policies recorded as TX_EXON_TYPE:SJ_POLICY:TSS_POLICY:TES_POLICY:MONO_POLICY, with NA for non-applicable fields\";"
+        "##ISOM <FORMAT> ID=\"ISOM_REPR_POLICY\"; Description=\"representative selection policies recorded as SJ_POLICY:TSS_POLICY:TES_POLICY:MONO_POLICY, with NA for non-applicable fields\";"
     )?;
 
     let command = std::env::args_os()

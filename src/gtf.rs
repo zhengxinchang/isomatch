@@ -8,15 +8,14 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{core::tx_strand::ISOMSTRAND, utils::open_file_bufread};
 use thiserror::Error;
 
-/// Scan the GTF once to collect ordered unique chrom names (transcript lines only).
-/// Returns an error if the GTF is not sorted by chrom then by start position.
+/// Scan the GTF once to collect ordered unique chrom names from transcript lines.
+/// Returns an error if transcript records are not grouped by chromosome.
 pub fn profile_gtf<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<String>, GTFError> {
     let mut bufreader = open_file_bufread(path).map_err(|_| GTFError::IoError {})?;
     let mut line = String::new();
     let mut chrom_set: FxHashSet<String> = FxHashSet::default();
     let mut chrom_names: Vec<String> = Vec::new();
     let mut prev_chrom = String::new();
-    let mut prev_start = 0u32;
     let mut line_no = 0usize;
 
     while let Ok(n) = bufreader.read_line(&mut line) {
@@ -43,8 +42,7 @@ pub fn profile_gtf<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<String>, GT
             continue;
         }
 
-        let start = cols
-            .next()
+        cols.next()
             .ok_or(GTFError::InvalidGTFFormat { line_no })?
             .parse::<u32>()
             .map_err(|_| GTFError::InvalidGTFFormat { line_no })?;
@@ -53,10 +51,6 @@ pub fn profile_gtf<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<String>, GT
             if chrom_set.contains(&chrom_name) {
                 return Err(GTFError::UnsortedGTF { line: line });
             }
-            prev_start = 0;
-        }
-        if chrom_name == prev_chrom && prev_start > start {
-            return Err(GTFError::UnsortedGTF { line: line });
         }
 
         if !chrom_set.contains(&chrom_name) {
@@ -64,7 +58,6 @@ pub fn profile_gtf<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<String>, GT
             chrom_names.push(chrom_name.clone());
         }
         prev_chrom = chrom_name;
-        prev_start = start;
         line.clear();
     }
 
@@ -435,7 +428,7 @@ pub enum GTFError {
 
 #[cfg(test)]
 mod tests {
-    use super::MyGTFReader;
+    use super::{GTFError, MyGTFReader, profile_gtf};
     use flate2::{Compression, write::GzEncoder};
     use std::{
         fs::{self, File},
@@ -526,6 +519,60 @@ mod tests {
         assert_eq!(records[0].exons, vec![(1, 10), (41, 50)]);
         assert_eq!(records[1].tx_id, "tx2");
         assert_eq!(records[1].exons, vec![(11, 20), (31, 40)]);
+
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn profile_gtf_accepts_transcript_start_regressions_within_chromosome() {
+        let path = unique_temp_path("gtf");
+        let content = concat!(
+            "chr1\tsrc\ttranscript\t200\t300\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
+            "chr1\tsrc\ttranscript\t100\t150\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
+            "chr2\tsrc\ttranscript\t10\t50\t.\t+\t.\tgene_id \"g3\"; transcript_id \"tx3\";\n",
+        );
+        write_plain_gtf(&path, content);
+
+        let chrom_names = profile_gtf(&path).unwrap();
+
+        assert_eq!(chrom_names, vec!["chr1".to_string(), "chr2".to_string()]);
+
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn profile_gtf_rejects_repeated_chromosome_blocks() {
+        let path = unique_temp_path("gtf");
+        let content = concat!(
+            "chr1\tsrc\ttranscript\t100\t150\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
+            "chr2\tsrc\ttranscript\t10\t50\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
+            "chr1\tsrc\ttranscript\t200\t300\t.\t+\t.\tgene_id \"g3\"; transcript_id \"tx3\";\n",
+        );
+        write_plain_gtf(&path, content);
+
+        let err = profile_gtf(&path).unwrap_err();
+
+        match err {
+            GTFError::UnsortedGTF { line } => assert!(line.starts_with("chr1\tsrc\ttranscript")),
+            other => panic!("expected UnsortedGTF, got {other:?}"),
+        }
+
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn profile_gtf_ignores_non_transcript_ordering() {
+        let path = unique_temp_path("gtf");
+        let content = concat!(
+            "chr1\tsrc\ttranscript\t100\t200\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
+            "chr2\tsrc\texon\t10\t20\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
+            "chr2\tsrc\ttranscript\t50\t100\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
+        );
+        write_plain_gtf(&path, content);
+
+        let chrom_names = profile_gtf(&path).unwrap();
+
+        assert_eq!(chrom_names, vec!["chr1".to_string(), "chr2".to_string()]);
 
         fs::remove_file(path).unwrap();
     }

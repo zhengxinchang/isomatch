@@ -367,11 +367,12 @@ impl ChromBlockBuilder {
                     gtf_tx.end as usize,
                     true,
                 )
-                .map_err(|e: crate::fasta::FastaError| IndexError::FetchSeq {
-                    reason: e.to_string(),
+                .map_err(|e| IndexError::FetchSeqFailed {
+                    reason: format!(
+                        "Can not fetch reference sequence for transcript {} on {}:{}-{}: {}",
+                        gtf_tx.tx_id, gtf_tx.chrom, gtf_tx.start, gtf_tx.end, e
+                    ),
                 })?;
-
-            // println!("{:?}",reference_seq);
 
             let mut exon_offsets: Vec<(u32, u32)> = gtf_tx.get_0based_exon_relative_offset();
 
@@ -397,7 +398,7 @@ impl ChromBlockBuilder {
 
             let left_exon = exon_offsets
                 .first_mut()
-                .ok_or_else(|| IndexError::FetchSeq {
+                .ok_or_else(|| IndexError::FetchSeqFailed {
                     reason: "Can not obtain the frst exon".to_string(),
                 })?;
             if (left_exon.1 - left_exon.0) > 3 {
@@ -406,7 +407,7 @@ impl ChromBlockBuilder {
 
             let right_exon = exon_offsets
                 .last_mut()
-                .ok_or_else(|| IndexError::FetchSeq {
+                .ok_or_else(|| IndexError::FetchSeqFailed {
                     reason: "Can not obain the last exon".to_string(),
                 })?;
 
@@ -449,16 +450,16 @@ impl ChromBlockBuilder {
 
                     if sequence.len() != tx_seq_len {
                         dbg!(&gtf_tx);
-                        return Err(IndexError::FetchSeq {
+                        return Err(IndexError::FetchSeqFailed {
                             reason: format!("Actual sequence length ({}) is not equal to GTF derived sequence length ({}). Affected transcript {}",sequence.len(),tx_seq_len,gtf_tx.tx_id).to_string()
                         });
                     }
 
-                    let first_exon = gtf_tx.exons.first().ok_or(IndexError::FetchSeq {
+                    let first_exon = gtf_tx.exons.first().ok_or(IndexError::FetchSeqFailed {
                         reason: "No exons found".to_string(),
                     })?;
 
-                    let last_exon = gtf_tx.exons.last().ok_or(IndexError::FetchSeq {
+                    let last_exon = gtf_tx.exons.last().ok_or(IndexError::FetchSeqFailed {
                         reason: "No exons found".to_string(),
                     })?;
 

@@ -13,8 +13,8 @@ pub enum IndexError {
     #[error("Failed to add GTFTx {id} to StringPool. Reason: {reason}")]
     StringPoolAdd { id: String, reason: String },
 
-    #[error("Failed to fetch sequence. Reason: {reason}")]
-    FetchSeq { reason: String },
+    #[error("Failed to fetch sequence from the Fasta file. Reason: {reason}")]
+    FetchSeqFailed { reason: String },
 
     #[error(transparent)]
     Fasta(#[from] FastaError),

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use anyhow::Context;
-use log::{error, info};
+use anyhow::{Context, bail};
+use log::{error, info, warn};
 use serde::Serialize;
 
 use crate::{
@@ -23,6 +23,11 @@ pub mod reader;
 pub struct IndexStats {
     pub transcript_count: u64,
     pub gene_count: u64,
+    pub skipped_transcript_count: u64,
+    pub skipped_gene_count: u64,
+    pub skipped_missing_ref_seqid_count: u64,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub skipped_missing_ref_seqids: Vec<String>,
     pub plus_strand_count: u64,
     pub minus_strand_count: u64,
     pub unknown_strand_count: u64,
@@ -34,6 +39,8 @@ pub struct IndexStats {
     pub canonical_junction_ratio: f64,
     #[serde(skip_serializing)]
     gene_ids: HashSet<String>,
+    #[serde(skip_serializing)]
+    skipped_gene_ids: HashSet<String>,
 }
 
 impl IndexStats {
@@ -68,8 +75,19 @@ impl IndexStats {
         self.noncanonical_junction_count += junction_count - canonical_junction_count;
     }
 
+    pub fn observe_skipped_tx(&mut self, gene_id: &str) {
+        self.skipped_transcript_count += 1;
+        self.skipped_gene_ids.insert(gene_id.to_string());
+    }
+
+    pub fn note_skipped_ref_seqids(&mut self, seqids: Vec<String>) {
+        self.skipped_missing_ref_seqid_count = seqids.len() as u64;
+        self.skipped_missing_ref_seqids = seqids;
+    }
+
     pub fn finalize(&mut self) {
         self.gene_count = self.gene_ids.len() as u64;
+        self.skipped_gene_count = self.skipped_gene_ids.len() as u64;
         self.canonical_junction_ratio = if self.junction_count == 0 {
             0.0
         } else {
@@ -169,7 +187,42 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
     let md5 = crate::utils::checksum_file(&args.input)
         .expect("Can not read gtf file for checksum")
         .0;
-    let chrom_names = profile_gtf(&args.input).expect("Can not profile GTF file");
+    let profiled_chrom_names = profile_gtf(&args.input)
+        .with_context(|| format!("Can not profile GTF file: {}", args.input.display()))?;
+
+    let missing_ref_seqids: Vec<String> = profiled_chrom_names
+        .iter()
+        .filter(|chrom| !ref_far.contains(chrom))
+        .cloned()
+        .collect();
+
+    if !missing_ref_seqids.is_empty() {
+        if args.skip_missing_ref_chr {
+            for seqid in &missing_ref_seqids {
+                warn!(
+                    "Reference FASTA is missing seqid '{}'; transcripts on this seqid will be skipped",
+                    seqid
+                );
+            }
+            stats.note_skipped_ref_seqids(missing_ref_seqids.clone());
+        } else {
+            bail!(
+                "Reference FASTA is missing {} seqid(s) required by the GTF: {}. Rerun with --skip-missing-ref-seqids to warn and skip these transcripts.",
+                missing_ref_seqids.len(),
+                missing_ref_seqids.join(", ")
+            );
+        }
+    }
+
+    let missing_ref_seqid_set: HashSet<String> = missing_ref_seqids.into_iter().collect();
+    let chrom_names: Vec<String> = profiled_chrom_names
+        .into_iter()
+        .filter(|chrom| !missing_ref_seqid_set.contains(chrom))
+        .collect();
+
+    if chrom_names.is_empty() {
+        bail!("No indexable seqids remain after filtering against the reference FASTA");
+    }
 
     let output_path = if let Some(out) = &args.out {
         out.clone()
@@ -204,9 +257,21 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
                 builder.add_chrom(cb)?;
             }
             current_chrom = tx_record.chrom.clone();
-            chrom_id += 1;
-            chrom_block = Some(ChromBlockBuilder::init(chrom_id));
-            info!("Processing chromosome {}", &current_chrom);
+            if missing_ref_seqid_set.contains(&current_chrom) {
+                info!(
+                    "Skipping chromosome {} because it is absent from the reference FASTA",
+                    &current_chrom
+                );
+                chrom_block = None;
+            } else {
+                chrom_id += 1;
+                chrom_block = Some(ChromBlockBuilder::init(chrom_id));
+                info!("Processing chromosome {}", &current_chrom);
+            }
+        }
+        if missing_ref_seqid_set.contains(&tx_record.chrom) {
+            stats.observe_skipped_tx(&tx_record.gene_id);
+            continue;
         }
         chrom_block
             .as_mut()

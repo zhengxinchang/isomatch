@@ -31,18 +31,6 @@ other feature
 
 ## multi exon & plus minus strand
 
-    wobble sj
-
-    wobble tss tes 
-
-    splice site canonical or not 
-
-    guided splice junction
-    guided tss tes
-
-    ref squence hash for rescue tx 
-
-    sample sequence hash for ?? 
 
 ## multi exon unstrand
 
@@ -51,9 +39,32 @@ other feature
 ## mono exon unstrand
 
 
+guide 模式不是annotate，将merge之后的转录本合并到参考转录本，而是用第三方证据例如fantom5的tss tes motif，或者isopedia的population-scale的splice junction evidence来指导merge的过程。
+
+
 guided 会默认比其他policy 更优先，
 如果guidesd失败，则还是会选择policy，所以policy是一直存在的。
 
 
+guide bed 的格式
+
+chr start end stand score
+
 case1
-合并long read RNA，都是canonical 有1-2bp的差异，则合并？ 
+合并long read RNA，都是canonical 有1-2bp的差异，则合并？
+
+
+Merge 和 Annotate 都不应该修改转录本的任何坐标，
+guided模式在merge中的作用是帮助选择representatibve sites。
+
+merge 和 refine 是为了确定哪些转录本应该是一个， guide 是为了帮助选择代表性的转录本。这两个是分开的步骤。
+
+
+smallexon rescue 应该是一个单独的功能或者整合到correct（refine）中，因为涉及到对转录本的修改。
+
+what is missing in merge
+stats
+guide 
+ISOM_COUNT --> ISOM_TX_CNT plus ISOM_SMPLE_CNT
+
+ISOM_EXONS 直接显示数字，而不是擅自分类
