@@ -739,338 +739,258 @@ fn select_repr_terminals(
     guide_tss_flank: u32,
     guide_tes_flank: u32,
 ) -> Result<((u32, u32), (MergePolicyUsed, MergePolicyUsed)), MergeError> {
-    let tss_positions = collect_tss_positions(entries, strand);
-    let tes_positions = collect_tes_positions(entries, strand);
-    let select_entry_by_policy = |candidate_indices: &[usize]| -> Result<
-        (usize, MergePolicyUsed, MergePolicyUsed),
-        MergeError,
-    > {
-        if candidate_indices.is_empty() {
-            return Err(MergeError::SelectReprFailed);
-        }
+    let tss_pos = collect_tss_positions(entries, strand);
+    let tes_pos = collect_tes_positions(entries, strand);
 
-        let mut tss_counts: FxHashMap<u32, usize> = FxHashMap::default();
-        let mut tes_counts: FxHashMap<u32, usize> = FxHashMap::default();
-        for &idx in candidate_indices {
-            *tss_counts.entry(tss_positions[idx]).or_insert(0) += 1;
-            *tes_counts.entry(tes_positions[idx]).or_insert(0) += 1;
-        }
+    // Step 1: compute guide hit counts for every entry up front
+    let (tss_hits, tes_hits): (Vec<usize>, Vec<usize>) = (0..entries.len())
+        .map(|i| {
+            let t = guide_tss.as_ref().map_or(0, |g| {
+                g.query_overlaps_with_flank(chrom, strand, tss_pos[i], guide_tss_flank)
+                    .len()
+            });
+            let e = guide_tes.as_ref().map_or(0, |g| {
+                g.query_overlaps_with_flank(chrom, strand, tes_pos[i], guide_tes_flank)
+                    .len()
+            });
+            (t, e)
+        })
+        .unzip();
 
-        let max_tss_count = tss_counts.values().copied().max().unwrap_or(0);
-        let max_tes_count = tes_counts.values().copied().max().unwrap_or(0);
-        let unique_tss_major = tss_counts
-            .values()
-            .filter(|&&count| count == max_tss_count)
-            .count()
-            == 1;
-        let unique_tes_major = tes_counts
-            .values()
-            .filter(|&&count| count == max_tes_count)
-            .count()
-            == 1;
+    // Step 2: classify entries by guide support
+    let full_guided: Vec<usize> = (0..entries.len())
+        .filter(|&i| {
+            guide_tss.is_some() && guide_tes.is_some() && tss_hits[i] > 0 && tes_hits[i] > 0
+        })
+        .collect();
 
-        let used_tss_policy = match tss_policy {
-            MergePolicyArg::Outer => MergePolicyUsed::Outer,
-            MergePolicyArg::Inner => MergePolicyUsed::Inner,
-            MergePolicyArg::Major => {
-                if unique_tss_major {
-                    MergePolicyUsed::Major
-                } else {
-                    MergePolicyUsed::Outer
-                }
-            }
-        };
-        let used_tes_policy = match tes_policy {
-            MergePolicyArg::Outer => MergePolicyUsed::Outer,
-            MergePolicyArg::Inner => MergePolicyUsed::Inner,
-            MergePolicyArg::Major => {
-                if unique_tes_major {
-                    MergePolicyUsed::Major
-                } else {
-                    MergePolicyUsed::Outer
-                }
-            }
-        };
+    let partial_guided: Vec<usize> = (0..entries.len())
+        .filter(|&i| tss_hits[i] > 0 || tes_hits[i] > 0)
+        .collect();
 
-        let mut best_idx = candidate_indices[0];
-        for &idx in candidate_indices.iter().skip(1) {
-            let best_tss = tss_positions[best_idx];
-            let curr_tss = tss_positions[idx];
-            let best_tss_count = *tss_counts.get(&best_tss).unwrap_or(&0);
-            let curr_tss_count = *tss_counts.get(&curr_tss).unwrap_or(&0);
+    // Step 3: select representative in priority order
 
-            let curr_better_on_tss = match tss_policy {
-                MergePolicyArg::Outer => {
-                    if tss_is_left_boundary(strand) {
-                        curr_tss < best_tss
-                    } else {
-                        curr_tss > best_tss
-                    }
-                }
-                MergePolicyArg::Inner => {
-                    if tss_is_left_boundary(strand) {
-                        curr_tss > best_tss
-                    } else {
-                        curr_tss < best_tss
-                    }
-                }
-                MergePolicyArg::Major => {
-                    if curr_tss_count != best_tss_count {
-                        curr_tss_count > best_tss_count
-                    } else if tss_is_left_boundary(strand) {
-                        curr_tss < best_tss
-                    } else {
-                        curr_tss > best_tss
-                    }
-                }
-            };
-            let best_better_on_tss = match tss_policy {
-                MergePolicyArg::Outer => {
-                    if tss_is_left_boundary(strand) {
-                        best_tss < curr_tss
-                    } else {
-                        best_tss > curr_tss
-                    }
-                }
-                MergePolicyArg::Inner => {
-                    if tss_is_left_boundary(strand) {
-                        best_tss > curr_tss
-                    } else {
-                        best_tss < curr_tss
-                    }
-                }
-                MergePolicyArg::Major => {
-                    if best_tss_count != curr_tss_count {
-                        best_tss_count > curr_tss_count
-                    } else if tss_is_left_boundary(strand) {
-                        best_tss < curr_tss
-                    } else {
-                        best_tss > curr_tss
-                    }
-                }
-            };
-
-            if curr_better_on_tss && !best_better_on_tss {
-                best_idx = idx;
-                continue;
-            }
-            if best_better_on_tss && !curr_better_on_tss {
-                continue;
-            }
-
-            let best_tes = tes_positions[best_idx];
-            let curr_tes = tes_positions[idx];
-            let best_tes_count = *tes_counts.get(&best_tes).unwrap_or(&0);
-            let curr_tes_count = *tes_counts.get(&curr_tes).unwrap_or(&0);
-
-            let curr_better_on_tes = match tes_policy {
-                MergePolicyArg::Outer => {
-                    if tes_is_left_boundary(strand) {
-                        curr_tes < best_tes
-                    } else {
-                        curr_tes > best_tes
-                    }
-                }
-                MergePolicyArg::Inner => {
-                    if tes_is_left_boundary(strand) {
-                        curr_tes > best_tes
-                    } else {
-                        curr_tes < best_tes
-                    }
-                }
-                MergePolicyArg::Major => {
-                    if curr_tes_count != best_tes_count {
-                        curr_tes_count > best_tes_count
-                    } else if tes_is_left_boundary(strand) {
-                        curr_tes < best_tes
-                    } else {
-                        curr_tes > best_tes
-                    }
-                }
-            };
-            let best_better_on_tes = match tes_policy {
-                MergePolicyArg::Outer => {
-                    if tes_is_left_boundary(strand) {
-                        best_tes < curr_tes
-                    } else {
-                        best_tes > curr_tes
-                    }
-                }
-                MergePolicyArg::Inner => {
-                    if tes_is_left_boundary(strand) {
-                        best_tes > curr_tes
-                    } else {
-                        best_tes < curr_tes
-                    }
-                }
-                MergePolicyArg::Major => {
-                    if best_tes_count != curr_tes_count {
-                        best_tes_count > curr_tes_count
-                    } else if tes_is_left_boundary(strand) {
-                        best_tes < curr_tes
-                    } else {
-                        best_tes > curr_tes
-                    }
-                }
-            };
-
-            if curr_better_on_tes && !best_better_on_tes {
-                best_idx = idx;
-                continue;
-            }
-
-            // FIXED RULE: transcript-level policy fallback compares TSS first, then TES.
-            // If both sides are still tied, keep the earliest transcript in input order.
-        }
-
-        Ok((best_idx, used_tss_policy, used_tes_policy))
-    };
-
-    let mut both_guided_indices = Vec::new();
-    let mut any_guided_indices = Vec::new();
-    let mut tss_hit_counts = vec![0usize; entries.len()];
-    let mut tes_hit_counts = vec![0usize; entries.len()];
-
-    for (idx, _) in entries.iter().enumerate() {
-        let tss_hits = if let Some(tss_guide) = guide_tss {
-            tss_guide
-                .query_overlaps_with_flank(chrom, strand, tss_positions[idx], guide_tss_flank)
-                .len()
-        } else {
-            0
-        };
-        let tes_hits = if let Some(tes_guide) = guide_tes {
-            tes_guide
-                .query_overlaps_with_flank(chrom, strand, tes_positions[idx], guide_tes_flank)
-                .len()
-        } else {
-            0
-        };
-
-        tss_hit_counts[idx] = tss_hits;
-        tes_hit_counts[idx] = tes_hits;
-
-        if guide_tss.is_some() && guide_tes.is_some() && tss_hits > 0 && tes_hits > 0 {
-            both_guided_indices.push(idx);
-        }
-        if tss_hits > 0 || tes_hits > 0 {
-            any_guided_indices.push(idx);
-        }
-    }
-
-    if !both_guided_indices.is_empty() {
-        let selected_idx = if both_guided_indices.len() == 1 {
-            both_guided_indices[0]
-        } else {
-            select_entry_by_policy(&both_guided_indices)?.0
-        };
-
+    // Case A: at least one entry has both TSS and TES guide support
+    //         → use position policy only as a tiebreaker among them
+    if !full_guided.is_empty() {
+        let idx = select_repr_by_policy(
+            &tss_pos,
+            &tes_pos,
+            &full_guided,
+            strand,
+            tss_policy,
+            tes_policy,
+        )?
+        .0;
         return Ok((
-            (tss_positions[selected_idx], tes_positions[selected_idx]),
+            (tss_pos[idx], tes_pos[idx]),
             (MergePolicyUsed::Guide, MergePolicyUsed::Guide),
         ));
     }
 
-    if !any_guided_indices.is_empty() {
-        let mut selected_idx = any_guided_indices[0];
-        let mut best_score = tss_hit_counts[selected_idx] + tes_hit_counts[selected_idx];
-        let mut best_len = entries[selected_idx].right - entries[selected_idx].left + 1;
-
-        for &idx in any_guided_indices.iter().skip(1) {
-            let score = tss_hit_counts[idx] + tes_hit_counts[idx];
-            let len = entries[idx].right - entries[idx].left + 1;
-
-            if score > best_score {
-                selected_idx = idx;
-                best_score = score;
-                best_len = len;
-                continue;
-            }
-            if score == best_score && len > best_len {
-                selected_idx = idx;
-                best_len = len;
-                continue;
-            }
-
-            // FIXED RULE: if guide score and transcript length are both tied,
-            // keep the earliest transcript in input order.
-        }
-
-        let used_tss_policy = if tss_hit_counts[selected_idx] > 0 {
+    // Case B: some entries have partial guide support (TSS-only or TES-only)
+    //         → pick by total hit score, tie-break by transcript length, then input order
+    if !partial_guided.is_empty() {
+        let idx = select_repr_by_guide_score(entries, &tss_hits, &tes_hits, &partial_guided);
+        let used_tss = if tss_hits[idx] > 0 {
             MergePolicyUsed::Guide
         } else {
             MergePolicyUsed::from_arg_policy(&tss_policy)
         };
-        let used_tes_policy = if tes_hit_counts[selected_idx] > 0 {
+        let used_tes = if tes_hits[idx] > 0 {
             MergePolicyUsed::Guide
         } else {
             MergePolicyUsed::from_arg_policy(&tes_policy)
         };
-
-        return Ok((
-            (tss_positions[selected_idx], tes_positions[selected_idx]),
-            (used_tss_policy, used_tes_policy),
-        ));
+        return Ok(((tss_pos[idx], tes_pos[idx]), (used_tss, used_tes)));
     }
 
-    let (selected_idx, used_tss_policy, used_tes_policy) =
-        select_entry_by_policy(&(0..entries.len()).collect::<Vec<_>>())?;
-    Ok((
-        (tss_positions[selected_idx], tes_positions[selected_idx]),
-        (used_tss_policy, used_tes_policy),
-    ))
+    // Case C: no guide support → fall back to position-based policy on all entries
+    let all: Vec<usize> = (0..entries.len()).collect();
+    let (idx, used_tss, used_tes) =
+        select_repr_by_policy(&tss_pos, &tes_pos, &all, strand, tss_policy, tes_policy)?;
+    Ok(((tss_pos[idx], tes_pos[idx]), (used_tss, used_tes)))
 }
 
-fn select_terminal(
-    positions: &[u32],
-    policy: MergePolicyArg,
-    is_left_boundary: bool,
-) -> Result<(u32, MergePolicyUsed), MergeError> {
-    let out = match policy {
-        MergePolicyArg::Outer => {
-            if is_left_boundary {
-                (
-                    *positions.iter().min().ok_or(MergeError::SelectReprFailed)?,
-                    MergePolicyUsed::Outer,
-                )
-            } else {
-                (
-                    *positions.iter().max().ok_or(MergeError::SelectReprFailed)?,
-                    MergePolicyUsed::Outer,
-                )
+fn select_repr_by_guide_score(
+    entries: &[GroupedPTIREntry],
+    tss_hits: &[usize],
+    tes_hits: &[usize],
+    candidates: &[usize],
+) -> usize {
+    let mut best = candidates[0];
+    for &idx in candidates.iter().skip(1) {
+        let best_score = tss_hits[best] + tes_hits[best];
+        let curr_score = tss_hits[idx] + tes_hits[idx];
+        if curr_score > best_score {
+            best = idx;
+            continue;
+        }
+        if curr_score == best_score {
+            let best_len = entries[best].right - entries[best].left + 1;
+            let curr_len = entries[idx].right - entries[idx].left + 1;
+            if curr_len > best_len {
+                best = idx;
             }
         }
-        MergePolicyArg::Inner => {
-            if is_left_boundary {
-                (
-                    *positions.iter().max().ok_or(MergeError::SelectReprFailed)?,
-                    MergePolicyUsed::Inner,
-                )
+        // tied on score and length → keep earliest (current best unchanged)
+    }
+    best
+}
+
+fn select_repr_by_policy(
+    tss_pos: &[u32],
+    tes_pos: &[u32],
+    candidates: &[usize],
+    strand: &ISOMSTRAND,
+    tss_policy: MergePolicyArg,
+    tes_policy: MergePolicyArg,
+) -> Result<(usize, MergePolicyUsed, MergePolicyUsed), MergeError> {
+    if candidates.is_empty() {
+        return Err(MergeError::SelectReprFailed);
+    }
+
+    let mut tss_counts: FxHashMap<u32, usize> = FxHashMap::default();
+    let mut tes_counts: FxHashMap<u32, usize> = FxHashMap::default();
+    for &idx in candidates {
+        *tss_counts.entry(tss_pos[idx]).or_insert(0) += 1;
+        *tes_counts.entry(tes_pos[idx]).or_insert(0) += 1;
+    }
+
+    let max_tss_count = tss_counts.values().copied().max().unwrap_or(0);
+    let max_tes_count = tes_counts.values().copied().max().unwrap_or(0);
+    let unique_tss_major = tss_counts.values().filter(|&&c| c == max_tss_count).count() == 1;
+    let unique_tes_major = tes_counts.values().filter(|&&c| c == max_tes_count).count() == 1;
+
+    let used_tss_policy = match tss_policy {
+        MergePolicyArg::Outer => MergePolicyUsed::Outer,
+        MergePolicyArg::Inner => MergePolicyUsed::Inner,
+        MergePolicyArg::Major => {
+            if unique_tss_major {
+                MergePolicyUsed::Major
             } else {
-                (
-                    *positions.iter().min().ok_or(MergeError::SelectReprFailed)?,
-                    MergePolicyUsed::Inner,
-                )
+                MergePolicyUsed::Outer
             }
         }
-        MergePolicyArg::Major => match majority_vote_unique_scalar(positions) {
-            Some(pos) => (pos, MergePolicyUsed::Major),
-            None => {
-                if is_left_boundary {
-                    (
-                        *positions.iter().min().ok_or(MergeError::SelectReprFailed)?,
-                        MergePolicyUsed::Outer,
-                    )
+    };
+    let used_tes_policy = match tes_policy {
+        MergePolicyArg::Outer => MergePolicyUsed::Outer,
+        MergePolicyArg::Inner => MergePolicyUsed::Inner,
+        MergePolicyArg::Major => {
+            if unique_tes_major {
+                MergePolicyUsed::Major
+            } else {
+                MergePolicyUsed::Outer
+            }
+        }
+    };
+
+    let mut best = candidates[0];
+    for &idx in candidates.iter().skip(1) {
+        let best_tss = tss_pos[best];
+        let curr_tss = tss_pos[idx];
+        let best_tss_count = *tss_counts.get(&best_tss).unwrap_or(&0);
+        let curr_tss_count = *tss_counts.get(&curr_tss).unwrap_or(&0);
+
+        // curr_better_tss and best_better_tss are mutually exclusive, so the
+        // negation guards on the other side are redundant and omitted.
+        let curr_better_tss = match tss_policy {
+            MergePolicyArg::Outer => {
+                if tss_is_left_boundary(strand) {
+                    curr_tss < best_tss
                 } else {
-                    (
-                        *positions.iter().max().ok_or(MergeError::SelectReprFailed)?,
-                        MergePolicyUsed::Outer,
-                    )
+                    curr_tss > best_tss
                 }
             }
-        },
-    };
-    Ok(out)
+            MergePolicyArg::Inner => {
+                if tss_is_left_boundary(strand) {
+                    curr_tss > best_tss
+                } else {
+                    curr_tss < best_tss
+                }
+            }
+            MergePolicyArg::Major => {
+                if curr_tss_count != best_tss_count {
+                    curr_tss_count > best_tss_count
+                } else if tss_is_left_boundary(strand) {
+                    curr_tss < best_tss
+                } else {
+                    curr_tss > best_tss
+                }
+            }
+        };
+        let best_better_tss = match tss_policy {
+            MergePolicyArg::Outer => {
+                if tss_is_left_boundary(strand) {
+                    best_tss < curr_tss
+                } else {
+                    best_tss > curr_tss
+                }
+            }
+            MergePolicyArg::Inner => {
+                if tss_is_left_boundary(strand) {
+                    best_tss > curr_tss
+                } else {
+                    best_tss < curr_tss
+                }
+            }
+            MergePolicyArg::Major => {
+                if best_tss_count != curr_tss_count {
+                    best_tss_count > curr_tss_count
+                } else if tss_is_left_boundary(strand) {
+                    best_tss < curr_tss
+                } else {
+                    best_tss > curr_tss
+                }
+            }
+        };
+
+        if curr_better_tss {
+            best = idx;
+            continue;
+        }
+        if best_better_tss {
+            continue;
+        }
+
+        // TSS tied → compare TES; if also tied, keep earliest (best unchanged)
+        let best_tes = tes_pos[best];
+        let curr_tes = tes_pos[idx];
+        let best_tes_count = *tes_counts.get(&best_tes).unwrap_or(&0);
+        let curr_tes_count = *tes_counts.get(&curr_tes).unwrap_or(&0);
+
+        let curr_better_tes = match tes_policy {
+            MergePolicyArg::Outer => {
+                if tes_is_left_boundary(strand) {
+                    curr_tes < best_tes
+                } else {
+                    curr_tes > best_tes
+                }
+            }
+            MergePolicyArg::Inner => {
+                if tes_is_left_boundary(strand) {
+                    curr_tes > best_tes
+                } else {
+                    curr_tes < best_tes
+                }
+            }
+            MergePolicyArg::Major => {
+                if curr_tes_count != best_tes_count {
+                    curr_tes_count > best_tes_count
+                } else if tes_is_left_boundary(strand) {
+                    curr_tes < best_tes
+                } else {
+                    curr_tes > best_tes
+                }
+            }
+        };
+
+        if curr_better_tes {
+            best = idx;
+        }
+    }
+
+    Ok((best, used_tss_policy, used_tes_policy))
 }
 
 fn junction_diff_sums(curr: &[(u32, u32)], repr: &[(u32, u32)], strand: ISOMSTRAND) -> (u32, u32) {

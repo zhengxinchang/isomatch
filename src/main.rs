@@ -100,42 +100,6 @@ pub struct MergeArgs {
     //     help = "Optional BED file of reference splice sites"
     // )]
     // pub refsites: Option<PathBuf>,
-    #[clap(
-        long = "guide-tss",
-        help_heading = "Guide Merge",
-        help = "Guide TSS BED file"
-    )]
-    pub guide_tss: Option<PathBuf>,
-
-    #[clap(
-        long = "guide-tes",
-        help_heading = "Guide Merge",
-        help = "Guide TES BED file"
-    )]
-    pub guide_tes: Option<PathBuf>,
-
-    #[clap(
-        long = "guide-tss-flank",
-        help_heading = "Guide Merge",
-        help = "TSS evidence search flank in bp; used only with --guide-tss",
-        default_value_t = 10
-    )]
-    pub guide_tss_flank: u32,
-
-    #[clap(
-        long = "guide-tes-flank",
-        help_heading = "Guide Merge",
-        help = "TES evidence search flank in bp; used only with --guide-tes",
-        default_value_t = 10
-    )]
-    pub guide_tes_flank: u32,
-
-    #[clap(
-        long = "chrmap",
-        help_heading = "Guide Merge",
-        help = "Chromosome name map (UCSC -> Ensembl); use when inputs lack chr prefixes"
-    )]
-    pub chrmap: Option<PathBuf>,
 
     #[clap(
         short = 'd',
@@ -248,6 +212,45 @@ pub struct MergeArgs {
     pub terminal_merge_nc: TerminalMergeMode,
 
     #[clap(
+        long = "guide-tss",
+        help_heading = "Representative Selection",
+        help = "Guide TSS BED file"
+    )]
+    pub guide_tss: Option<PathBuf>,
+
+    #[clap(
+        long = "guide-tes",
+        help_heading = "Representative Selection",
+        help = "Guide TES BED file"
+    )]
+    pub guide_tes: Option<PathBuf>,
+
+    #[clap(
+        long = "guide-tss-flank",
+        help_heading = "Representative Selection",
+        help = "TSS evidence search flank in bp; used only with --guide-tss",
+        default_value_t = 10
+    )]
+    pub guide_tss_flank: u32,
+
+    #[clap(
+        long = "guide-tes-flank",
+        help_heading = "Representative Selection",
+        help = "TES evidence search flank in bp; used only with --guide-tes",
+        default_value_t = 10
+    )]
+    pub guide_tes_flank: u32,
+
+    #[clap(
+        long = "chrmap",
+        help_heading = "Representative Selection",
+        help = "Chromosome name map (UCSC -> Ensembl); use when inputs lack chr prefixes"
+    )]
+    pub chrmap: Option<PathBuf>,
+
+
+
+    #[clap(
         long = "splice-policy",
         help_heading = "Representative Selection",
         help = "Representative splice-junction policy",
@@ -299,30 +302,30 @@ pub struct MergeArgs {
     )]
     pub mono_ovlp: f64,
 
-    #[clap(
-        long = "sx-max",
-        help_heading = "Other",
-        help = "Max exon length for small-exon rescue",
-        default_value_t = 15
-    )]
-    pub sx_max: u32,
+    // #[clap(
+    //     long = "sx-max",
+    //     help_heading = "Other",
+    //     help = "Max exon length for small-exon rescue",
+    //     default_value_t = 15
+    // )]
+    // pub sx_max: u32,
 
-    #[clap(
-        long = "junc-diff",
-        help_heading = "Other",
-        help = "Max junction-count difference for collapse rescue",
-        default_value_t = 1
-    )]
-    pub junc_diff: u32,
+    // #[clap(
+    //     long = "junc-diff",
+    //     help_heading = "Other",
+    //     help = "Max junction-count difference for collapse rescue",
+    //     default_value_t = 1
+    // )]
+    // pub junc_diff: u32,
 
-    #[clap(
-        long = "shift-rescue",
-        help_heading = "Other",
-        help = "Enable local small-exon shift rescue",
-        action = ArgAction::Set,
-        default_value_t = true
-    )]
-    pub shift_rescue: bool,
+    // #[clap(
+    //     long = "shift-rescue",
+    //     help_heading = "Other",
+    //     help = "Enable local small-exon shift rescue",
+    //     action = ArgAction::Set,
+    //     default_value_t = true
+    // )]
+    // pub shift_rescue: bool,
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
