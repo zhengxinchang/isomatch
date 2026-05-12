@@ -1,4 +1,4 @@
-FROM rust:1.87-slim AS builder
+FROM rust:1.92-slim AS builder
 
 WORKDIR /build
 COPY . .
