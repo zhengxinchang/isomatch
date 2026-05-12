@@ -1,6 +1,24 @@
 use std::fs::File;
 use std::io::{BufWriter, Seek, SeekFrom, Write};
 
+fn compress(raw: Vec<u8>) -> std::io::Result<Vec<u8>> {
+    zstd::encode_all(raw.as_slice(), 3)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+}
+
+fn encode_compressed<T: crate::traits::Encodable<Error = crate::core::core_error::TxBaseError>>(
+    pool: &T,
+    writer: &mut impl Write,
+) -> std::io::Result<u32> {
+    let mut raw = Vec::new();
+    pool.encode_to(&mut raw)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let compressed = compress(raw)?;
+    let len = compressed.len() as u32;
+    writer.write_all(&compressed)?;
+    Ok(len)
+}
+
 use crate::core::tx_base::TxBase;
 use crate::index::format::{ChromBlockBuilder, ChromDirectoryEntry, IndexHeader};
 use crate::traits::{DiskSize, Encodable};
@@ -95,31 +113,19 @@ impl IndexBuilder {
         }
         self.current_offset += tx_bytes as u64;
 
-        // write junction pool next to tx_bytes
+        // write junction pool (zstd-compressed) next to tx_bytes
         let junction_pool_offset = tx_offset + tx_bytes as u64;
-        let junction_pool_len = entry
-            .junction_pool
-            .encode_to(&mut self.file)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
-            as u32;
+        let junction_pool_len = encode_compressed(&entry.junction_pool, &mut self.file)?;
         self.current_offset += junction_pool_len as u64;
 
-        // then string pool
+        // then string pool (zstd-compressed)
         let string_pool_offset = junction_pool_offset + junction_pool_len as u64;
-        let string_pool_len = entry
-            .string_pool
-            .encode_to(&mut self.file)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
-            as u32;
+        let string_pool_len = encode_compressed(&entry.string_pool, &mut self.file)?;
         self.current_offset += string_pool_len as u64;
 
-        // then splice site pool
+        // then splice site pool (zstd-compressed)
         let splice_site_pool_offset = string_pool_offset + string_pool_len as u64;
-        let splice_site_pool_len = entry
-            .splice_site_pool
-            .encode_to(&mut self.file)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
-            as u32;
+        let splice_site_pool_len = encode_compressed(&entry.splice_site_pool, &mut self.file)?;
         self.current_offset += splice_site_pool_len as u64;
 
         // generate a chromsome directory entry

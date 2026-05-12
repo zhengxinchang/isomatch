@@ -70,12 +70,21 @@ ISOM_COUNT --> ISOM_TX_CNT plus ISOM_SMPLE_CNT
 ISOM_EXONS 直接显示数字，而不是擅自分类
 
 gffcompare 在进行群体级别的合并的时候存在内存问题，如果是steam模式，则问题是所有的TSS TES都是来自第一个参考GTF。
-isomatch, 可以在多个参数微调的情况下，使用kwaymerge方法从所有的样本中获得TSS TES的证据，避免内存问题，同时也能充分利用所有样本的证据。
 
-isomatch 的merge 不改变原始输入的转录本坐标，而是通过选择代表性的转录本来进行合并。
+isomatch 子命令体系（修订版）
 
-isomatch refine 的功能是对任何GTF根据外部信息进行校正，例如小外显子救援，或者根据外部证据调整转录本的TSS TES位置。
+index — 对GTF建立.isi二进制索引（B+ tree），供下游子命令调用。也可由其他子命令按需自动触发，但显式暴露便于预处理大文件和复用。
+merge — 多样本合并。k-way merge，从所有样本收集TSS/TES证据，选代表性转录本，不改变原始坐标。解决gffcompare在群体级别的内存问题和evidence偏差问题。
+refine — 坐标级校正。根据外部证据调整TSS/TES位置、小外显子救援、strand分配。Scope严格限定在坐标修正和stand等基本信息，不涉及功能注释。接受统一的bed格式证据。
+classify — 1-vs-ref结构分类。Soft matching，支持configurable wobble tolerance，输出per-transcript classification code（兼容gffcompare class codes和SQANTI3 FSM/ISM/NIC/NNC体系）。服务对象：生物学家和annotation pipeline。
+compare — N-vs-N交叉比较。Binary matching（identical structure，yes/no），支持--match-mode参数（strict=全坐标一致，junction=内部剪接位点一致，chain=exon chain topology一致）。输出overlap矩阵（TSV）和UpSet-compatible intersection集合。不做可视化。服务对象：工具开发者做横向比较。
+bench — 1-vs-truth准确性评估。Binary matching，match-mode参数同compare。输出TP/FP/FN/precision/recall/F1，支持per-gene和per-transcript两个粒度。输出干净TSV，不做可视化。服务对象：工具开发者和benchmarking consortium（LRGASP等）。
 
-isomatch annotate 的功能是对转录本进行分类注释，例如根据gffcompare的分类，或者根据sqanti3的分类，或者根据isoseq的分类。
+核心架构关系： index是预处理层；classify是核心比对引擎（soft matching）；compare和bench共享一套独立的binary matching引擎；merge和refine是转录组操作层。classify与compare/bench的比对逻辑是分开的——前者输出分类码，后者只输出boolean。
 
-isomatch compare 
+
+
+TODO
+monoexon guide 模式
+简化grouppgir的代码现在充满match
+

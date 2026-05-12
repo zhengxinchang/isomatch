@@ -1,0 +1,120 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor ${{ github.sha }} origin/main; then
+            echo "❌ Tag is not on main branch"
+            exit 1
+          fi
+
+      - name: Verify version matches tag
+        run: |
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "❌ Cargo.toml version ($CARGO_VERSION) doesn't match tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+  build-linux:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t isomatch-build .
+
+      - name: Extract binary
+        run: |
+          docker create --name isomatch-builder isomatch-build
+          docker cp isomatch-builder:/linux_build ./linux_build
+          docker rm isomatch-builder
+
+      - name: Package
+        run: |
+          cp LICENSE linux_build/
+          cd linux_build
+          tar czf ../isomatch-${{ github.ref_name }}-linux-x86_64.tar.gz *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: isomatch-${{ github.ref_name }}-linux-x86_64.tar.gz
+
+  build-macos:
+    needs: verify
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: macos-cargo-
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          mkdir macos_build
+          cp target/release/isomatch macos_build/
+          cp LICENSE macos_build/
+          cd macos_build
+          tar czf ../isomatch-${{ github.ref_name }}-macos-aarch64.tar.gz *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-aarch64
+          path: isomatch-${{ github.ref_name }}-macos-aarch64.tar.gz
+
+  release:
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            isomatch-${{ github.ref_name }}-linux-x86_64.tar.gz
+            isomatch-${{ github.ref_name }}-macos-aarch64.tar.gz
+          body_path: RELEASE_NOTES.md

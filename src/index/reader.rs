@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs::File,
-    io::{self, BufReader, ErrorKind, Read},
+    io::{self, BufReader, Cursor, ErrorKind, Read, Seek, SeekFrom},
 };
 
 use crate::core::{
@@ -232,12 +232,22 @@ impl ChromBlockReader {
         self.next_tx_idx = 0;
     }
 
+    fn decompress(file: &mut File, offset: u64, compressed_len: usize) -> io::Result<Vec<u8>> {
+        let mut compressed = vec![0u8; compressed_len];
+        file.seek(SeekFrom::Start(offset))?;
+        file.read_exact(&mut compressed)?;
+        zstd::decode_all(compressed.as_slice())
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
+    }
+
     pub fn load_junction_pool(
         file: &mut File,
         junction_pool_offset: u64,
         junction_pool_len: usize,
     ) -> io::Result<JunctionPool> {
-        JunctionPool::load_range(file, junction_pool_offset, junction_pool_len, 0)
+        let decompressed = Self::decompress(file, junction_pool_offset, junction_pool_len)?;
+        let len = decompressed.len();
+        JunctionPool::load_range(&mut Cursor::new(decompressed), 0, len, 0)
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
     }
 
@@ -246,7 +256,9 @@ impl ChromBlockReader {
         string_pool_offset: u64,
         string_pool_len: usize,
     ) -> io::Result<StringPool> {
-        StringPool::load_range(file, string_pool_offset, string_pool_len, ())
+        let decompressed = Self::decompress(file, string_pool_offset, string_pool_len)?;
+        let len = decompressed.len();
+        StringPool::load_range(&mut Cursor::new(decompressed), 0, len, ())
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
     }
 
@@ -255,7 +267,9 @@ impl ChromBlockReader {
         splice_site_pool_offset: u64,
         splice_site_pool_len: usize,
     ) -> io::Result<SpliceSitePool> {
-        SpliceSitePool::load_range(file, splice_site_pool_offset, splice_site_pool_len, ())
+        let decompressed = Self::decompress(file, splice_site_pool_offset, splice_site_pool_len)?;
+        let len = decompressed.len();
+        SpliceSitePool::load_range(&mut Cursor::new(decompressed), 0, len, ())
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
     }
 }
