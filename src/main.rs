@@ -100,7 +100,6 @@ pub struct MergeArgs {
     //     help = "Optional BED file of reference splice sites"
     // )]
     // pub refsites: Option<PathBuf>,
-
     #[clap(
         short = 'd',
         long = "wob-d",
@@ -248,8 +247,6 @@ pub struct MergeArgs {
     )]
     pub chrmap: Option<PathBuf>,
 
-
-
     #[clap(
         long = "splice-policy",
         help_heading = "Representative Selection",
@@ -301,7 +298,6 @@ pub struct MergeArgs {
         default_value_t = 0.9
     )]
     pub mono_ovlp: f64,
-
     // #[clap(
     //     long = "sx-max",
     //     help_heading = "Other",

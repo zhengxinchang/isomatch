@@ -39,6 +39,16 @@ impl TryFrom<u8> for ISOMSTRAND {
     }
 }
 
+impl From<ISOMSTRAND> for char {
+    fn from(s: ISOMSTRAND) -> Self {
+        match s {
+            ISOMSTRAND::Plus => '+',
+            ISOMSTRAND::Minus => '-',
+            ISOMSTRAND::Unknown => '.',
+        }
+    }
+}
+
 impl fmt::Display for ISOMSTRAND {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -503,7 +503,7 @@ impl GroupedPTIR {
                     ptir.source_txid,
                     ptir.start,
                     ptir.end,
-                    tx_type_label(&ptir.tx_type),
+                    ptir.tx_type,
                     donor_diff,
                     acceptor_diff,
                     exon_diff_string
@@ -512,7 +512,7 @@ impl GroupedPTIR {
             .collect::<Vec<_>>()
             .join("|");
 
-        let strand = strand_char(self.strand);
+        let strand = char::from(self.strand);
 
         write!(bufwriter, "{chrom_name}\tisomatch\ttranscript\t")?;
         write!(
@@ -540,16 +540,13 @@ impl GroupedPTIR {
         bufwriter.write_all(source_attr.as_bytes())?;
 
         let isom_policy = if self.n_exon == 1 {
-            format!(
-                "NA:NA:NA:{}",
-                merge_policy_label(self.used_repr_mono_policy)
-            )
+            format!("NA:NA:NA:{}", self.used_repr_mono_policy)
         } else {
             format!(
                 "{}:{}:{}:NA",
-                merge_policy_label(self.used_repr_junction_policy),
-                merge_policy_label(self.used_repr_left_policy),
-                merge_policy_label(self.used_repr_right_policy)
+                self.used_repr_junction_policy,
+                self.used_repr_left_policy,
+                self.used_repr_right_policy
             )
         };
 
@@ -647,28 +644,6 @@ fn inner_pair(positions: &[(u32, u32)]) -> Result<(u32, u32), MergeError> {
         .min()
         .ok_or(MergeError::SelectReprFailed)?;
     Ok((left, right))
-}
-
-fn majority_vote_unique_scalar(positions: &[u32]) -> Option<u32> {
-    let mut counts: FxHashMap<u32, u32> = FxHashMap::default();
-    let mut best_count = 0;
-
-    for &position in positions {
-        let count = counts.entry(position).or_insert(0);
-        *count += 1;
-        best_count = best_count.max(*count);
-    }
-
-    let mut winners = counts
-        .into_iter()
-        .filter_map(|(position, count)| (count == best_count).then_some(position));
-
-    let winner = winners.next()?;
-    if winners.next().is_some() {
-        None
-    } else {
-        Some(winner)
-    }
 }
 
 fn select_pair(
@@ -1042,32 +1017,6 @@ fn junction_exon_diffs(
         }
     }
     Ok(exon_diffs)
-}
-
-fn strand_char(strand: ISOMSTRAND) -> char {
-    match strand {
-        ISOMSTRAND::Plus => '+',
-        ISOMSTRAND::Minus => '-',
-        ISOMSTRAND::Unknown => '.',
-    }
-}
-
-fn tx_type_label(tx_type: &TxType) -> &'static str {
-    match tx_type {
-        TxType::MONO => "MONO",
-        TxType::ALLC => "ALL_CA",
-        TxType::PRTC => "PRT_CA",
-        TxType::NOTC => "NOT_CA",
-    }
-}
-
-fn merge_policy_label(policy: MergePolicyUsed) -> &'static str {
-    match policy {
-        MergePolicyUsed::Outer => "outer",
-        MergePolicyUsed::Inner => "inner",
-        MergePolicyUsed::Major => "major",
-        MergePolicyUsed::Guide => "guide",
-    }
 }
 
 #[cfg(test)]

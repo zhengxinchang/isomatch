@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::{
     MergeArgs,
     core::{ptir::PTIR, status::TxType, tx_strand::ISOMSTRAND},
@@ -24,6 +26,18 @@ pub enum MergePolicyUsed {
     Inner,
     Major,
     Guide,
+}
+
+impl fmt::Display for MergePolicyUsed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            MergePolicyUsed::Outer => "outer",
+            MergePolicyUsed::Inner => "inner",
+            MergePolicyUsed::Major => "major",
+            MergePolicyUsed::Guide => "guide",
+        };
+        write!(f, "{s}")
+    }
 }
 
 impl MergePolicyUsed {

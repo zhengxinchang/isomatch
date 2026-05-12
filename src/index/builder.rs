@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{BufWriter, Seek, SeekFrom, Write};
 
 use crate::core::tx_base::TxBase;
 use crate::index::format::{ChromBlockBuilder, ChromDirectoryEntry, IndexHeader};
@@ -17,20 +17,21 @@ pub struct IndexBuilder {
     /// Pre-computed (offset_in_table, len) for each chrom, indexed by chrom_id - 1.
     chrom_name_offsets: Vec<(u32, u32)>,
     current_offset: u64,
-    file: File,
+    file: BufWriter<File>,
 }
 
 impl IndexBuilder {
     /// `chrom_names` must be in the same order as chroms will appear in the GTF
     /// (i.e. the order returned by `profile_gtf`).
     pub fn new(
-        mut file: File,
+        file: File,
         chrom_names: Vec<String>,
         gtf_size: u64,
         md5: [u8; 16],
         has_ref_hash: bool,
         has_seq_hash: bool,
     ) -> std::io::Result<Self> {
+        let mut file = BufWriter::new(file);
         let chrom_count = chrom_names.len() as u32;
 
         // Build the chrom name table bytes and pre-compute per-chrom offsets.

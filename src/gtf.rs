@@ -8,10 +8,15 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{core::tx_strand::ISOMSTRAND, utils::open_file_bufread};
 use thiserror::Error;
 
-/// Scan the GTF once to collect ordered unique chrom names from transcript lines.
-/// Returns an error if transcript records are not grouped by chromosome.
-pub fn profile_gtf<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<String>, GTFError> {
+/// Scan the GTF once to collect ordered unique chrom names and compute a
+/// content hash (xxh3-128 of the decompressed bytes) and file size.
+pub fn profile_gtf<P: AsRef<Path>>(path: P) -> Result<(Vec<String>, [u8; 16], u64), GTFError> {
+    let file_size = std::fs::metadata(path.as_ref())
+        .map_err(|_| GTFError::IoError {})?
+        .len();
+
     let mut bufreader = open_file_bufread(path).map_err(|_| GTFError::IoError {})?;
+    let mut hasher = xxhash_rust::xxh3::Xxh3::new();
     let mut line = String::new();
     let mut chrom_set: FxHashSet<String> = FxHashSet::default();
     let mut chrom_names: Vec<String> = Vec::new();
@@ -23,6 +28,7 @@ pub fn profile_gtf<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<String>, GT
             break;
         }
         line_no += 1;
+        hasher.update(line.as_bytes());
 
         if line.starts_with('#') {
             line.clear();
@@ -61,7 +67,8 @@ pub fn profile_gtf<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<String>, GT
         line.clear();
     }
 
-    Ok(chrom_names)
+    let hash = hasher.digest128().to_le_bytes();
+    Ok((chrom_names, hash, file_size))
 }
 
 /// GTF tx record, both for input GTF and referencce annotation GTF.
@@ -533,7 +540,7 @@ mod tests {
         );
         write_plain_gtf(&path, content);
 
-        let chrom_names = profile_gtf(&path).unwrap();
+        let (chrom_names, _, _) = profile_gtf(&path).unwrap();
 
         assert_eq!(chrom_names, vec!["chr1".to_string(), "chr2".to_string()]);
 
@@ -570,7 +577,7 @@ mod tests {
         );
         write_plain_gtf(&path, content);
 
-        let chrom_names = profile_gtf(&path).unwrap();
+        let (chrom_names, _, _) = profile_gtf(&path).unwrap();
 
         assert_eq!(chrom_names, vec!["chr1".to_string(), "chr2".to_string()]);
 

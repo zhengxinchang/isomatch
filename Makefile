@@ -16,7 +16,7 @@ index2: build
 
 index3: build
 	/usr/bin/time -v target/release/isomatch index \
-		--reffa test/hg38.fa  --skip-missing-ref-seqids \
+		--reffa test/hg38.fa  --skip-missing-ref-chr \
 		test/hg002_ont_drna.isoquant.gtf.gz 
 
 
@@ -35,7 +35,7 @@ N := 1000
 
 merge2: build
 	/usr/bin/time -v target/release/isomatch merge \
-		-o test/merge.gtf \
+		-o test/merge.gtf.gz \
 		$(foreach i,$(shell seq 1 $(N)),$(INPUT))
 	
 merge3: build

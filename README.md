@@ -68,3 +68,14 @@ guide
 ISOM_COUNT --> ISOM_TX_CNT plus ISOM_SMPLE_CNT
 
 ISOM_EXONS 直接显示数字，而不是擅自分类
+
+gffcompare 在进行群体级别的合并的时候存在内存问题，如果是steam模式，则问题是所有的TSS TES都是来自第一个参考GTF。
+isomatch, 可以在多个参数微调的情况下，使用kwaymerge方法从所有的样本中获得TSS TES的证据，避免内存问题，同时也能充分利用所有样本的证据。
+
+isomatch 的merge 不改变原始输入的转录本坐标，而是通过选择代表性的转录本来进行合并。
+
+isomatch refine 的功能是对任何GTF根据外部信息进行校正，例如小外显子救援，或者根据外部证据调整转录本的TSS TES位置。
+
+isomatch annotate 的功能是对转录本进行分类注释，例如根据gffcompare的分类，或者根据sqanti3的分类，或者根据isoseq的分类。
+
+isomatch compare 

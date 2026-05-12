@@ -25,17 +25,20 @@ pub struct IndexStats {
     pub gene_count: u64,
     pub skipped_transcript_count: u64,
     pub skipped_gene_count: u64,
-    pub skipped_missing_ref_seqid_count: u64,
+    pub missing_seqid_count: u64,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub skipped_missing_ref_seqids: Vec<String>,
-    pub plus_strand_count: u64,
-    pub minus_strand_count: u64,
-    pub unknown_strand_count: u64,
-    pub mono_exon_count: u64,
-    pub multi_exon_count: u64,
+    pub missing_seqids: Vec<String>,
+    pub plus_strand_tx_count: u64,
+    pub minus_strand_tx_count: u64,
+    pub unknown_strand_tx_count: u64,
+    pub mono_exon_tx_count: u64,
+    pub multi_exon_tx_count: u64,
+    pub all_canonical_tx_count: u64,
+    pub partial_canonical_tx_count: u64,
+    pub non_canonical_tx_count: u64,
     pub junction_count: u64,
     pub canonical_junction_count: u64,
-    pub noncanonical_junction_count: u64,
+    pub non_canonical_junction_count: u64,
     pub canonical_junction_ratio: f64,
     #[serde(skip_serializing)]
     gene_ids: HashSet<String>,
@@ -55,24 +58,32 @@ impl IndexStats {
         self.gene_ids.insert(gene_id.to_string());
 
         match strand {
-            ISOMSTRAND::Minus => self.minus_strand_count += 1,
-            ISOMSTRAND::Plus => self.plus_strand_count += 1,
-            ISOMSTRAND::Unknown => self.unknown_strand_count += 1,
+            ISOMSTRAND::Minus => self.minus_strand_tx_count += 1,
+            ISOMSTRAND::Plus => self.plus_strand_tx_count += 1,
+            ISOMSTRAND::Unknown => self.unknown_strand_tx_count += 1,
         }
 
         if exon_count <= 1 {
-            self.mono_exon_count += 1;
+            self.mono_exon_tx_count += 1;
             return;
         }
 
-        self.multi_exon_count += 1;
+        self.multi_exon_tx_count += 1;
 
         let junction_count = (exon_count - 1) as u64;
         let canonical_junction_count = canonical_junction_count as u64;
 
+        if canonical_junction_count == junction_count {
+            self.all_canonical_tx_count += 1;
+        } else if canonical_junction_count == 0 {
+            self.non_canonical_tx_count += 1;
+        } else {
+            self.partial_canonical_tx_count += 1;
+        }
+
         self.junction_count += junction_count;
         self.canonical_junction_count += canonical_junction_count;
-        self.noncanonical_junction_count += junction_count - canonical_junction_count;
+        self.non_canonical_junction_count += junction_count - canonical_junction_count;
     }
 
     pub fn observe_skipped_tx(&mut self, gene_id: &str) {
@@ -81,8 +92,8 @@ impl IndexStats {
     }
 
     pub fn note_skipped_ref_seqids(&mut self, seqids: Vec<String>) {
-        self.skipped_missing_ref_seqid_count = seqids.len() as u64;
-        self.skipped_missing_ref_seqids = seqids;
+        self.missing_seqid_count = seqids.len() as u64;
+        self.missing_seqids = seqids;
     }
 
     pub fn finalize(&mut self) {
@@ -181,13 +192,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
     };
 
     info!("Profiling GTF...");
-    let gtf_size = std::fs::metadata(&args.input)
-        .expect("Can not read gtf file metadata")
-        .len();
-    let md5 = crate::utils::checksum_file(&args.input)
-        .expect("Can not read gtf file for checksum")
-        .0;
-    let profiled_chrom_names = profile_gtf(&args.input)
+    let (profiled_chrom_names, md5, gtf_size) = profile_gtf(&args.input)
         .with_context(|| format!("Can not profile GTF file: {}", args.input.display()))?;
 
     let missing_ref_seqids: Vec<String> = profiled_chrom_names
