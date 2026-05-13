@@ -211,6 +211,14 @@ pub struct MergeArgs {
     pub terminal_merge_nc: TerminalMergeMode,
 
     #[clap(
+        long = "mono-ovlp",
+        help_heading = "Mono Exon Transcirpt Merge",
+        help = "Minimum reciprocal overlap for mono-exon merge",
+        default_value_t = 0.9
+    )]
+    pub mono_ovlp: f64,
+
+    #[clap(
         long = "guide-tss",
         help_heading = "Representative Selection",
         help = "Guide TSS BED file"
@@ -290,14 +298,6 @@ pub struct MergeArgs {
         help = "Output union GTF"
     )]
     pub out: PathBuf,
-
-    #[clap(
-        long = "mono-ovlp",
-        help_heading = "Other",
-        help = "Minimum reciprocal overlap for mono-exon merge",
-        default_value_t = 0.9
-    )]
-    pub mono_ovlp: f64,
     // #[clap(
     //     long = "sx-max",
     //     help_heading = "Other",
