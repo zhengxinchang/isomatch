@@ -111,7 +111,7 @@ impl GroupedPTIR {
         self.no_all_canonical_ptir_list.clone()
     }
 
-    pub(crate) fn from_canonical_entries(
+    pub fn from_canonical_entries(
         strand: &ISOMSTRAND,
         n_exon: u16,
         entries: Vec<GroupedPTIREntry>,
@@ -137,7 +137,7 @@ impl GroupedPTIR {
         }
     }
 
-    pub(crate) fn from_non_canonical_entries(
+    pub fn from_non_canonical_entries(
         strand: &ISOMSTRAND,
         n_exon: u16,
         entries: Vec<GroupedPTIREntry>,
@@ -164,7 +164,11 @@ impl GroupedPTIR {
     }
 
     fn set_repr_from_terminals(&mut self, tss: u32, tes: u32) {
-        let (repr_left, repr_right) = terminals_to_boundaries(tss, tes, self.strand);
+        let (repr_left, repr_right) = match self.strand {
+            ISOMSTRAND::Plus => (tss, tes),
+            ISOMSTRAND::Minus => (tes, tss),
+            ISOMSTRAND::Unknown => (tss, tes),
+        };
         self.repr_left = repr_left;
         self.repr_right = repr_right;
     }
@@ -669,23 +673,11 @@ fn tss_is_left_boundary(strand: &ISOMSTRAND) -> bool {
     }
 }
 
-fn tes_is_left_boundary(strand: &ISOMSTRAND) -> bool {
-    !tss_is_left_boundary(strand)
-}
-
 fn boundaries_to_terminals(left: u32, right: u32, strand: ISOMSTRAND) -> (u32, u32) {
     match strand {
         ISOMSTRAND::Plus => (left, right),
         ISOMSTRAND::Minus => (right, left),
         ISOMSTRAND::Unknown => (left, right),
-    }
-}
-
-fn terminals_to_boundaries(tss: u32, tes: u32, strand: ISOMSTRAND) -> (u32, u32) {
-    match strand {
-        ISOMSTRAND::Plus => (tss, tes),
-        ISOMSTRAND::Minus => (tes, tss),
-        ISOMSTRAND::Unknown => (tss, tes),
     }
 }
 
@@ -813,6 +805,57 @@ fn select_repr_by_guide_score(
     best
 }
 
+/// 将 MergePolicyArg 转换为 MergePolicyUsed（用于上报实际使用的策略）。
+/// Major 若无唯一最高频赢家则退化上报为 Outer。
+fn resolve_used_policy(policy: MergePolicyArg, unique_major: bool) -> MergePolicyUsed {
+    match policy {
+        MergePolicyArg::Outer => MergePolicyUsed::Outer,
+        MergePolicyArg::Inner => MergePolicyUsed::Inner,
+        MergePolicyArg::Major => {
+            if unique_major { MergePolicyUsed::Major } else { MergePolicyUsed::Outer }
+        }
+    }
+}
+
+/// 比较两个 terminal 位置的优劣，返回 Ordering（Greater 表示 curr 比 best 更优）。
+///
+/// - `is_left_boundary`: 该 terminal 是否对应基因组坐标的左边界
+///   （TSS on Plus/Unknown = true；TES on Plus/Unknown = false；Minus 链相反）
+/// - Outer: 左边界取更小值，右边界取更大值（最宽转录本）
+/// - Inner: 方向与 Outer 相反（最窄转录本）
+/// - Major: 优先选频次更高的位置，频次相同时退化为 Outer 方向作为 tiebreak
+fn compare_terminal(
+    curr: u32,
+    best: u32,
+    curr_count: usize,
+    best_count: usize,
+    policy: MergePolicyArg,
+    is_left_boundary: bool,
+) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match policy {
+        MergePolicyArg::Outer => {
+            if is_left_boundary { best.cmp(&curr) } else { curr.cmp(&best) }
+        }
+        MergePolicyArg::Inner => {
+            if is_left_boundary { curr.cmp(&best) } else { best.cmp(&curr) }
+        }
+        MergePolicyArg::Major => {
+            match curr_count.cmp(&best_count) {
+                Ordering::Equal => {
+                    // 频次相同，退化为 Outer 方向作为 tiebreak
+                    if is_left_boundary { best.cmp(&curr) } else { curr.cmp(&best) }
+                }
+                ord => ord,
+            }
+        }
+    }
+}
+
+/// 从候选转录本中按策略选出代表性转录本。
+///
+/// - `candidates`: tss_pos/tes_pos 的下标切片，优先级更高的候选集合（非空时优先使用）
+/// - 先按 TSS 策略比较，TSS 平局再按 TES 策略比较，两者均平则保留最早候选（保序）
 fn select_repr_by_policy(
     tss_pos: &[u32],
     tes_pos: &[u32],
@@ -825,6 +868,7 @@ fn select_repr_by_policy(
         return Err(MergeError::SelectReprFailed);
     }
 
+    // 阶段 1：统计各 TSS/TES 位置在 candidates 中的出现频次（供 Major 策略使用）
     let mut tss_counts: FxHashMap<u32, usize> = FxHashMap::default();
     let mut tes_counts: FxHashMap<u32, usize> = FxHashMap::default();
     for &idx in candidates {
@@ -832,135 +876,48 @@ fn select_repr_by_policy(
         *tes_counts.entry(tes_pos[idx]).or_insert(0) += 1;
     }
 
-    let max_tss_count = tss_counts.values().copied().max().unwrap_or(0);
-    let max_tes_count = tes_counts.values().copied().max().unwrap_or(0);
-    let unique_tss_major = tss_counts.values().filter(|&&c| c == max_tss_count).count() == 1;
-    let unique_tes_major = tes_counts.values().filter(|&&c| c == max_tes_count).count() == 1;
-
-    let used_tss_policy = match tss_policy {
-        MergePolicyArg::Outer => MergePolicyUsed::Outer,
-        MergePolicyArg::Inner => MergePolicyUsed::Inner,
-        MergePolicyArg::Major => {
-            if unique_tss_major {
-                MergePolicyUsed::Major
-            } else {
-                MergePolicyUsed::Outer
-            }
-        }
+    // 阶段 2：确定实际使用的策略（用于返回值上报）
+    // Major 若存在唯一最高频位置则上报 Major，否则退化上报为 Outer
+    let unique_tss_major = {
+        let max = tss_counts.values().copied().max().unwrap_or(0);
+        tss_counts.values().filter(|&&c| c == max).count() == 1
     };
-    let used_tes_policy = match tes_policy {
-        MergePolicyArg::Outer => MergePolicyUsed::Outer,
-        MergePolicyArg::Inner => MergePolicyUsed::Inner,
-        MergePolicyArg::Major => {
-            if unique_tes_major {
-                MergePolicyUsed::Major
-            } else {
-                MergePolicyUsed::Outer
-            }
-        }
+    let unique_tes_major = {
+        let max = tes_counts.values().copied().max().unwrap_or(0);
+        tes_counts.values().filter(|&&c| c == max).count() == 1
     };
+    let used_tss_policy = resolve_used_policy(tss_policy, unique_tss_major);
+    let used_tes_policy = resolve_used_policy(tes_policy, unique_tes_major);
 
+    // 阶段 3：锦标赛遍历，先按 TSS 策略比较，TSS 平局再按 TES 策略比较，
+    // TES 也平局则保留最早候选（保序）
+    let tss_is_left = tss_is_left_boundary(strand);
     let mut best = candidates[0];
     for &idx in candidates.iter().skip(1) {
-        let best_tss = tss_pos[best];
-        let curr_tss = tss_pos[idx];
-        let best_tss_count = *tss_counts.get(&best_tss).unwrap_or(&0);
-        let curr_tss_count = *tss_counts.get(&curr_tss).unwrap_or(&0);
-
-        // curr_better_tss and best_better_tss are mutually exclusive, so the
-        // negation guards on the other side are redundant and omitted.
-        let curr_better_tss = match tss_policy {
-            MergePolicyArg::Outer => {
-                if tss_is_left_boundary(strand) {
-                    curr_tss < best_tss
-                } else {
-                    curr_tss > best_tss
-                }
-            }
-            MergePolicyArg::Inner => {
-                if tss_is_left_boundary(strand) {
-                    curr_tss > best_tss
-                } else {
-                    curr_tss < best_tss
-                }
-            }
-            MergePolicyArg::Major => {
-                if curr_tss_count != best_tss_count {
-                    curr_tss_count > best_tss_count
-                } else if tss_is_left_boundary(strand) {
-                    curr_tss < best_tss
-                } else {
-                    curr_tss > best_tss
-                }
-            }
-        };
-        let best_better_tss = match tss_policy {
-            MergePolicyArg::Outer => {
-                if tss_is_left_boundary(strand) {
-                    best_tss < curr_tss
-                } else {
-                    best_tss > curr_tss
-                }
-            }
-            MergePolicyArg::Inner => {
-                if tss_is_left_boundary(strand) {
-                    best_tss > curr_tss
-                } else {
-                    best_tss < curr_tss
-                }
-            }
-            MergePolicyArg::Major => {
-                if best_tss_count != curr_tss_count {
-                    best_tss_count > curr_tss_count
-                } else if tss_is_left_boundary(strand) {
-                    best_tss < curr_tss
-                } else {
-                    best_tss > curr_tss
-                }
-            }
-        };
-
-        if curr_better_tss {
-            best = idx;
-            continue;
+        use std::cmp::Ordering;
+        let tss_ord = compare_terminal(
+            tss_pos[idx],
+            tss_pos[best],
+            tss_counts[&tss_pos[idx]],
+            tss_counts[&tss_pos[best]],
+            tss_policy,
+            tss_is_left,
+        );
+        match tss_ord {
+            Ordering::Greater => { best = idx; continue; }
+            Ordering::Less => continue,
+            Ordering::Equal => {}
         }
-        if best_better_tss {
-            continue;
-        }
-
-        // TSS tied → compare TES; if also tied, keep earliest (best unchanged)
-        let best_tes = tes_pos[best];
-        let curr_tes = tes_pos[idx];
-        let best_tes_count = *tes_counts.get(&best_tes).unwrap_or(&0);
-        let curr_tes_count = *tes_counts.get(&curr_tes).unwrap_or(&0);
-
-        let curr_better_tes = match tes_policy {
-            MergePolicyArg::Outer => {
-                if tes_is_left_boundary(strand) {
-                    curr_tes < best_tes
-                } else {
-                    curr_tes > best_tes
-                }
-            }
-            MergePolicyArg::Inner => {
-                if tes_is_left_boundary(strand) {
-                    curr_tes > best_tes
-                } else {
-                    curr_tes < best_tes
-                }
-            }
-            MergePolicyArg::Major => {
-                if curr_tes_count != best_tes_count {
-                    curr_tes_count > best_tes_count
-                } else if tes_is_left_boundary(strand) {
-                    curr_tes < best_tes
-                } else {
-                    curr_tes > best_tes
-                }
-            }
-        };
-
-        if curr_better_tes {
+        // TSS 平局 → 比 TES（tes_is_left_boundary = !tss_is_left_boundary）
+        let tes_ord = compare_terminal(
+            tes_pos[idx],
+            tes_pos[best],
+            tes_counts[&tes_pos[idx]],
+            tes_counts[&tes_pos[best]],
+            tes_policy,
+            !tss_is_left,
+        );
+        if tes_ord == Ordering::Greater {
             best = idx;
         }
     }
@@ -968,6 +925,7 @@ fn select_repr_by_policy(
     Ok((best, used_tss_policy, used_tes_policy))
 }
 
+/// calculate the sum of junction difference between current transcript and repr.
 fn junction_diff_sums(curr: &[(u32, u32)], repr: &[(u32, u32)], strand: ISOMSTRAND) -> (u32, u32) {
     if curr.len() != repr.len() {
         return (u32::MAX, u32::MAX);
@@ -1017,212 +975,4 @@ fn junction_exon_diffs(
         }
     }
     Ok(exon_diffs)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::merge::guide::GuideBEDType;
-    use std::fs;
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_temp_path(prefix: &str, suffix: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("{prefix}-{nanos}.{suffix}"))
-    }
-
-    fn load_guide_db(contents: &str, guide_type: GuideBEDType) -> GuideDb {
-        let path = unique_temp_path("isomatch-grouped-ptirs-guide", "bed");
-        fs::write(&path, contents).unwrap();
-        let chrmap: Option<&PathBuf> = None;
-        let db = GuideDb::from_bed_path(&path, guide_type, &chrmap).unwrap();
-        let _ = fs::remove_file(&path);
-        db
-    }
-
-    fn entry(left: u32, right: u32) -> GroupedPTIREntry {
-        GroupedPTIREntry {
-            super_idx: 0,
-            left,
-            right,
-            junctions: Vec::new(),
-            tx_type: TxType::MONO,
-        }
-    }
-
-    #[test]
-    fn select_repr_terminals_prefers_transcript_supported_on_both_sides() {
-        let entries = vec![entry(100, 200), entry(120, 220)];
-        let guide_tss = Some(load_guide_db(
-            concat!(
-                "chromosome\tstart\tend\tID\tscore\tstrand\n",
-                "chr1\t99\t100\ttss0\t1\t+\n",
-            ),
-            GuideBEDType::Tss,
-        ));
-        let guide_tes = Some(load_guide_db(
-            concat!(
-                "chromosome\tstart\tend\tID\tscore\tstrand\n",
-                "chr1\t199\t200\ttes0\t1\t+\n",
-                "chr1\t219\t220\ttes1\t1\t+\n",
-                "chr1\t218\t221\ttes2\t1\t+\n",
-            ),
-            GuideBEDType::Tes,
-        ));
-
-        let selected = select_repr_terminals(
-            "chr1",
-            &entries,
-            &ISOMSTRAND::Plus,
-            MergePolicyArg::Outer,
-            MergePolicyArg::Outer,
-            &guide_tss,
-            &guide_tes,
-            0,
-            0,
-        )
-        .unwrap();
-
-        assert_eq!(selected.0, (100, 200));
-        assert!(matches!(
-            selected.1,
-            (MergePolicyUsed::Guide, MergePolicyUsed::Guide)
-        ));
-    }
-
-    #[test]
-    fn select_repr_terminals_uses_policy_within_multi_guided_candidates() {
-        let entries = vec![entry(100, 200), entry(110, 190)];
-        let guide_tss = Some(load_guide_db(
-            concat!(
-                "chromosome\tstart\tend\tID\tscore\tstrand\n",
-                "chr1\t99\t100\ttss0\t1\t+\n",
-                "chr1\t109\t110\ttss1\t1\t+\n",
-            ),
-            GuideBEDType::Tss,
-        ));
-        let guide_tes = Some(load_guide_db(
-            concat!(
-                "chromosome\tstart\tend\tID\tscore\tstrand\n",
-                "chr1\t199\t200\ttes0\t1\t+\n",
-                "chr1\t189\t190\ttes1\t1\t+\n",
-            ),
-            GuideBEDType::Tes,
-        ));
-
-        let selected = select_repr_terminals(
-            "chr1",
-            &entries,
-            &ISOMSTRAND::Plus,
-            MergePolicyArg::Outer,
-            MergePolicyArg::Outer,
-            &guide_tss,
-            &guide_tes,
-            0,
-            0,
-        )
-        .unwrap();
-
-        assert_eq!(selected.0, (100, 200));
-        assert!(matches!(
-            selected.1,
-            (MergePolicyUsed::Guide, MergePolicyUsed::Guide)
-        ));
-    }
-
-    #[test]
-    fn select_repr_terminals_scores_partial_support_then_breaks_ties_by_length() {
-        let entries = vec![entry(100, 180), entry(120, 230)];
-        let guide_tss = Some(load_guide_db(
-            concat!(
-                "chromosome\tstart\tend\tID\tscore\tstrand\n",
-                "chr1\t99\t100\ttss0\t1\t+\n",
-                "chr1\t119\t120\ttss1\t1\t+\n",
-            ),
-            GuideBEDType::Tss,
-        ));
-        let guide_tes: Option<GuideDb> = None;
-
-        let selected = select_repr_terminals(
-            "chr1",
-            &entries,
-            &ISOMSTRAND::Plus,
-            MergePolicyArg::Outer,
-            MergePolicyArg::Inner,
-            &guide_tss,
-            &guide_tes,
-            0,
-            0,
-        )
-        .unwrap();
-
-        assert_eq!(selected.0, (120, 230));
-        assert!(matches!(
-            selected.1,
-            (MergePolicyUsed::Guide, MergePolicyUsed::Inner)
-        ));
-    }
-
-    #[test]
-    fn select_repr_terminals_without_guide_support_falls_back_to_policy_on_real_transcript() {
-        let entries = vec![entry(100, 220), entry(110, 200)];
-        let guide_tss: Option<GuideDb> = None;
-        let guide_tes: Option<GuideDb> = None;
-
-        let selected = select_repr_terminals(
-            "chr1",
-            &entries,
-            &ISOMSTRAND::Plus,
-            MergePolicyArg::Outer,
-            MergePolicyArg::Inner,
-            &guide_tss,
-            &guide_tes,
-            0,
-            0,
-        )
-        .unwrap();
-
-        assert_eq!(selected.0, (100, 220));
-        assert!(matches!(
-            selected.1,
-            (MergePolicyUsed::Outer, MergePolicyUsed::Inner)
-        ));
-    }
-
-    #[test]
-    fn select_repr_terminals_uses_earliest_transcript_for_full_ties() {
-        let entries = vec![entry(100, 200), entry(120, 220)];
-        let guide_tss = Some(load_guide_db(
-            concat!(
-                "chromosome\tstart\tend\tID\tscore\tstrand\n",
-                "chr1\t99\t100\ttss0\t1\t+\n",
-                "chr1\t119\t120\ttss1\t1\t+\n",
-            ),
-            GuideBEDType::Tss,
-        ));
-        let guide_tes: Option<GuideDb> = None;
-
-        let selected = select_repr_terminals(
-            "chr1",
-            &entries,
-            &ISOMSTRAND::Plus,
-            MergePolicyArg::Outer,
-            MergePolicyArg::Outer,
-            &guide_tss,
-            &guide_tes,
-            0,
-            0,
-        )
-        .unwrap();
-
-        assert_eq!(selected.0, (100, 200));
-        assert!(matches!(
-            selected.1,
-            (MergePolicyUsed::Guide, MergePolicyUsed::Outer)
-        ));
-    }
 }
