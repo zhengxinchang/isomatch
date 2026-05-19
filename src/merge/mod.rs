@@ -195,6 +195,16 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         "Output file have been seved at: {}",
         &args.out.to_string_lossy()
     );
+    let mut merge_info_path = args.out.clone();
+    merge_info_path.add_extension("merge_info.json");
+
+    let mut merge_info_writer = File::create(merge_info_path)?;
+
+    let msg = serde_json::to_string_pretty(&stats)?;
+
+    merge_info_writer.write(msg.as_bytes())?;
+    merge_info_writer.flush()?;
+
     info!("Fnished!");
     Ok(())
 }

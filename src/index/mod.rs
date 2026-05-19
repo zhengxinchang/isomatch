@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, fs::File, io::Write};
 
 use anyhow::{Context, bail};
 use log::{error, info, warn};
@@ -26,7 +26,7 @@ pub struct IndexStats {
     pub skipped_transcript_count: u64,
     pub skipped_gene_count: u64,
     pub missing_seqid_count: u64,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    // #[serde(skip_serializing_if = "Vec::is_empty")]
     pub missing_seqids: Vec<String>,
     pub plus_strand_tx_count: u64,
     pub minus_strand_tx_count: u64,
@@ -229,7 +229,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
         bail!("No indexable seqids remain after filtering against the reference FASTA");
     }
 
-    let output_path = if let Some(out) = &args.out {
+    let isomx_path = if let Some(out) = &args.out {
         out.clone()
     } else {
         let mut default_out = args.input.clone();
@@ -239,7 +239,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
 
     info!("Initializing Builder...");
     let mut builder = builder::IndexBuilder::new(
-        std::fs::File::create(&output_path).expect("Can not create output file"),
+        std::fs::File::create(&isomx_path).expect("Can not create output file"),
         chrom_names,
         gtf_size,
         md5,
@@ -290,8 +290,18 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
     builder.finalize()?;
     stats.finalize();
 
-    info!("Index written to {:?}", output_path);
+    info!("Index written to {:?}", isomx_path);
+
+    let mut isomx_info_path = isomx_path.clone();
+    isomx_info_path.add_extension("index_info.json");
+    let mut isomx_info_writer = File::create(isomx_info_path)?;
     print_json_block("Index summary", &stats);
+
+    let info_json = serde_json::to_string_pretty(&stats)?;
+
+    isomx_info_writer.write(info_json.as_bytes())?;
+    isomx_info_writer.flush()?;
+
     info!("Fnished!");
     Ok(())
 }
