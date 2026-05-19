@@ -3,13 +3,20 @@ use crate::core::ptir::PTIR;
 use crate::core::tx_base::TxBase;
 use crate::core::tx_strand::ISOMSTRAND;
 use crate::index::reader::ChromBlockReader;
+use crate::merge::grouped_ptirs::GroupedPTIR;
 use crate::merge::guide::GuideDb;
+use crate::merge::policy::MergePolicyUsed;
 use crate::merge::policy::merge_cluster;
 use crate::utils::is_gzipped;
+use crate::utils::print_json_block;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
+use serde::Serialize;
 use std::io::BufWriter;
 use std::io::Write;
-use std::{collections::HashSet, fs::File};
+use std::{
+    collections::{BTreeMap, HashSet},
+    fs::File,
+};
 pub mod grouped_ptirs;
 pub mod guide;
 pub mod merge_error;
@@ -35,6 +42,10 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     // open all files (isomx) into a vec
     args.validate();
     let n_inputs = args.inputs.len();
+    let mut stats = MergeStats {
+        source_files: n_inputs as u32,
+        ..MergeStats::default()
+    };
     info!("Loading {n_inputs} gtf(s)");
     let mut fhs: Vec<IndexReader> = Vec::with_capacity(n_inputs);
     for (file_id, input_path) in args.inputs.iter().enumerate() {
@@ -149,6 +160,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
                 &mut super_cluster,
                 &mut global_scluster_id,
                 &mut global_tx_id,
+                &mut stats,
                 &args,
                 bufwriter.as_mut(),
                 &guide_tss_index,
@@ -165,6 +177,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             &mut super_cluster,
             &mut global_scluster_id,
             &mut global_tx_id,
+            &mut stats,
             &args,
             bufwriter.as_mut(),
             &guide_tss_index,
@@ -176,6 +189,8 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
 
     bufwriter.flush()?;
     drop(bufwriter);
+    stats.finalize();
+    print_json_block("Merge summary", &stats);
     info!(
         "Output file have been seved at: {}",
         &args.out.to_string_lossy()
@@ -189,6 +204,7 @@ pub fn process_super_cluster(
     super_cluster: &mut Vec<PTIR>,
     global_scluster_id: &mut u32,
     global_tx_id: &mut u32,
+    stats: &mut MergeStats,
     args: &MergeArgs,
     bufwriter: &mut dyn Write,
     guide_tss: &Option<GuideDb>,
@@ -196,6 +212,7 @@ pub fn process_super_cluster(
 ) -> Result<(), MergeError> {
     // println!("super cluster size {}", super_cluster.len());
     *global_scluster_id += 1;
+    stats.observe_source_txs(super_cluster.len());
     // build junc cluster
     // cluter has same strand and junction number, which is the merge unit
     let mut clusters: std::collections::HashMap<
@@ -230,6 +247,7 @@ pub fn process_super_cluster(
         for grpptir in grpptirs.iter_mut() {
             *global_tx_id += 1;
             grpptir.update_ids(*global_scluster_id, *global_tx_id);
+            stats.observe_merged_tx(grpptir);
             grpptir.write_gtf_block(chrom_name, super_cluster, bufwriter)?;
         }
     }
@@ -347,4 +365,75 @@ pub fn add_output_header(bufwriter: &mut dyn Write, args: &MergeArgs) -> AnyResu
     writeln!(bufwriter, "##ISOM <COMMAND> cmd={}", command)?;
 
     Ok(())
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct MergeStats {
+    pub source_files: u32,
+    pub total_tx_cnt: u32,
+    pub merged_tx_cnt: u32,
+    pub merged_multi_exons_tx_cnt: u32,
+    pub merged_mono_exon_tx_cnt: u32,
+    pub tss_guide_cnt: u32,
+    pub tss_guide_pct: f64,
+    pub tes_guide_cnt: u32,
+    pub tes_guide_pct: f64,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub merged_tx_by_source_count: BTreeMap<u32, u32>,
+}
+
+impl MergeStats {
+    fn observe_source_txs(&mut self, tx_count: usize) {
+        self.total_tx_cnt += tx_count as u32;
+    }
+
+    fn observe_merged_tx(&mut self, grpptir: &GroupedPTIR) {
+        self.merged_tx_cnt += 1;
+
+        if grpptir.n_exon() <= 1 {
+            self.merged_mono_exon_tx_cnt += 1;
+        } else {
+            self.merged_multi_exons_tx_cnt += 1;
+        }
+
+        if matches!(grpptir.used_tss_policy(), MergePolicyUsed::Guide) {
+            self.tss_guide_cnt += 1;
+        }
+
+        if matches!(grpptir.used_tes_policy(), MergePolicyUsed::Guide) {
+            self.tes_guide_cnt += 1;
+        }
+
+        *self
+            .merged_tx_by_source_count
+            .entry(grpptir.total_count())
+            .or_insert(0) += 1;
+    }
+
+    fn finalize(&mut self) {
+        if self.merged_tx_cnt == 0 {
+            self.tss_guide_pct = 0.0;
+            self.tes_guide_pct = 0.0;
+            return;
+        }
+
+        self.tss_guide_pct = self.tss_guide_cnt as f64 / self.merged_tx_cnt as f64;
+        self.tes_guide_pct = self.tes_guide_cnt as f64 / self.merged_tx_cnt as f64;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MergeStats;
+
+    #[test]
+    fn merge_hist_counts_outputs_by_source_tx_count() {
+        let mut stats = MergeStats::default();
+        *stats.merged_tx_by_source_count.entry(1).or_insert(0) += 1;
+        *stats.merged_tx_by_source_count.entry(3).or_insert(0) += 1;
+        *stats.merged_tx_by_source_count.entry(3).or_insert(0) += 1;
+
+        assert_eq!(stats.merged_tx_by_source_count.get(&1), Some(&1));
+        assert_eq!(stats.merged_tx_by_source_count.get(&3), Some(&2));
+    }
 }

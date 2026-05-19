@@ -22,13 +22,13 @@ index3: build
 
 merge: build
 	/usr/bin/time -v target/release/isomatch merge \
-		-o test/merge.gtf.gz -d 3 -a 3 -s 200 -e 200 \
+		-o test/merge.gtf.gz --terminal-merge none \
 		--guide-tss /ssd2/projects/isomatch-dev/evidence/human.guide.tss.bed \
 		--guide-tes /ssd2/projects/isomatch-dev/evidence/human.guide.tes.bed \
 		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf \
-# 		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz \
-# 		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz  \
-# 		test/gencode.v49.basic.annotation.sorted.gtf.gz \
+		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz \
+		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz  \
+		test/gencode.v49.basic.annotation.sorted.gtf.gz \
 
 INPUT := test/isoseq_transcripts.sorted.filtered_lite.clean.gtf
 N := 1000

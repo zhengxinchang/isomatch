@@ -45,13 +45,13 @@ impl TxBaseTrait for TxBase {
         self.ref_hash
     }
 
-    fn gtf_offset(&self) -> u64 {
-        0
-    }
+    // fn gtf_offset(&self) -> u64 {
+    //     0
+    // }
 
-    fn gtf_len(&self) -> u32 {
-        0
-    }
+    // fn gtf_len(&self) -> u32 {
+    //     0
+    // }
 
     fn n_exons(&self) -> u16 {
         self.n_exons
@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(decoded.chrom_id, tx.chrom_id);
         assert_eq!(decoded.seq_hash, tx.seq_hash);
         assert_eq!(decoded.ref_hash, tx.ref_hash);
-        assert_eq!(decoded.gtf_offset(), 0);
+        // assert_eq!(decoded.gtf_offset(), 0);
         assert_eq!(decoded.tx_id_span, tx.tx_id_span);
         assert_eq!(decoded.gene_id_span, tx.gene_id_span);
     }

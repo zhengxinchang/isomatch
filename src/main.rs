@@ -128,6 +128,16 @@ pub struct MergeArgs {
     pub wob_u: u32,
 
     #[clap(
+        short = 't',
+        long = "terminal-merge",
+        help_heading = "Canonical Transcript Merge",
+        help = "Canonical terminal merge mode, work with tss-wob and tes-wob\n",
+        value_enum,
+        default_value = "both"
+    )]
+    pub terminal_merge: TerminalMergeMode,
+
+    #[clap(
         short = 's',
         long = "tss-wob",
         help_heading = "Canonical Transcript Merge",
@@ -144,16 +154,6 @@ pub struct MergeArgs {
         default_value_t = 50
     )]
     pub tes_wob: u32,
-
-    #[clap(
-        short = 't',
-        long = "terminal-merge",
-        help_heading = "Canonical Transcript Merge",
-        help = "Canonical terminal merge mode",
-        value_enum,
-        default_value = "both"
-    )]
-    pub terminal_merge: TerminalMergeMode,
 
     #[clap(
         short = 'D',
@@ -183,6 +183,16 @@ pub struct MergeArgs {
     pub wob_u_nc: u32,
 
     #[clap(
+        short = 'T',
+        long = "terminal-merge-nc",
+        help_heading = "Non-Canonical Transcript Merge",
+        help = "Non-canonical terminal merge mode, work with tss-wob-nc and tes-wob-nc\n",
+        value_enum,
+        default_value = "both"
+    )]
+    pub terminal_merge_nc: TerminalMergeMode,
+
+    #[clap(
         short = 'S',
         long = "tss-wob-nc",
         help_heading = "Non-Canonical Transcript Merge",
@@ -199,16 +209,6 @@ pub struct MergeArgs {
         default_value_t = 50
     )]
     pub tes_wob_nc: u32,
-
-    #[clap(
-        short = 'T',
-        long = "terminal-merge-nc",
-        help_heading = "Non-Canonical Transcript Merge",
-        help = "Non-canonical terminal merge mode",
-        value_enum,
-        default_value = "both"
-    )]
-    pub terminal_merge_nc: TerminalMergeMode,
 
     #[clap(
         long = "mono-ovlp",
@@ -258,7 +258,11 @@ pub struct MergeArgs {
     #[clap(
         long = "splice-policy",
         help_heading = "Representative Selection",
-        help = "Representative splice-junction policy",
+        help = "Representative splice-junction policy. 
+                longer = longest exon span (thus shortest intron); 
+                shorter = shortest exon span; 
+                major = most frequent junction (falls back to longer on tie)
+                ",
         value_enum,
         default_value_t = MergePolicyArg::Major
     )]
@@ -267,7 +271,11 @@ pub struct MergeArgs {
     #[clap(
         long = "tss-policy",
         help_heading = "Representative Selection",
-        help = "Representative TSS policy",
+        help = "Representative TSS policy. 
+                longer = most upstream TSS; 
+                shorter = most downstream TSS; 
+                major = most frequent TSS (falls back to union on tie)
+                ",
         value_enum,
         default_value_t = MergePolicyArg::Major
     )]
@@ -276,7 +284,11 @@ pub struct MergeArgs {
     #[clap(
         long = "tes-policy",
         help_heading = "Representative Selection",
-        help = "Representative TES policy",
+        help = "Representative TES policy. 
+                longer = most downstream TES; 
+                shorter = most upstream TES; 
+                major = most frequent TES (falls back to union on tie)
+                ",
         value_enum,
         default_value_t = MergePolicyArg::Major
     )]
@@ -285,7 +297,11 @@ pub struct MergeArgs {
     #[clap(
         long = "mono-policy",
         help_heading = "Representative Selection",
-        help = "Representative mono-exon boundary policy",
+        help = "Representative mono-exon boundary policy. 
+                union = widest span; 
+                intersect = narrowest span; 
+                major = most frequent span (falls back to union on tie)
+                ",
         value_enum,
         default_value_t = MergePolicyArg::Major
     )]

@@ -19,8 +19,8 @@ pub trait TxBaseTrait {
     fn flags(&self) -> TxBaseFlags;
     fn seq_hash(&self) -> u128;
     fn ref_hash(&self) -> u128;
-    fn gtf_offset(&self) -> u64;
-    fn gtf_len(&self) -> u32;
+    // fn gtf_offset(&self) -> u64;
+    // fn gtf_len(&self) -> u32;
     fn n_exons(&self) -> u16;
     fn junctions(&self, junction_pool: &JunctionPool) -> Vec<(u32, u32)>;
     fn splice_sites(&self, splice_sites_pool: &SpliceSitePool) -> Vec<SpliceSitePair>;

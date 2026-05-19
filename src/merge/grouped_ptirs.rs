@@ -263,11 +263,11 @@ impl GroupedPTIR {
                 .map(|entry| entry.junctions[junction_idx])
                 .collect();
 
-            let (repr, used_policy) = select_pair(&positions, args.splice_policy)?;
+            let (repr, used_policy) = select_splice_pair(&positions, args.splice_policy)?;
             if matches!(args.splice_policy, MergePolicyArg::Major)
-                && matches!(used_policy, MergePolicyArg::Outer)
+                && matches!(used_policy, MergePolicyArg::Longer)
             {
-                self.used_repr_junction_policy = MergePolicyUsed::Outer;
+                self.used_repr_junction_policy = MergePolicyUsed::Longer;
             }
             self.repr_junction.push(repr);
         }
@@ -347,11 +347,11 @@ impl GroupedPTIR {
                 .map(|entry| entry.junctions[junction_idx])
                 .collect();
 
-            let (repr, used_policy) = select_pair(&positions, args.splice_policy)?;
+            let (repr, used_policy) = select_splice_pair(&positions, args.splice_policy)?;
             if matches!(args.splice_policy, MergePolicyArg::Major)
-                && matches!(used_policy, MergePolicyArg::Outer)
+                && matches!(used_policy, MergePolicyArg::Longer)
             {
-                self.used_repr_junction_policy = MergePolicyUsed::Outer;
+                self.used_repr_junction_policy = MergePolicyUsed::Longer;
             }
             self.repr_junction.push(repr);
         }
@@ -423,6 +423,26 @@ impl GroupedPTIR {
 
     pub fn ca_count(&self) -> u32 {
         self.all_canonical_ptir_counts
+    }
+
+    pub fn total_count(&self) -> u32 {
+        self.all_canonical_ptir_counts + self.no_all_canonical_ptir_counts
+    }
+
+    pub fn used_tss_policy(&self) -> MergePolicyUsed {
+        if tss_is_left_boundary(&self.strand) {
+            self.used_repr_left_policy
+        } else {
+            self.used_repr_right_policy
+        }
+    }
+
+    pub fn used_tes_policy(&self) -> MergePolicyUsed {
+        if tss_is_left_boundary(&self.strand) {
+            self.used_repr_right_policy
+        } else {
+            self.used_repr_left_policy
+        }
     }
 
     fn exons_from_repr(&self) -> Vec<(u32, u32)> {
@@ -655,11 +675,27 @@ fn select_pair(
     policy: MergePolicyArg,
 ) -> Result<((u32, u32), MergePolicyArg), MergeError> {
     let out = match policy {
-        MergePolicyArg::Outer => (outer_pair(positions)?, MergePolicyArg::Outer),
-        MergePolicyArg::Inner => (inner_pair(positions)?, MergePolicyArg::Inner),
+        MergePolicyArg::Longer => (outer_pair(positions)?, MergePolicyArg::Longer),
+        MergePolicyArg::Shorter => (inner_pair(positions)?, MergePolicyArg::Shorter),
         MergePolicyArg::Major => match majority_vote_unique_pair(positions) {
             Some(pair) => (pair, MergePolicyArg::Major),
-            None => (outer_pair(positions)?, MergePolicyArg::Outer),
+            None => (outer_pair(positions)?, MergePolicyArg::Longer),
+        },
+    };
+    Ok(out)
+}
+
+fn select_splice_pair(
+    positions: &[(u32, u32)],
+    policy: MergePolicyArg,
+) -> Result<((u32, u32), MergePolicyArg), MergeError> {
+    let out = match policy {
+        // For splice junctions, a shorter intron yields longer flanking exons.
+        MergePolicyArg::Longer => (inner_pair(positions)?, MergePolicyArg::Longer),
+        MergePolicyArg::Shorter => (outer_pair(positions)?, MergePolicyArg::Shorter),
+        MergePolicyArg::Major => match majority_vote_unique_pair(positions) {
+            Some(pair) => (pair, MergePolicyArg::Major),
+            None => (inner_pair(positions)?, MergePolicyArg::Longer),
         },
     };
     Ok(out)
@@ -695,6 +731,128 @@ fn collect_tes_positions(entries: &[GroupedPTIREntry], strand: &ISOMSTRAND) -> V
         .collect()
 }
 
+fn majority_vote_unique_position(positions: &[u32]) -> Option<u32> {
+    let mut counts: FxHashMap<u32, u32> = FxHashMap::default();
+    let mut best_count = 0;
+
+    for &position in positions {
+        let count = counts.entry(position).or_insert(0);
+        *count += 1;
+        best_count = best_count.max(*count);
+    }
+
+    let mut winners = counts
+        .into_iter()
+        .filter_map(|(position, count)| (count == best_count).then_some(position));
+
+    let winner = winners.next()?;
+    if winners.next().is_some() {
+        None
+    } else {
+        Some(winner)
+    }
+}
+
+fn select_terminal_by_policy(
+    positions: &[u32],
+    is_left_boundary: bool,
+    policy: MergePolicyArg,
+) -> Result<(u32, MergePolicyUsed), MergeError> {
+    let choose_longer = |positions: &[u32]| -> Result<u32, MergeError> {
+        if is_left_boundary {
+            positions
+                .iter()
+                .copied()
+                .min()
+                .ok_or(MergeError::SelectReprFailed)
+        } else {
+            positions
+                .iter()
+                .copied()
+                .max()
+                .ok_or(MergeError::SelectReprFailed)
+        }
+    };
+
+    let choose_shorter = |positions: &[u32]| -> Result<u32, MergeError> {
+        if is_left_boundary {
+            positions
+                .iter()
+                .copied()
+                .max()
+                .ok_or(MergeError::SelectReprFailed)
+        } else {
+            positions
+                .iter()
+                .copied()
+                .min()
+                .ok_or(MergeError::SelectReprFailed)
+        }
+    };
+
+    match policy {
+        MergePolicyArg::Longer => Ok((choose_longer(positions)?, MergePolicyUsed::Longer)),
+        MergePolicyArg::Shorter => Ok((choose_shorter(positions)?, MergePolicyUsed::Shorter)),
+        MergePolicyArg::Major => match majority_vote_unique_position(positions) {
+            Some(position) => Ok((position, MergePolicyUsed::Major)),
+            None => Ok((choose_longer(positions)?, MergePolicyUsed::Longer)),
+        },
+    }
+}
+
+fn select_terminal(
+    chrom: &str,
+    positions: &[u32],
+    strand: &ISOMSTRAND,
+    is_left_boundary: bool,
+    policy: MergePolicyArg,
+    guide: &Option<GuideDb>,
+    guide_flank: u32,
+) -> Result<(u32, MergePolicyUsed), MergeError> {
+    let Some(guide) = guide.as_ref() else {
+        return select_terminal_by_policy(positions, is_left_boundary, policy);
+    };
+
+    let mut max_hits = 0usize;
+    let mut hits = Vec::with_capacity(positions.len());
+    for &position in positions {
+        let hit_count = guide
+            .query_overlaps_with_flank(chrom, strand, position, guide_flank)
+            .len();
+        max_hits = max_hits.max(hit_count);
+        hits.push(hit_count);
+    }
+
+    if max_hits == 0 {
+        return select_terminal_by_policy(positions, is_left_boundary, policy);
+    }
+
+    let guide_candidates: Vec<u32> = positions
+        .iter()
+        .zip(hits.iter())
+        .filter_map(|(&position, &hit_count)| (hit_count == max_hits).then_some(position))
+        .collect();
+
+    if guide_candidates.is_empty() {
+        return Err(MergeError::SelectReprFailed);
+    }
+
+    if let Some(position) = majority_vote_unique_position(&guide_candidates) {
+        if guide_candidates
+            .iter()
+            .all(|&candidate| candidate == position)
+        {
+            return Ok((position, MergePolicyUsed::Guide));
+        }
+        return Ok((position, MergePolicyUsed::Major));
+    }
+
+    Ok((
+        select_terminal_by_policy(&guide_candidates, is_left_boundary, MergePolicyArg::Longer)?.0,
+        MergePolicyUsed::Longer,
+    ))
+}
+
 fn select_repr_terminals(
     chrom: &str,
     entries: &[GroupedPTIREntry],
@@ -708,221 +866,26 @@ fn select_repr_terminals(
 ) -> Result<((u32, u32), (MergePolicyUsed, MergePolicyUsed)), MergeError> {
     let tss_pos = collect_tss_positions(entries, strand);
     let tes_pos = collect_tes_positions(entries, strand);
+    let (repr_tss, used_tss) = select_terminal(
+        chrom,
+        &tss_pos,
+        strand,
+        tss_is_left_boundary(strand),
+        tss_policy,
+        guide_tss,
+        guide_tss_flank,
+    )?;
+    let (repr_tes, used_tes) = select_terminal(
+        chrom,
+        &tes_pos,
+        strand,
+        !tss_is_left_boundary(strand),
+        tes_policy,
+        guide_tes,
+        guide_tes_flank,
+    )?;
 
-    // Step 1: compute guide hit counts for every entry up front
-    let (tss_hits, tes_hits): (Vec<usize>, Vec<usize>) = (0..entries.len())
-        .map(|i| {
-            let t = guide_tss.as_ref().map_or(0, |g| {
-                g.query_overlaps_with_flank(chrom, strand, tss_pos[i], guide_tss_flank)
-                    .len()
-            });
-            let e = guide_tes.as_ref().map_or(0, |g| {
-                g.query_overlaps_with_flank(chrom, strand, tes_pos[i], guide_tes_flank)
-                    .len()
-            });
-            (t, e)
-        })
-        .unzip();
-
-    // Step 2: classify entries by guide support
-    let full_guided: Vec<usize> = (0..entries.len())
-        .filter(|&i| {
-            guide_tss.is_some() && guide_tes.is_some() && tss_hits[i] > 0 && tes_hits[i] > 0
-        })
-        .collect();
-
-    let partial_guided: Vec<usize> = (0..entries.len())
-        .filter(|&i| tss_hits[i] > 0 || tes_hits[i] > 0)
-        .collect();
-
-    // Step 3: select representative in priority order
-
-    // Case A: at least one entry has both TSS and TES guide support
-    //         → use position policy only as a tiebreaker among them
-    if !full_guided.is_empty() {
-        let idx = select_repr_by_policy(
-            &tss_pos,
-            &tes_pos,
-            &full_guided,
-            strand,
-            tss_policy,
-            tes_policy,
-        )?
-        .0;
-        return Ok((
-            (tss_pos[idx], tes_pos[idx]),
-            (MergePolicyUsed::Guide, MergePolicyUsed::Guide),
-        ));
-    }
-
-    // Case B: some entries have partial guide support (TSS-only or TES-only)
-    //         → pick by total hit score, tie-break by transcript length, then input order
-    if !partial_guided.is_empty() {
-        let idx = select_repr_by_guide_score(entries, &tss_hits, &tes_hits, &partial_guided);
-        let used_tss = if tss_hits[idx] > 0 {
-            MergePolicyUsed::Guide
-        } else {
-            MergePolicyUsed::from_arg_policy(&tss_policy)
-        };
-        let used_tes = if tes_hits[idx] > 0 {
-            MergePolicyUsed::Guide
-        } else {
-            MergePolicyUsed::from_arg_policy(&tes_policy)
-        };
-        return Ok(((tss_pos[idx], tes_pos[idx]), (used_tss, used_tes)));
-    }
-
-    // Case C: no guide support → fall back to position-based policy on all entries
-    let all: Vec<usize> = (0..entries.len()).collect();
-    let (idx, used_tss, used_tes) =
-        select_repr_by_policy(&tss_pos, &tes_pos, &all, strand, tss_policy, tes_policy)?;
-    Ok(((tss_pos[idx], tes_pos[idx]), (used_tss, used_tes)))
-}
-
-fn select_repr_by_guide_score(
-    entries: &[GroupedPTIREntry],
-    tss_hits: &[usize],
-    tes_hits: &[usize],
-    candidates: &[usize],
-) -> usize {
-    let mut best = candidates[0];
-    for &idx in candidates.iter().skip(1) {
-        let best_score = tss_hits[best] + tes_hits[best];
-        let curr_score = tss_hits[idx] + tes_hits[idx];
-        if curr_score > best_score {
-            best = idx;
-            continue;
-        }
-        if curr_score == best_score {
-            let best_len = entries[best].right - entries[best].left + 1;
-            let curr_len = entries[idx].right - entries[idx].left + 1;
-            if curr_len > best_len {
-                best = idx;
-            }
-        }
-        // tied on score and length → keep earliest (current best unchanged)
-    }
-    best
-}
-
-/// 将 MergePolicyArg 转换为 MergePolicyUsed（用于上报实际使用的策略）。
-/// Major 若无唯一最高频赢家则退化上报为 Outer。
-fn resolve_used_policy(policy: MergePolicyArg, unique_major: bool) -> MergePolicyUsed {
-    match policy {
-        MergePolicyArg::Outer => MergePolicyUsed::Outer,
-        MergePolicyArg::Inner => MergePolicyUsed::Inner,
-        MergePolicyArg::Major => {
-            if unique_major { MergePolicyUsed::Major } else { MergePolicyUsed::Outer }
-        }
-    }
-}
-
-/// 比较两个 terminal 位置的优劣，返回 Ordering（Greater 表示 curr 比 best 更优）。
-///
-/// - `is_left_boundary`: 该 terminal 是否对应基因组坐标的左边界
-///   （TSS on Plus/Unknown = true；TES on Plus/Unknown = false；Minus 链相反）
-/// - Outer: 左边界取更小值，右边界取更大值（最宽转录本）
-/// - Inner: 方向与 Outer 相反（最窄转录本）
-/// - Major: 优先选频次更高的位置，频次相同时退化为 Outer 方向作为 tiebreak
-fn compare_terminal(
-    curr: u32,
-    best: u32,
-    curr_count: usize,
-    best_count: usize,
-    policy: MergePolicyArg,
-    is_left_boundary: bool,
-) -> std::cmp::Ordering {
-    use std::cmp::Ordering;
-    match policy {
-        MergePolicyArg::Outer => {
-            if is_left_boundary { best.cmp(&curr) } else { curr.cmp(&best) }
-        }
-        MergePolicyArg::Inner => {
-            if is_left_boundary { curr.cmp(&best) } else { best.cmp(&curr) }
-        }
-        MergePolicyArg::Major => {
-            match curr_count.cmp(&best_count) {
-                Ordering::Equal => {
-                    // 频次相同，退化为 Outer 方向作为 tiebreak
-                    if is_left_boundary { best.cmp(&curr) } else { curr.cmp(&best) }
-                }
-                ord => ord,
-            }
-        }
-    }
-}
-
-/// 从候选转录本中按策略选出代表性转录本。
-///
-/// - `candidates`: tss_pos/tes_pos 的下标切片，优先级更高的候选集合（非空时优先使用）
-/// - 先按 TSS 策略比较，TSS 平局再按 TES 策略比较，两者均平则保留最早候选（保序）
-fn select_repr_by_policy(
-    tss_pos: &[u32],
-    tes_pos: &[u32],
-    candidates: &[usize],
-    strand: &ISOMSTRAND,
-    tss_policy: MergePolicyArg,
-    tes_policy: MergePolicyArg,
-) -> Result<(usize, MergePolicyUsed, MergePolicyUsed), MergeError> {
-    if candidates.is_empty() {
-        return Err(MergeError::SelectReprFailed);
-    }
-
-    // 阶段 1：统计各 TSS/TES 位置在 candidates 中的出现频次（供 Major 策略使用）
-    let mut tss_counts: FxHashMap<u32, usize> = FxHashMap::default();
-    let mut tes_counts: FxHashMap<u32, usize> = FxHashMap::default();
-    for &idx in candidates {
-        *tss_counts.entry(tss_pos[idx]).or_insert(0) += 1;
-        *tes_counts.entry(tes_pos[idx]).or_insert(0) += 1;
-    }
-
-    // 阶段 2：确定实际使用的策略（用于返回值上报）
-    // Major 若存在唯一最高频位置则上报 Major，否则退化上报为 Outer
-    let unique_tss_major = {
-        let max = tss_counts.values().copied().max().unwrap_or(0);
-        tss_counts.values().filter(|&&c| c == max).count() == 1
-    };
-    let unique_tes_major = {
-        let max = tes_counts.values().copied().max().unwrap_or(0);
-        tes_counts.values().filter(|&&c| c == max).count() == 1
-    };
-    let used_tss_policy = resolve_used_policy(tss_policy, unique_tss_major);
-    let used_tes_policy = resolve_used_policy(tes_policy, unique_tes_major);
-
-    // 阶段 3：锦标赛遍历，先按 TSS 策略比较，TSS 平局再按 TES 策略比较，
-    // TES 也平局则保留最早候选（保序）
-    let tss_is_left = tss_is_left_boundary(strand);
-    let mut best = candidates[0];
-    for &idx in candidates.iter().skip(1) {
-        use std::cmp::Ordering;
-        let tss_ord = compare_terminal(
-            tss_pos[idx],
-            tss_pos[best],
-            tss_counts[&tss_pos[idx]],
-            tss_counts[&tss_pos[best]],
-            tss_policy,
-            tss_is_left,
-        );
-        match tss_ord {
-            Ordering::Greater => { best = idx; continue; }
-            Ordering::Less => continue,
-            Ordering::Equal => {}
-        }
-        // TSS 平局 → 比 TES（tes_is_left_boundary = !tss_is_left_boundary）
-        let tes_ord = compare_terminal(
-            tes_pos[idx],
-            tes_pos[best],
-            tes_counts[&tes_pos[idx]],
-            tes_counts[&tes_pos[best]],
-            tes_policy,
-            !tss_is_left,
-        );
-        if tes_ord == Ordering::Greater {
-            best = idx;
-        }
-    }
-
-    Ok((best, used_tss_policy, used_tes_policy))
+    Ok(((repr_tss, repr_tes), (used_tss, used_tes)))
 }
 
 /// calculate the sum of junction difference between current transcript and repr.
@@ -975,4 +938,25 @@ fn junction_exon_diffs(
         }
     }
     Ok(exon_diffs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn splice_longer_prefers_shorter_intron_span() {
+        let positions = vec![(100, 200), (110, 190), (105, 195)];
+        let (repr, used_policy) = select_splice_pair(&positions, MergePolicyArg::Longer).unwrap();
+        assert_eq!(repr, (110, 190));
+        assert!(matches!(used_policy, MergePolicyArg::Longer));
+    }
+
+    #[test]
+    fn mono_longer_still_prefers_wider_span() {
+        let positions = vec![(100, 200), (110, 190), (105, 195)];
+        let (repr, used_policy) = select_pair(&positions, MergePolicyArg::Longer).unwrap();
+        assert_eq!(repr, (100, 200));
+        assert!(matches!(used_policy, MergePolicyArg::Longer));
+    }
 }

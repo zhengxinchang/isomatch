@@ -15,15 +15,15 @@ use serde::Serialize;
 
 #[derive(Copy, Clone, Debug, Serialize, ValueEnum)]
 pub enum MergePolicyArg {
-    Outer,
-    Inner,
+    Longer,
+    Shorter,
     Major,
 }
 
 #[derive(Copy, Clone, Debug, Serialize)]
 pub enum MergePolicyUsed {
-    Outer,
-    Inner,
+    Longer,
+    Shorter,
     Major,
     Guide,
 }
@@ -31,8 +31,8 @@ pub enum MergePolicyUsed {
 impl fmt::Display for MergePolicyUsed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            MergePolicyUsed::Outer => "outer",
-            MergePolicyUsed::Inner => "inner",
+            MergePolicyUsed::Longer => "longer",
+            MergePolicyUsed::Shorter => "shorter",
             MergePolicyUsed::Major => "major",
             MergePolicyUsed::Guide => "guide",
         };
@@ -43,8 +43,8 @@ impl fmt::Display for MergePolicyUsed {
 impl MergePolicyUsed {
     pub fn from_arg_policy(arg_policy: &MergePolicyArg) -> Self {
         match *arg_policy {
-            MergePolicyArg::Outer => MergePolicyUsed::Outer,
-            MergePolicyArg::Inner => MergePolicyUsed::Inner,
+            MergePolicyArg::Longer => MergePolicyUsed::Longer,
+            MergePolicyArg::Shorter => MergePolicyUsed::Shorter,
             MergePolicyArg::Major => MergePolicyUsed::Major,
         }
     }
@@ -233,7 +233,7 @@ pub fn refine_canonical_grouped_ptir(
         let strand = grpptir.strand();
         let n_exon = grpptir.n_exon();
         let entries = grpptir.canonical_entries_cloned();
-        let split_entries = refine_grouped_entries_by_terminals(
+        let split_entries = split_grouped_entries_by_terminals(
             entries,
             strand,
             args.tss_wob,
@@ -264,7 +264,7 @@ pub fn refine_non_canonical_grouped_ptir(
         let strand = grpptir.strand();
         let n_exon = grpptir.n_exon();
         let entries = grpptir.non_canonical_entries_cloned();
-        let split_entries = refine_grouped_entries_by_terminals(
+        let split_entries = split_grouped_entries_by_terminals(
             entries,
             strand,
             args.tss_wob_nc,
@@ -281,7 +281,7 @@ pub fn refine_non_canonical_grouped_ptir(
     refined
 }
 
-fn refine_grouped_entries_by_terminals(
+fn split_grouped_entries_by_terminals(
     mut entries: Vec<GroupedPTIREntry>,
     strand: ISOMSTRAND,
     tss_wob: u32,
