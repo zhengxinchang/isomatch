@@ -7,11 +7,11 @@ use crate::core::{
     junction_pool::JunctionPool,
     splice_site_pair::SpliceSitePair,
     splice_site_pool::SpliceSitePool,
-    status::TxType,
     string_pool::StringPool,
     tx_base::{TxBase, TxBaseTrait},
     tx_boundary::TxBoundary,
     tx_strand::ISOMSTRAND,
+    tx_type::TxType,
 };
 
 pub struct PTIR {

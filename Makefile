@@ -43,3 +43,8 @@ merge3: build
 		-o test/merge.gtf.gz --splice-policy major -d 3 -a 3 -s 200 -e 200 \
 		test/hg002_ont_drna.isoquant.gtf.gz \
 		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf
+
+merge4 : build
+	/usr/bin/time -v target/release/isomatch merge \
+		-o test/merge-single.gtf.gz  -s 0 -e 0 -u 0 -S 0 -E 0 -U 0 --mono-ovlp 1.0\
+		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf

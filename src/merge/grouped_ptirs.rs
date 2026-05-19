@@ -2,7 +2,7 @@ use std::io::Write;
 
 use crate::{
     MergeArgs,
-    core::{ptir::PTIR, status::TxType, tx_strand::ISOMSTRAND},
+    core::{ptir::PTIR, tx_strand::ISOMSTRAND, tx_type::TxType},
     merge::{
         guide::GuideDb,
         merge_error::MergeError,
@@ -549,7 +549,7 @@ impl GroupedPTIR {
         bufwriter.write_all(b"\"; transcript_id \"")?;
         bufwriter.write_all(tx_id.as_bytes())?;
 
-        let isom_exons = if self.n_exon == 1 { "MONO" } else { "MULTI" };
+        let isom_exons = self.n_exon.to_string();
         bufwriter.write_all(b"\"; ISOM_EXONS \"")?;
         bufwriter.write_all(isom_exons.as_bytes())?;
 
@@ -921,8 +921,8 @@ fn junction_exon_diffs(
 ) -> Result<
     Vec<(
         usize, // exon number
-        u32,   // left diff bp
-        u32,   // right diff bp
+        i32,   // left diff bp
+        i32,   // right diff bp
     )>,
     MergeError,
 > {
@@ -931,8 +931,8 @@ fn junction_exon_diffs(
     }
     let mut exon_diffs = Vec::new();
     for (exon_idx, (curr_junc, repr_junc)) in curr.iter().zip(repr.iter()).enumerate() {
-        let left_diff = repr_junc.0 - curr_junc.0;
-        let right_diff = repr_junc.1 - curr_junc.1;
+        let left_diff = repr_junc.0 as i32 - curr_junc.0 as i32;
+        let right_diff = repr_junc.1 as i32 - curr_junc.1 as i32;
         if left_diff > 0 || right_diff > 0 {
             exon_diffs.push((exon_idx + 1, left_diff, right_diff))
         }

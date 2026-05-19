@@ -4,9 +4,9 @@ use crate::core::tx_strand::ISOMSTRAND;
 /// Flags for TxBase.
 /// bit 0-1: strand (0 for +, 1 for -, 2 for unknown)
 /// bit 2: seq_hash is valid
-/// bit 3: is gtf output of isomatch merge? 1 for yes, 0 for no. 
+/// bit 3: is gtf output of isomatch merge? 1 for yes, 0 for no.
 /// bit 3bit * 4 = 12 bit.  merge policy, SJ TSS TES MONO, each is guided, major, longer, shorter, [place holder] * 4
- #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct TxBaseFlags(pub u16);
 

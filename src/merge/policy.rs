@@ -2,7 +2,7 @@ use core::fmt;
 
 use crate::{
     MergeArgs,
-    core::{ptir::PTIR, status::TxType, tx_strand::ISOMSTRAND},
+    core::{ptir::PTIR, tx_strand::ISOMSTRAND, tx_type::TxType},
     merge::{
         grouped_ptirs::{GroupedPTIR, GroupedPTIREntry},
         guide::GuideDb,
@@ -51,7 +51,7 @@ impl MergePolicyUsed {
 }
 
 #[derive(Copy, Clone, Debug, Serialize, ValueEnum)]
-pub enum TerminalMergeMode {
+pub enum TerminalRefineMode {
     None,
     TSS,
     TES,
@@ -224,7 +224,7 @@ pub fn refine_canonical_grouped_ptir(
     _strand: &ISOMSTRAND,
     args: &MergeArgs,
 ) -> Vec<GroupedPTIR> {
-    if matches!(args.terminal_merge, TerminalMergeMode::None) {
+    if matches!(args.terminal_refine, TerminalRefineMode::None) {
         return grouped_ptirs;
     }
 
@@ -238,7 +238,7 @@ pub fn refine_canonical_grouped_ptir(
             strand,
             args.tss_wob,
             args.tes_wob,
-            args.terminal_merge,
+            args.terminal_refine,
         );
 
         for entries in split_entries {
@@ -255,7 +255,7 @@ pub fn refine_non_canonical_grouped_ptir(
     _strand: &ISOMSTRAND,
     args: &MergeArgs,
 ) -> Vec<GroupedPTIR> {
-    if matches!(args.terminal_merge_nc, TerminalMergeMode::None) {
+    if matches!(args.terminal_refine_nc, TerminalRefineMode::None) {
         return grouped_ptirs;
     }
 
@@ -269,7 +269,7 @@ pub fn refine_non_canonical_grouped_ptir(
             strand,
             args.tss_wob_nc,
             args.tes_wob_nc,
-            args.terminal_merge_nc,
+            args.terminal_refine_nc,
         );
 
         for entries in split_entries {
@@ -286,9 +286,9 @@ fn split_grouped_entries_by_terminals(
     strand: ISOMSTRAND,
     tss_wob: u32,
     tes_wob: u32,
-    mode: TerminalMergeMode,
+    mode: TerminalRefineMode,
 ) -> Vec<Vec<GroupedPTIREntry>> {
-    if entries.len() <= 1 || matches!(mode, TerminalMergeMode::None) {
+    if entries.len() <= 1 || matches!(mode, TerminalRefineMode::None) {
         return vec![entries];
     }
 
@@ -346,13 +346,13 @@ fn terminal_match_with_anchor(
     anchor_tes: u32,
     tss_wob: u32,
     tes_wob: u32,
-    mode: TerminalMergeMode,
+    mode: TerminalRefineMode,
 ) -> bool {
     match mode {
-        TerminalMergeMode::None => true,
-        TerminalMergeMode::TSS => curr_tss.abs_diff(anchor_tss) <= tss_wob,
-        TerminalMergeMode::TES => curr_tes.abs_diff(anchor_tes) <= tes_wob,
-        TerminalMergeMode::Both => {
+        TerminalRefineMode::None => true,
+        TerminalRefineMode::TSS => curr_tss.abs_diff(anchor_tss) <= tss_wob,
+        TerminalRefineMode::TES => curr_tes.abs_diff(anchor_tes) <= tes_wob,
+        TerminalRefineMode::Both => {
             curr_tss.abs_diff(anchor_tss) <= tss_wob && curr_tes.abs_diff(anchor_tes) <= tes_wob
         }
     }

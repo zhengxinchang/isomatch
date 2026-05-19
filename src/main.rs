@@ -14,7 +14,7 @@ pub mod gtf;
 pub mod index;
 pub mod merge;
 pub mod traits;
-use crate::merge::policy::{MergePolicyArg, TerminalMergeMode};
+use crate::merge::policy::{MergePolicyArg, TerminalRefineMode};
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
     name = "isomatch",
@@ -105,7 +105,8 @@ pub struct MergeArgs {
         long = "wob-d",
         help_heading = "Canonical Transcript Merge",
         help = "Canonical donor wobble in bp",
-        default_value_t = 0
+        default_value_t = 0,
+        value_name = "BP"
     )]
     pub wob_d: u32,
 
@@ -114,7 +115,8 @@ pub struct MergeArgs {
         long = "wob-a",
         help_heading = "Canonical Transcript Merge",
         help = "Canonical acceptor wobble in bp",
-        default_value_t = 0
+        default_value_t = 0,
+        value_name = "BP"
     )]
     pub wob_a: u32,
 
@@ -123,26 +125,31 @@ pub struct MergeArgs {
         long = "wob-u",
         help_heading = "Canonical Transcript Merge",
         help = "Canonical unstranded splice wobble in bp",
-        default_value_t = 3
+        default_value_t = 3,
+        value_name = "BP"
     )]
     pub wob_u: u32,
 
     #[clap(
         short = 't',
-        long = "terminal-merge",
+        long = "terminal-refine",
         help_heading = "Canonical Transcript Merge",
-        help = "Canonical terminal merge mode, work with tss-wob and tes-wob\n",
+        help = "Canonical terminal refine mode: 
+        which terminal sites (TSS/TES) to use as criteria 
+        for distinguishing transcripts; works with tss-wob and tes-wob
+        ",
         value_enum,
         default_value = "both"
     )]
-    pub terminal_merge: TerminalMergeMode,
+    pub terminal_refine: TerminalRefineMode,
 
     #[clap(
         short = 's',
         long = "tss-wob",
         help_heading = "Canonical Transcript Merge",
         help = "Canonical TSS wobble in bp",
-        default_value_t = 50
+        default_value_t = 50,
+        value_name = "BP"
     )]
     pub tss_wob: u32,
 
@@ -151,7 +158,8 @@ pub struct MergeArgs {
         long = "tes-wob",
         help_heading = "Canonical Transcript Merge",
         help = "Canonical TES wobble in bp",
-        default_value_t = 50
+        default_value_t = 50,
+        value_name = "BP"
     )]
     pub tes_wob: u32,
 
@@ -160,7 +168,8 @@ pub struct MergeArgs {
         long = "wob-d-nc",
         help_heading = "Non-Canonical Transcript Merge",
         help = "Non-canonical donor wobble in bp",
-        default_value_t = 3
+        default_value_t = 3,
+        value_name = "BP"
     )]
     pub wob_d_nc: u32,
 
@@ -169,7 +178,8 @@ pub struct MergeArgs {
         long = "wob-a-nc",
         help_heading = "Non-Canonical Transcript Merge",
         help = "Non-canonical acceptor wobble in bp",
-        default_value_t = 3
+        default_value_t = 3,
+        value_name = "BP"
     )]
     pub wob_a_nc: u32,
 
@@ -178,26 +188,31 @@ pub struct MergeArgs {
         long = "wob-u-nc",
         help_heading = "Non-Canonical Transcript Merge",
         help = "Non-canonical unstranded splice wobble in bp",
-        default_value_t = 3
+        default_value_t = 3,
+        value_name = "BP"
     )]
     pub wob_u_nc: u32,
 
     #[clap(
         short = 'T',
-        long = "terminal-merge-nc",
+        long = "terminal-refine-nc",
         help_heading = "Non-Canonical Transcript Merge",
-        help = "Non-canonical terminal merge mode, work with tss-wob-nc and tes-wob-nc\n",
+        help = "Non-canonical terminal refine mode: 
+        which terminal sites (TSS/TES) to use as criteria 
+        for distinguishing transcripts; works with tss-wob-nc and tes-wob-nc
+        ",
         value_enum,
         default_value = "both"
     )]
-    pub terminal_merge_nc: TerminalMergeMode,
+    pub terminal_refine_nc: TerminalRefineMode,
 
     #[clap(
         short = 'S',
         long = "tss-wob-nc",
         help_heading = "Non-Canonical Transcript Merge",
         help = "Non-canonical TSS wobble in bp",
-        default_value_t = 50
+        default_value_t = 50,
+        value_name = "BP"
     )]
     pub tss_wob_nc: u32,
 
@@ -206,7 +221,8 @@ pub struct MergeArgs {
         long = "tes-wob-nc",
         help_heading = "Non-Canonical Transcript Merge",
         help = "Non-canonical TES wobble in bp",
-        default_value_t = 50
+        default_value_t = 50,
+        value_name = "BP"
     )]
     pub tes_wob_nc: u32,
 
@@ -214,7 +230,8 @@ pub struct MergeArgs {
         long = "mono-ovlp",
         help_heading = "Mono Exon Transcirpt Merge",
         help = "Minimum reciprocal overlap for mono-exon merge",
-        default_value_t = 0.9
+        default_value_t = 0.9,
+        value_name = "FLOAT"
     )]
     pub mono_ovlp: f64,
 
@@ -236,7 +253,8 @@ pub struct MergeArgs {
         long = "guide-tss-flank",
         help_heading = "Representative Selection",
         help = "TSS evidence search flank in bp; used only with --guide-tss",
-        default_value_t = 10
+        default_value_t = 10,
+        value_name = "BP"
     )]
     pub guide_tss_flank: u32,
 
@@ -244,7 +262,8 @@ pub struct MergeArgs {
         long = "guide-tes-flank",
         help_heading = "Representative Selection",
         help = "TES evidence search flank in bp; used only with --guide-tes",
-        default_value_t = 10
+        default_value_t = 10,
+        value_name = "BP"
     )]
     pub guide_tes_flank: u32,
 
@@ -259,10 +278,10 @@ pub struct MergeArgs {
         long = "splice-policy",
         help_heading = "Representative Selection",
         help = "Representative splice-junction policy. 
-                longer = longest exon span (thus shortest intron); 
-                shorter = shortest exon span; 
-                major = most frequent junction (falls back to longer on tie)
-                ",
+    longer = longest exon span (thus shortest intron); 
+    shorter = shortest exon span; 
+    major = most frequent junction (falls back to longer on tie)
+    ",
         value_enum,
         default_value_t = MergePolicyArg::Major
     )]
@@ -272,10 +291,10 @@ pub struct MergeArgs {
         long = "tss-policy",
         help_heading = "Representative Selection",
         help = "Representative TSS policy. 
-                longer = most upstream TSS; 
-                shorter = most downstream TSS; 
-                major = most frequent TSS (falls back to union on tie)
-                ",
+    longer = most upstream TSS; 
+    shorter = most downstream TSS; 
+    major = most frequent TSS (falls back to union on tie)
+    ",
         value_enum,
         default_value_t = MergePolicyArg::Major
     )]
@@ -285,10 +304,10 @@ pub struct MergeArgs {
         long = "tes-policy",
         help_heading = "Representative Selection",
         help = "Representative TES policy. 
-                longer = most downstream TES; 
-                shorter = most upstream TES; 
-                major = most frequent TES (falls back to union on tie)
-                ",
+    longer = most downstream TES; 
+    shorter = most upstream TES; 
+    major = most frequent TES (falls back to union on tie)
+    ",
         value_enum,
         default_value_t = MergePolicyArg::Major
     )]
@@ -298,10 +317,10 @@ pub struct MergeArgs {
         long = "mono-policy",
         help_heading = "Representative Selection",
         help = "Representative mono-exon boundary policy. 
-                union = widest span; 
-                intersect = narrowest span; 
-                major = most frequent span (falls back to union on tie)
-                ",
+    union = widest span; 
+    intersect = narrowest span; 
+    major = most frequent span (falls back to union on tie)
+    ",
         value_enum,
         default_value_t = MergePolicyArg::Major
     )]
