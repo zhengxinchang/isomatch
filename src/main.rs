@@ -38,7 +38,7 @@ pub enum Commands {
     Index(IndexArgs),
     Merge(MergeArgs),
     // Bench(BenchArgs),
-    Annotate(AnnotateArgs),
+    // Annotate(AnnotateArgs),
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
@@ -403,16 +403,15 @@ fn main() {
                 error!("{}", e);
                 std::process::exit(1);
             }
-        }
-        // Cli {
-        //     command: Commands::Bench(args),
-        // } => {
-        //     greetings2(&args);
-        // }
-        Cli {
-            command: Commands::Annotate(args),
-        } => {
-            greetings2(&args);
-        }
+        } // Cli {
+          //     command: Commands::Bench(args),
+          // } => {
+          //     greetings2(&args);
+          // }
+          // Cli {
+          //     command: Commands::Annotate(args),
+          // } => {
+          //     greetings2(&args);
+          // }
     }
 }

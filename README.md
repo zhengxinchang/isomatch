@@ -1,90 +1,258 @@
 # isomatch
 
+
+
+
 Isomatch: evidence-baesd transcirpts merging and classification.
 
 evidence based merge
-    1. not solely based on coordinates, 
-    2. consider the canonical splice site pattern,
-    3. transcirpt sequence for further comparison, 
-    4. TES/TSS motifs from FANTOM5 or CAGE-seq data, 
-    5. population evidence (isopedia derived evidence)
+
+1. not only consider intron chain, but also consider the TSS/TES
+2. configurable splice junction wobble and TSS/TES threshold for merging,
+3. select representative transcripts based on third party evidence such as refTSS and PolyAsites
 
 multi classification system anntation:
-    1. GFFcompare classification
-    2. SQANTI3 classification
-    3. IsoSeq classification
+
+1. provide SQANTI3 style classification code.
+2. for merged gtf from isomatch merge, not only report difference between reference and merged transcripts, but also report difference between the refernce transcripts and the original transcripts.
+
+large-scale processing capability:
+1. support thousands of GTF files
+
+# subcomands and workflow
+
+isomatch index: build index for gtf files, required by the rest of the subcommands, and can be reused for multiple runs of merge and classify.
+
+isomatch merge: merge transcripts from multiple GTF files, and select representative transcripts based on third party evidence(optional)
+
+isomatch classify: classify transcripts in a GTF file based on reference annotation, and report the classification code for each transcript.
+
+Typical workflow:
+1. create index for all input GTF files using `isomatch index`
+2. merge transcripts from multiple GTF files using `isomatch merge`, and select representative transcripts based on third party evidence(optional)
+3. classify merged transcripts using `isomatch classify`, and report the classification code for each transcript.
 
 
-other feature
-    1. full level sample tracking
-    2. large-scale processing capability (thousands of samples in GTF format)
+# Examples
 
+### Merge
+```
+# build index
+isomatch index sample1.gtf.gz
+isomatch index sample2.gtf.gz
+isomatch index sample3.gtf.gz
 
+# merge with default parameters
+isomatch merge -o merged.gtf.gz  sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+
+# merge with guide-based terminal selection
+isomatch merge -o merged.gtf.gz \
+    --guide-tss human.guide.tss.bed --guide-tes human.guide.tes.bed \
+    sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+
+# merge with wobble splice junction matching
+isomatch merge -o merged.gtf.gz \
+    -d 3 -a 3 -u 3 \
+    -D 5 -A 5 -U 5 \
+    sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+```
 
 # How isomatch merge transcripts
 
-1. treat the splice junction chain as first priority evidence.
-1.1 all canonical transcripts will have higher score than non-all canonical tx
-1.2 for a junction in all transcripts that sightly differnt, most common of the splice junction will be choosen.
-1.3 non-all canonical tx will be attached into the canonical transcirpt
-1.4 the rest of non-all canonical tx will be further merged based on the splice junction wobble and tss tes threshold 
+## Design Principles
 
-## multi exon & plus minus strand
+The core idea of isomatch merge is: **the intron chain defines transcript identity; TSS and TES distinguish isoforms sharing the same chain.**
 
+Unlike simple coordinate-overlap collapse tools, isomatch:
 
-## multi exon unstrand
+1. Uses splice junction matching (with configurable wobble tolerance) as the primary merge criterion;
+2. Further splits transcripts with identical splice chains by TSS/TES distance thresholds;
+3. Treats canonical (GT-AG/GC-AG/AT-AC) and non-canonical splice sites separately, with independent wobble parameters;
+4. Supports third-party terminal evidence (e.g., refTSS, PolyA site databases) to guide representative TSS/TES selection.
 
-## mono exon plus mimnus
+---
 
-## mono exon unstrand
+## Pipeline Overview
 
+```
+Multiple GTF inputs
+        │
+        ▼
+[1] isomatch index: each GTF → .isomx binary index
+        │
+        ▼
+[2] K-way merge + genomic coordinate overlap → Super Cluster (per-chromosome locus)
+        │
+        ▼
+[3] Group by (strand, exon count) → Junction Cluster
+        │
+        ├─ canonical (ALLC)
+        ├─ non-canonical (PRTC / NOTC)
+        └─ mono-exon (MONO)
+        │
+        ▼
+[4] Splice junction wobble matching → initial groups
+        │
+        ▼
+[5] Terminal Refine: further split groups by TSS/TES distance
+        │
+        ▼
+[6] Representative transcript selection (splice junction / TSS / TES policy)
+        │
+        ▼
+Output GTF (with ISOM_SRC / ISOM_COUNT / ISOM_REPR_POLICY annotations)
+```
 
-guide 模式不是annotate，将merge之后的转录本合并到参考转录本，而是用第三方证据例如fantom5的tss tes motif，或者isopedia的population-scale的splice junction evidence来指导merge的过程。
+---
 
+## Stage-by-Stage Details
 
-guided 会默认比其他policy 更优先，
-如果guidesd失败，则还是会选择policy，所以policy是一直存在的。
+### Stage 1: Index Building (isomatch index)
 
+Each input GTF is preprocessed into a `.isomx` binary index file. Each transcript is stored with its chromosome, strand, coordinates, exon count, splice junctions, and transcript type:
 
-guide bed 的格式
+- `ALLC`: all splice sites are canonical (GT-AG, GC-AG, AT-AC)
+- `PRTC`: partially canonical splice sites
+- `NOTC`: no canonical splice sites
+- `MONO`: single-exon transcript, no splice sites
 
-chr start end stand score
+---
 
-case1
-合并long read RNA，都是canonical 有1-2bp的差异，则合并？
+### Stage 2: Super Cluster Construction
 
+For each chromosome, transcripts from all input files are streamed in coordinate order and grouped into **super clusters** — sets of transcripts that overlap each other on the genome, equivalent to a locus.
 
-Merge 和 Annotate 都不应该修改转录本的任何坐标，
-guided模式在merge中的作用是帮助选择representatibve sites。
+---
 
-merge 和 refine 是为了确定哪些转录本应该是一个， guide 是为了帮助选择代表性的转录本。这两个是分开的步骤。
+### Stage 3: Junction Cluster Grouping
 
+Within each super cluster, transcripts are further partitioned by `(strand, n_exons)` into **junction clusters**.
 
-smallexon rescue 应该是一个单独的功能或者整合到correct（refine）中，因为涉及到对转录本的修改。
+This guarantees merge homogeneity: transcripts with different exon counts or on different strands are never merged together.
 
-what is missing in merge
-stats
-guide 
-ISOM_COUNT --> ISOM_TX_CNT plus ISOM_SMPLE_CNT
+---
 
-ISOM_EXONS 直接显示数字，而不是擅自分类
+### Stage 4: Splice Junction Wobble Matching (core merge step)
 
-gffcompare 在进行群体级别的合并的时候存在内存问题，如果是steam模式，则问题是所有的TSS TES都是来自第一个参考GTF。
+#### 4a. Canonical transcript merging
 
-isomatch 子命令体系（修订版）
+Transcripts of type `ALLC` are grouped using a **Union-Find** algorithm with wobble matching:
 
-index — 对GTF建立.isi二进制索引（B+ tree），供下游子命令调用。也可由其他子命令按需自动触发，但显式暴露便于预处理大文件和复用。
-merge — 多样本合并。k-way merge，从所有样本收集TSS/TES证据，选代表性转录本，不改变原始坐标。解决gffcompare在群体级别的内存问题和evidence偏差问题。
-refine — 坐标级校正。根据外部证据调整TSS/TES位置、小外显子救援、strand分配。Scope严格限定在坐标修正和stand等基本信息，不涉及功能注释。接受统一的bed格式证据。
-classify — 1-vs-ref结构分类。Soft matching，支持configurable wobble tolerance，输出per-transcript classification code（兼容gffcompare class codes和SQANTI3 FSM/ISM/NIC/NNC体系）。服务对象：生物学家和annotation pipeline。
-compare — N-vs-N交叉比较。Binary matching（identical structure，yes/no），支持--match-mode参数（strict=全坐标一致，junction=内部剪接位点一致，chain=exon chain topology一致）。输出overlap矩阵（TSV）和UpSet-compatible intersection集合。不做可视化。服务对象：工具开发者做横向比较。
-bench — 1-vs-truth准确性评估。Binary matching，match-mode参数同compare。输出TP/FP/FN/precision/recall/F1，支持per-gene和per-transcript两个粒度。输出干净TSV，不做可视化。服务对象：工具开发者和benchmarking consortium（LRGASP等）。
+- For any pair of transcripts, each corresponding junction's donor and acceptor coordinates are compared;
+- If all junctions fall within the wobble thresholds, the two transcripts are unioned into the same group.
 
-核心架构关系： index是预处理层；classify是核心比对引擎（soft matching）；compare和bench共享一套独立的binary matching引擎；merge和refine是转录组操作层。classify与compare/bench的比对逻辑是分开的——前者输出分类码，后者只输出boolean。
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--wob-d` | Max donor-site deviation (canonical) | 0 bp |
+| `--wob-a` | Max acceptor-site deviation (canonical) | 0 bp |
+| `--wob-u` | Splice-site wobble for unstranded transcripts (canonical) | 3 bp |
 
+By default, canonical transcripts require **exact junction matches** (donor/acceptor wobble = 0).
 
+#### 4b. Non-canonical transcript merging
 
-TODO
-monoexon guide 模式
-简化grouppgir的代码现在充满match
+`PRTC` / `NOTC` transcripts first attempt to be **absorbed into an existing canonical group**: each non-canonical transcript is compared against every canonical group's representative junction chain using the nc-wobble parameters, and assigned to the best-matching group (lowest total junction deviation).
+
+Non-canonical transcripts that cannot be absorbed are then grouped among themselves using the same Union-Find approach with nc-wobble parameters:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--wob-d-nc` | Max donor-site deviation (non-canonical) | 3 bp |
+| `--wob-a-nc` | Max acceptor-site deviation (non-canonical) | 3 bp |
+| `--wob-u-nc` | Splice-site wobble for unstranded transcripts (non-canonical) | 3 bp |
+
+#### 4c. Mono-exon transcript merging
+
+`MONO` transcripts are merged based on **reciprocal overlap**:
+
+$$\text{reciprocal overlap} = \min\!\left(\frac{|A \cap B|}{|A|},\ \frac{|A \cap B|}{|B|}\right)$$
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--mono-ovlp` | Minimum reciprocal overlap threshold | 0.9 |
+
+---
+
+### Stage 5: Terminal Refinement
+
+After initial junction-based grouping, groups are further **split by TSS and TES distance**. This ensures that transcripts sharing the same intron chain but with substantially different transcription start or end sites are kept as distinct isoforms.
+
+Algorithm: transcripts within a group are sorted by TSS/TES; the first transcript sets the anchor. Each subsequent transcript is compared to the current anchor — if the distance exceeds the threshold, a new group begins:
+
+$$|\text{TSS}_{curr} - \text{TSS}_{anchor}| \leq \text{tss\_wob} \quad \text{(and/or, depending on mode)} \quad |\text{TES}_{curr} - \text{TES}_{anchor}| \leq \text{tes\_wob}$$
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--terminal-refine` | Refine mode (`none`/`tss`/`tes`/`both`) for canonical transcripts | `both` |
+| `--tss-wob` | Max TSS deviation within a group (canonical) | 50 bp |
+| `--tes-wob` | Max TES deviation within a group (canonical) | 50 bp |
+| `--terminal-refine-nc` | Refine mode for non-canonical transcripts | `both` |
+| `--tss-wob-nc` | Max TSS deviation within a group (non-canonical) | 50 bp |
+| `--tes-wob-nc` | Max TES deviation within a group (non-canonical) | 50 bp |
+
+---
+
+### Stage 6: Representative Transcript Selection
+
+Each merged group outputs one representative transcript. Selection is performed independently for three dimensions:
+
+#### Splice junctions
+
+Each intron's representative coordinates are chosen independently:
+
+| Policy | Description |
+|--------|-------------|
+| `major` (default) | Most frequent junction pair; falls back to `longer` on tie |
+| `longer` | Shortest intron (longest flanking exon span) |
+| `shorter` | Longest intron (shortest flanking exon span) |
+
+Note: for splice junctions, `longer` means **longer exons** (shorter intron), consistent with the "longer transcript" convention.
+
+#### TSS and TES
+
+| Policy | TSS meaning | TES meaning |
+|--------|-------------|-------------|
+| `major` (default) | Most frequent TSS; falls back to most upstream on tie | Most frequent TES; falls back to most downstream on tie |
+| `longer` | Most upstream TSS | Most downstream TES |
+| `shorter` | Most downstream TSS | Most upstream TES |
+
+Controlled by `--tss-policy` and `--tes-policy` (both default to `major`).
+
+#### Guide-based terminal selection
+
+When `--guide-tss` and/or `--guide-tes` BED files are provided (e.g., refTSS, PolyA site databases), terminal selection is biased toward positions supported by external evidence:
+
+1. Each TSS/TES position in the group is queried against the guide database within `±flank` bp (default 10 bp);
+2. Candidates with the highest number of guide evidence hits are retained;
+3. Majority vote is applied among those candidates; ties fall back to the `longer` policy.
+
+When a guide hit is used, the corresponding column in `ISOM_REPR_POLICY` is recorded as `guide`.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--guide-tss` | TSS evidence BED file | none |
+| `--guide-tes` | TES evidence BED file | none |
+| `--guide-tss-flank` | TSS evidence query flank radius | 10 bp |
+| `--guide-tes-flank` | TES evidence query flank radius | 10 bp |
+
+#### Mono-exon boundary selection
+
+| Parameter | Policy description | Default |
+|-----------|-------------------|---------|
+| `--mono-policy` | `major`: most frequent span; `longer`: widest span; `shorter`: narrowest span | `major` |
+
+---
+
+## Output GTF Format
+
+Each merged transcript record in the output GTF includes the following extra attributes on the `transcript` line:
+
+| Attribute | Description |
+|-----------|-------------|
+| `ISOM_EXONS` | Number of exons |
+| `ISOM_COUNT` | Number of source transcripts merged into this record |
+| `ISOM_SRC` | `\|`-separated list of source transcripts, each formatted as `S{file_id}:{tx_id}:{start}:{end}:{tx_type}:{donor_diff}:{acceptor_diff}:{exon_diffs}` |
+| `ISOM_REPR_POLICY` | Representative selection policies as `SJ_POLICY:TSS_POLICY:TES_POLICY:MONO_POLICY`; fields not applicable to the transcript type are `NA` |
+
+The `exon_diffs` field in `ISOM_SRC` records only exons that differ from the representative, in the format `(exon_number,left_offset,right_offset)`. Exons with no difference are omitted and shown as `no_diff`.
 

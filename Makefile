@@ -37,6 +37,12 @@ merge2: build
 	/usr/bin/time -v target/release/isomatch merge \
 		-o test/merge.gtf.gz \
 		$(foreach i,$(shell seq 1 $(N)),$(INPUT))
+
+merge2gffcompare: build
+	/usr/bin/time -v test/gffcompare \
+		-o test/gffcompare.large-merge.gtf \
+		$(foreach i,$(shell seq 1 $(N)),$(INPUT))
+
 	
 merge3: build
 	/usr/bin/time -v target/release/isomatch merge \
