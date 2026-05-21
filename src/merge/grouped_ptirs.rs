@@ -6,7 +6,7 @@ use crate::{
     merge::{
         guide::GuideDb,
         merge_error::MergeError,
-        policy::{MergePolicyArg, MergePolicyUsed},
+        policy::{GuideResolution, MergePolicyArg, MergePolicyUsed},
     },
 };
 use rustc_hash::FxHashMap;
@@ -384,7 +384,13 @@ impl GroupedPTIR {
         });
     }
 
-    pub fn profile_mono_ptirs(&mut self, args: &MergeArgs) -> Result<(), MergeError> {
+    pub fn profile_mono_ptirs(
+        &mut self,
+        chrom: &str,
+        args: &MergeArgs,
+        guide_tss: &Option<GuideDb>,
+        guide_tes: &Option<GuideDb>,
+    ) -> Result<(), MergeError> {
         self.canonical_junction_range.clear();
         self.repr_junction.clear();
         self.repr_left = 0;
@@ -398,17 +404,19 @@ impl GroupedPTIR {
             return Err(MergeError::SelectReprFailed);
         }
 
-        let positions: Vec<(u32, u32)> = self
-            .all_canonical_ptir_list
-            .iter()
-            .map(|entry| (entry.left, entry.right))
-            .collect();
-
-        let ((repr_left, repr_right), mono_policy) = select_pair(&positions, args.mono_policy)?;
-
-        self.repr_left = repr_left;
-        self.repr_right = repr_right;
-        self.used_repr_mono_policy = MergePolicyUsed::from_arg_policy(&mono_policy);
+        let ((repr_tss, repr_tes), (tss_policy, tes_policy)) = select_repr_terminals(
+            chrom,
+            &self.all_canonical_ptir_list,
+            &self.strand,
+            args.tss_policy,
+            args.tes_policy,
+            guide_tss,
+            guide_tes,
+            args.guide_tss_flank,
+            args.guide_tes_flank,
+        )?;
+        self.set_repr_from_terminals(repr_tss, repr_tes);
+        self.set_used_repr_terminal_policies(tss_policy, tes_policy);
         self.repr_loaded = true;
         Ok(())
     }
@@ -563,16 +571,16 @@ impl GroupedPTIR {
         bufwriter.write_all(b"\"; ISOM_SRC \"")?;
         bufwriter.write_all(source_attr.as_bytes())?;
 
-        let isom_policy = if self.n_exon == 1 {
-            format!("NA:NA:NA:{}", self.used_repr_mono_policy)
-        } else {
-            format!(
-                "{}:{}:{}:NA",
-                self.used_repr_junction_policy,
-                self.used_repr_left_policy,
-                self.used_repr_right_policy
-            )
-        };
+        let isom_policy = format!(
+            "{}:{}:{}",
+            if self.n_exon == 1 {
+                "NA".to_string()
+            } else {
+                self.used_repr_junction_policy.to_string()
+            },
+            self.used_repr_left_policy,
+            self.used_repr_right_policy,
+        );
 
         bufwriter.write_all(b"\"; ISOM_REPR_POLICY \"")?;
         bufwriter.write_all(isom_policy.as_bytes())?;
@@ -668,21 +676,6 @@ fn inner_pair(positions: &[(u32, u32)]) -> Result<(u32, u32), MergeError> {
         .min()
         .ok_or(MergeError::SelectReprFailed)?;
     Ok((left, right))
-}
-
-fn select_pair(
-    positions: &[(u32, u32)],
-    policy: MergePolicyArg,
-) -> Result<((u32, u32), MergePolicyArg), MergeError> {
-    let out = match policy {
-        MergePolicyArg::Longer => (outer_pair(positions)?, MergePolicyArg::Longer),
-        MergePolicyArg::Shorter => (inner_pair(positions)?, MergePolicyArg::Shorter),
-        MergePolicyArg::Major => match majority_vote_unique_pair(positions) {
-            Some(pair) => (pair, MergePolicyArg::Major),
-            None => (outer_pair(positions)?, MergePolicyArg::Longer),
-        },
-    };
-    Ok(out)
 }
 
 fn select_splice_pair(
@@ -809,10 +802,13 @@ fn select_terminal(
     guide: &Option<GuideDb>,
     guide_flank: u32,
 ) -> Result<(u32, MergePolicyUsed), MergeError> {
+    // if no guide file provided, fallback to non guide policy
     let Some(guide) = guide.as_ref() else {
         return select_terminal_by_policy(positions, is_left_boundary, policy);
     };
 
+    // for each tss or tes, check how many of guide regions ovlp with it
+    // and record the max hits
     let mut max_hits = 0usize;
     let mut hits = Vec::with_capacity(positions.len());
     for &position in positions {
@@ -823,33 +819,44 @@ fn select_terminal(
         hits.push(hit_count);
     }
 
+    // if no guide region overlapped with any tss/tes position, fallback to non-guide policy
     if max_hits == 0 {
         return select_terminal_by_policy(positions, is_left_boundary, policy);
     }
 
+    // for pick up the max ovlpped tss/tes
     let guide_candidates: Vec<u32> = positions
         .iter()
         .zip(hits.iter())
         .filter_map(|(&position, &hit_count)| (hit_count == max_hits).then_some(position))
         .collect();
 
+    // guard assert, make sure at lest one element exists
     if guide_candidates.is_empty() {
         return Err(MergeError::SelectReprFailed);
     }
 
-    if let Some(position) = majority_vote_unique_position(&guide_candidates) {
-        if guide_candidates
-            .iter()
-            .all(|&candidate| candidate == position)
-        {
-            return Ok((position, MergePolicyUsed::Guide));
-        }
-        return Ok((position, MergePolicyUsed::Major));
+    // major vote if guide_candidates
+    // if all candidates point to the same position, guide is the sole determinant
+    // e.g. guide_candidates = [100,100,100], each one have 2 guide region support
+    if guide_candidates.iter().all(|&c| c == guide_candidates[0]) {
+        return Ok((
+            guide_candidates[0],
+            MergePolicyUsed::Guide(GuideResolution::Definitive),
+        ));
     }
 
+    // else ==> find the most frequent positions and return
+    if let Some(position) = majority_vote_unique_position(&guide_candidates) {
+        return Ok((position, MergePolicyUsed::Guide(GuideResolution::Majority)));
+    }
+
+    // at this step, the guide candidates have same guide ovlps and they have same
+    // recurrency in the list.
+    // the only choice is choose the longer one.
     Ok((
         select_terminal_by_policy(&guide_candidates, is_left_boundary, MergePolicyArg::Longer)?.0,
-        MergePolicyUsed::Longer,
+        MergePolicyUsed::Guide(GuideResolution::Longer),
     ))
 }
 
@@ -949,14 +956,6 @@ mod tests {
         let positions = vec![(100, 200), (110, 190), (105, 195)];
         let (repr, used_policy) = select_splice_pair(&positions, MergePolicyArg::Longer).unwrap();
         assert_eq!(repr, (110, 190));
-        assert!(matches!(used_policy, MergePolicyArg::Longer));
-    }
-
-    #[test]
-    fn mono_longer_still_prefers_wider_span() {
-        let positions = vec![(100, 200), (110, 190), (105, 195)];
-        let (repr, used_policy) = select_pair(&positions, MergePolicyArg::Longer).unwrap();
-        assert_eq!(repr, (100, 200));
         assert!(matches!(used_policy, MergePolicyArg::Longer));
     }
 }

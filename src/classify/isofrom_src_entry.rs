@@ -1,13 +1,13 @@
 use crate::core::{string_pool::StringSpan, tx_type::TxType};
 
 struct IsomSrcRecord {
-    source_file_id: u8,
+    source_file_id: u32,
     tx_type: TxType, // TxType enum packed
     start: u32,
     end: u32,
     donor_diff: u32,
     acceptor_diff: u32,
-    tx_id_span: StringSpan, // 复用已有 StringPool
+    src_tx_id: String, //
     exon_diffs_offset: u32,
     exon_diffs_count: u16,
 }
@@ -43,8 +43,20 @@ impl ExonDiff {
     }
 }
 
-
-pub struct IsomSrcPool {
+/// Chromosome level IsomSrcPool
+pub struct ChromIsomSrcPool {
     records:Vec<IsomSrcRecord>,
     exon_diff:Vec<ExonDiff>
+}
+
+impl ChromIsomSrcPool {
+
+    pub fn init() -> Self{
+        ChromIsomSrcPool{
+            records:Vec::new(),
+            exon_diff:Vec::new(),
+        }
+    }
+
+    pub fn add_iso_src_from_str(&mut self, src_str:&str) -> Result<>
 }

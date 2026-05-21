@@ -22,7 +22,7 @@ index3: build
 
 merge: build
 	/usr/bin/time -v target/release/isomatch merge \
-		-o test/merge.gtf.gz --terminal-merge none \
+		-o test/merge.gtf.gz --terminal-refine both \
 		--guide-tss /ssd2/projects/isomatch-dev/evidence/human.guide.tss.bed \
 		--guide-tes /ssd2/projects/isomatch-dev/evidence/human.guide.tes.bed \
 		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf \

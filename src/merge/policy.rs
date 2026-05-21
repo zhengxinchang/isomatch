@@ -25,7 +25,7 @@ pub enum MergePolicyUsed {
     Longer,
     Shorter,
     Major,
-    Guide,
+    Guide(GuideResolution),
 }
 
 impl fmt::Display for MergePolicyUsed {
@@ -34,7 +34,11 @@ impl fmt::Display for MergePolicyUsed {
             MergePolicyUsed::Longer => "longer",
             MergePolicyUsed::Shorter => "shorter",
             MergePolicyUsed::Major => "major",
-            MergePolicyUsed::Guide => "guide",
+            MergePolicyUsed::Guide(resolution) => match resolution {
+                GuideResolution::Definitive => "guide_definitive",
+                GuideResolution::Majority => "guide_majority",
+                GuideResolution::Longer => "guide_longer",
+            },
         };
         write!(f, "{s}")
     }
@@ -48,6 +52,13 @@ impl MergePolicyUsed {
             MergePolicyArg::Major => MergePolicyUsed::Major,
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, Serialize)]
+pub enum GuideResolution {
+    Definitive, // 所有 guide 候选位置一致
+    Majority,   // guide 过滤后多数投票决定
+    Longer,     // guide 过滤后仍平票，用 Longer 兜底
 }
 
 #[derive(Copy, Clone, Debug, Serialize, ValueEnum)]
@@ -131,7 +142,15 @@ pub fn merge_cluster(
         grpptirs.extend(rest_grpptirs.into_iter());
         return Ok(grpptirs);
     } else {
-        return merge_mono_exon(cluster_idx, scluster, &strand, args);
+        return merge_mono_exon(
+            chrom,
+            cluster_idx,
+            scluster,
+            &strand,
+            args,
+            guide_tss,
+            guide_tes,
+        );
     }
 }
 
@@ -504,10 +523,13 @@ pub fn merge_rest_noncanonical(
 }
 
 pub fn merge_mono_exon(
+    chrom: &str,
     scluster_idxs: &[usize],
     scluster: &[PTIR],
     strand: &ISOMSTRAND,
     args: &MergeArgs,
+    guide_tss: &Option<GuideDb>,
+    guide_tes: &Option<GuideDb>,
 ) -> Result<Vec<GroupedPTIR>, MergeError> {
     // 对scluster_idxs 按照PTIR的start 和end 排序
     if scluster_idxs.is_empty() {
@@ -552,7 +574,7 @@ pub fn merge_mono_exon(
             let super_idx = sorted_tx_indice[local_idx];
             grpptir.add_mono_ptir(&scluster[super_idx], super_idx);
         }
-        grpptir.profile_mono_ptirs(args)?;
+        grpptir.profile_mono_ptirs(chrom, args, guide_tss, guide_tes)?;
         grpptirs.push(grpptir);
     }
 

@@ -364,7 +364,7 @@ pub fn add_output_header(bufwriter: &mut dyn Write, args: &MergeArgs) -> AnyResu
     )?;
     writeln!(
         bufwriter,
-        "##ISOM <FORMAT> ID=\"ISOM_REPR_POLICY\"; Description=\"representative selection policies recorded as SJ_POLICY:TSS_POLICY:TES_POLICY:MONO_POLICY, with NA for non-applicable fields\";"
+        "##ISOM <FORMAT> ID=\"ISOM_REPR_POLICY\"; Description=\"representative selection policies recorded as SJ_POLICY:TSS_POLICY:TES_POLICY, with NA for non-applicable fields\";"
     )?;
 
     let command = std::env::args_os()
@@ -406,11 +406,11 @@ impl MergeStats {
             self.merged_multi_exons_tx_cnt += 1;
         }
 
-        if matches!(grpptir.used_tss_policy(), MergePolicyUsed::Guide) {
+        if matches!(grpptir.used_tss_policy(), MergePolicyUsed::Guide(_)) {
             self.tss_guide_cnt += 1;
         }
 
-        if matches!(grpptir.used_tes_policy(), MergePolicyUsed::Guide) {
+        if matches!(grpptir.used_tes_policy(), MergePolicyUsed::Guide(_)) {
             self.tes_guide_cnt += 1;
         }
 
