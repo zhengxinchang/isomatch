@@ -4,11 +4,14 @@ use std::{
     io::{self, BufReader, Cursor, ErrorKind, Read, Seek, SeekFrom},
 };
 
-use crate::core::{
-    junction_pool::JunctionPool, splice_site_pool::SpliceSitePool, string_pool::StringPool,
-    tx_base::TxBase, tx_base_impl::TxBaseLoadArgs,
-};
 use crate::traits::{Decodable, DiskSize, PartialLoad};
+use crate::{
+    core::{
+        junction_pool::JunctionPool, splice_site_pool::SpliceSitePool, string_pool::StringPool,
+        tx_base::TxBase, tx_base_impl::TxBaseLoadArgs,
+    },
+    index::index_error::IndexError,
+};
 
 use super::format::{ChromDirectoryEntry, IndexHeader};
 
@@ -98,7 +101,7 @@ impl IndexReader {
         })
     }
 
-    pub fn get_chrosome_reader(&mut self, chrom_name: &str) -> io::Result<ChromBlockReader> {
+    pub fn get_chromosome_reader(&mut self, chrom_name: &str) -> io::Result<ChromBlockReader> {
         let chrom_id = *self.chrom_name_to_id.get(chrom_name).ok_or_else(|| {
             io::Error::new(
                 ErrorKind::NotFound,
@@ -136,8 +139,22 @@ impl IndexReader {
         )
     }
 
-    pub fn get_chromosome_reader(&mut self, chrom_name: &str) -> io::Result<ChromBlockReader> {
-        self.get_chrosome_reader(chrom_name)
+    pub fn get_chromosome_readers_map(
+        &mut self,
+    ) -> Result<HashMap<String, ChromBlockReader>, IndexError> {
+        let mut readers = HashMap::default();
+        for chr_name in self.chrom_names.clone() {
+            let reader =
+                self.get_chromosome_reader(&chr_name)
+                    .map_err(|e| IndexError::FailReadIndex {
+                        reason: format!(
+                            "Can ont get chromosome level data from index. Reason {:?}",
+                            e
+                        ),
+                    })?;
+            readers.insert(chr_name.to_string(), reader);
+        }
+        Ok(readers)
     }
 }
 
@@ -271,5 +288,19 @@ impl ChromBlockReader {
         let len = decompressed.len();
         SpliceSitePool::load_range(&mut Cursor::new(decompressed), 0, len, ())
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
+    }
+}
+
+impl Iterator for ChromBlockReader {
+    type Item = TxBase;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match ChromBlockReader::next(self) {
+            Ok(txbase) => txbase,
+            Err(e) => {
+                eprintln!("cannot read next transcript from isomx index: {}", e);
+                std::process::exit(1);
+            }
+        }
     }
 }

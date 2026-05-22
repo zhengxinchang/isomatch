@@ -22,8 +22,12 @@ pub trait TxBaseTrait {
     // fn gtf_offset(&self) -> u64;
     // fn gtf_len(&self) -> u32;
     fn n_exons(&self) -> u16;
-    fn junctions(&self, junction_pool: &JunctionPool) -> Vec<(u32, u32)>;
-    fn splice_sites(&self, splice_sites_pool: &SpliceSitePool) -> Vec<SpliceSitePair>;
+    fn junctions(&self, junction_pool: &JunctionPool, string_pool: &StringPool) -> Vec<(u32, u32)>;
+    fn splice_sites(
+        &self,
+        splice_sites_pool: &SpliceSitePool,
+        string_pool: &StringPool,
+    ) -> Vec<SpliceSitePair>;
     fn source_tx_id(&self, string_pool: &StringPool) -> String;
     fn source_gene_id(&self, string_pool: &StringPool) -> String;
     fn strand(&self) -> ISOMSTRAND {
@@ -31,9 +35,11 @@ pub trait TxBaseTrait {
     }
 }
 
+/// core data stucture for transcript
+/// for persistance on disk.
 #[derive(Debug, Clone, Copy, Hash)]
 pub struct TxBase {
-    pub tx_idx: u32,
+    pub(super) _tx_idx: u32,
     pub boundary: TxBoundary,
     pub chrom_id: u16,
     pub start: u32,
@@ -55,7 +61,6 @@ pub struct TxBase {
 
 impl TxBase {
     pub fn new(
-        tx_idx: u32, // record index in the GTF file
         chrom_id: u16,
         start: u32,
         end: u32,
@@ -76,7 +81,7 @@ impl TxBase {
         }
 
         Ok(Self {
-            tx_idx: tx_idx,
+            _tx_idx: u32::MAX,
             boundary: TxBoundary::new(start, end, strand),
             chrom_id,
             start,

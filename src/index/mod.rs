@@ -7,15 +7,19 @@ use serde::Serialize;
 use crate::{
     IndexArgs,
     core::tx_strand::ISOMSTRAND,
-    fasta::{self, FastaReader},
-    gtf::{self, profile_gtf},
+    // fasta::{self, FastaReader},
+    // gtf::{self, profile_gtf},
     index::format::ChromBlockBuilder,
     traits::ArgValidate,
     utils::print_json_block,
 };
 pub use anyhow::Result;
+use fasta::FastaReader;
+use gtf::profile_gtf;
 pub mod builder;
+pub mod fasta;
 pub mod format;
+pub mod gtf;
 pub mod index_error;
 pub mod reader;
 

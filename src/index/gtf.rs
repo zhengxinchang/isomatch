@@ -227,7 +227,7 @@ impl MyGTFReader {
         tx.add_exon((start, end));
     }
 
-    fn flush_current_chrom(&mut self) {
+    fn flush_current_chrom_tx_to_ready(&mut self) {
         if self.chrom_txs.is_empty() {
             self.current_chrom = None;
             return;
@@ -287,13 +287,13 @@ impl Iterator for MyGTFReader {
             let n = match self.bufreader.read_line(&mut line) {
                 Ok(n) => n,
                 Err(_) => {
-                    self.flush_current_chrom();
+                    self.flush_current_chrom_tx_to_ready();
                     return self.ready_txs.pop_front();
                 }
             };
 
             if n == 0 {
-                self.flush_current_chrom();
+                self.flush_current_chrom_tx_to_ready();
                 return self.ready_txs.pop_front();
             }
 
@@ -303,7 +303,6 @@ impl Iterator for MyGTFReader {
 
             let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&line);
 
-            // only process exon lines
             if feat != "exon" {
                 continue;
             }
@@ -320,7 +319,7 @@ impl Iterator for MyGTFReader {
 
             if let Some(current_chrom) = &self.current_chrom {
                 if current_chrom != &chrom {
-                    self.flush_current_chrom();
+                    self.flush_current_chrom_tx_to_ready();
                 }
             }
 

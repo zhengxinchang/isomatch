@@ -42,16 +42,17 @@ isomatch index sample1.gtf.gz
 isomatch index sample2.gtf.gz
 isomatch index sample3.gtf.gz
 
-# merge with default parameters
-isomatch merge -o merged.gtf.gz  sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+# merge with default parameters (-o takes a prefix, not a filename)
+isomatch merge -o merged  sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+# outputs: merged.merged.gtf.gz  merged.track.tsv.gz  merged.merge_info.json
 
 # merge with guide-based terminal selection
-isomatch merge -o merged.gtf.gz \
+isomatch merge -o merged \
     --guide-tss human.guide.tss.bed --guide-tes human.guide.tes.bed \
     sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
 
 # merge with wobble splice junction matching
-isomatch merge -o merged.gtf.gz \
+isomatch merge -o merged \
     -d 3 -a 3 -u 3 \
     -D 5 -A 5 -U 5 \
     sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
@@ -226,7 +227,13 @@ When `--guide-tss` and/or `--guide-tes` BED files are provided (e.g., refTSS, Po
 2. Candidates with the highest number of guide evidence hits are retained;
 3. Majority vote is applied among those candidates; ties fall back to the `longer` policy.
 
-When a guide hit is used, the corresponding column in `ISOM_REPR_POLICY` is recorded as `guide`.
+When a guide hit is used, the corresponding policy column records one of three values:
+
+| Value | Meaning |
+|-------|---------|
+| `guide_definitive` | All guide-supported candidates pointed to the same position; guide alone determines the choice |
+| `guide_majority` | Multiple guide-supported candidates; majority vote picked one winner |
+| `guide_longer` | Guide-supported candidates were tied after majority vote; fell back to the `longer` rule |
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
@@ -243,6 +250,18 @@ When a guide hit is used, the corresponding column in `ISOM_REPR_POLICY` is reco
 
 ---
 
+## Output Files
+
+For a run with `-o <prefix>`, three files are written:
+
+| File | Description |
+|------|-------------|
+| `<prefix>.merged.gtf.gz` | Merged transcripts in GTF format (gzip-compressed) |
+| `<prefix>.track.tsv.gz` | One-to-one mapping of merged → source transcripts (gzip-compressed TSV) |
+| `<prefix>.merge_info.json` | Run statistics (source file count, merged transcript counts, guide usage, etc.) |
+
+---
+
 ## Output GTF Format
 
 Each merged transcript record in the output GTF includes the following extra attributes on the `transcript` line:
@@ -252,7 +271,35 @@ Each merged transcript record in the output GTF includes the following extra att
 | `ISOM_EXONS` | Number of exons |
 | `ISOM_COUNT` | Number of source transcripts merged into this record |
 | `ISOM_SRC` | `\|`-separated list of source transcripts, each formatted as `S{file_id}:{tx_id}:{start}:{end}:{tx_type}:{donor_diff}:{acceptor_diff}:{exon_diffs}` |
-| `ISOM_REPR_POLICY` | Representative selection policies as `SJ_POLICY:TSS_POLICY:TES_POLICY:MONO_POLICY`; fields not applicable to the transcript type are `NA` |
+| `ISOM_REPR_POLICY` | Representative selection policies as `SJ_POLICY:LEFT_POLICY:RIGHT_POLICY`; `SJ_POLICY` is `NA` for mono-exon transcripts; `LEFT_POLICY`/`RIGHT_POLICY` are the policies used for the left and right genomic boundaries respectively |
 
 The `exon_diffs` field in `ISOM_SRC` records only exons that differ from the representative, in the format `(exon_number,left_offset,right_offset)`. Exons with no difference are omitted and shown as `no_diff`.
+
+Policy values for all policy fields: `major`, `longer`, `shorter`, `guide_definitive`, `guide_majority`, `guide_longer`.
+
+---
+
+## Track TSV Format
+
+`<prefix>.track.tsv.gz` has one row per (merged transcript, source transcript) pair. Columns:
+
+| Column | Description |
+|--------|-------------|
+| `merged_tx_id` | Merged transcript ID (`ISOMT_{n}`) |
+| `merged_gene_id` | Merged gene ID (`ISOMG_{n}`) |
+| `merged_start` | Merged transcript left genomic boundary |
+| `merged_end` | Merged transcript right genomic boundary |
+| `merged_strand` | Strand (`+`, `-`, or `.`) |
+| `merged_exon_num` | Number of exons in the merged transcript |
+| `junction_policy` | Splice junction representative policy used; `NA` for mono-exon transcripts |
+| `tss_policy` | TSS representative policy used (strand-aware) |
+| `tes_policy` | TES representative policy used (strand-aware) |
+| `merged_src_count` | Total number of source transcripts merged into this record |
+| `src_tx_id` | Source transcript ID |
+| `src_gene_id` | Source gene ID |
+| `total_donor_diff` | Sum of donor-site deviations between source and representative junctions |
+| `total_acceptor_diff` | Sum of acceptor-site deviations between source and representative junctions |
+| `exon_diff` | Per-exon coordinate differences in `(exon_number,left_offset,right_offset)` format; `no_diff` if identical |
+
+Note: `junction_policy`, `tss_policy`, and `tes_policy` are the same for all rows sharing the same `merged_tx_id`. `tss_policy`/`tes_policy` are strand-aware, unlike the `LEFT_POLICY`/`RIGHT_POLICY` in `ISOM_REPR_POLICY`.
 

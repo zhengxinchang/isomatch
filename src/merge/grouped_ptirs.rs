@@ -471,7 +471,8 @@ impl GroupedPTIR {
         &self,
         chrom_name: &str,
         super_cluster: &[PTIR],
-        bufwriter: &mut dyn Write,
+        gtf_bufwriter: &mut dyn Write,
+        track_bufwriter: &mut dyn Write,
     ) -> Result<(), MergeError> {
         debug_assert!(
             self.repr_loaded,
@@ -507,8 +508,8 @@ impl GroupedPTIR {
                 ))
         });
 
-        let source_attr = source_txs
-            .into_iter()
+        let src_records: Vec<SrcRecord> = source_txs
+            .iter()
             .map(|ptir| {
                 let (donor_diff, acceptor_diff) = junction_diff_sums(
                     ptir.junctions().unwrap_or(&[]),
@@ -519,17 +520,17 @@ impl GroupedPTIR {
                     junction_exon_diffs(ptir.junctions().unwrap_or(&[]), &self.repr_junction)
                         .expect("PTIR must have same junctions as representative");
 
-                let exon_diff_string = if exons_diff.len() > 0 {
+                let exon_diff_str = if exons_diff.is_empty() {
+                    "no_diff".to_string()
+                } else {
                     exons_diff
                         .into_iter()
                         .map(|a| format!("({},{},{})", a.0, a.1, a.2))
                         .collect::<Vec<_>>()
                         .join(",")
-                } else {
-                    "no_diff".to_string()
                 };
 
-                format!(
+                let gtf_str = format!(
                     "S{}:{}:{}:{}:{}:{}:{}:{}",
                     ptir.source_file_id + 1,
                     ptir.source_txid,
@@ -538,38 +539,51 @@ impl GroupedPTIR {
                     ptir.tx_type,
                     donor_diff,
                     acceptor_diff,
-                    exon_diff_string
-                )
+                    exon_diff_str
+                );
+
+                SrcRecord {
+                    gtf_str,
+                    ptir,
+                    donor_diff,
+                    acceptor_diff,
+                    exon_diff_str,
+                }
             })
+            .collect();
+
+        let source_attr = src_records
+            .iter()
+            .map(|r| r.gtf_str.as_str())
             .collect::<Vec<_>>()
             .join("|");
 
         let strand = char::from(self.strand);
 
-        write!(bufwriter, "{chrom_name}\tisomatch\ttranscript\t")?;
+        write!(gtf_bufwriter, "{chrom_name}\tisomatch\ttranscript\t")?;
         write!(
-            bufwriter,
+            gtf_bufwriter,
             "{}\t{}\t.\t{}\t.\t",
             self.repr_left, self.repr_right, strand
         )?;
-        bufwriter.write_all(b"gene_id \"")?;
-        bufwriter.write_all(gene_id.as_bytes())?;
-        bufwriter.write_all(b"\"; transcript_id \"")?;
-        bufwriter.write_all(tx_id.as_bytes())?;
+        gtf_bufwriter.write_all(b"gene_id \"")?;
+        gtf_bufwriter.write_all(gene_id.as_bytes())?;
+        gtf_bufwriter.write_all(b"\"; transcript_id \"")?;
+        gtf_bufwriter.write_all(tx_id.as_bytes())?;
 
         let isom_exons = self.n_exon.to_string();
-        bufwriter.write_all(b"\"; ISOM_EXONS \"")?;
-        bufwriter.write_all(isom_exons.as_bytes())?;
+        gtf_bufwriter.write_all(b"\"; ISOM_EXONS \"")?;
+        gtf_bufwriter.write_all(isom_exons.as_bytes())?;
 
-        bufwriter.write_all(b"\"; ISOM_COUNT \"")?;
+        gtf_bufwriter.write_all(b"\"; ISOM_COUNT \"")?;
         write!(
-            bufwriter,
+            gtf_bufwriter,
             "{}",
             self.all_canonical_ptir_counts + self.no_all_canonical_ptir_counts
         )?;
 
-        bufwriter.write_all(b"\"; ISOM_SRC \"")?;
-        bufwriter.write_all(source_attr.as_bytes())?;
+        gtf_bufwriter.write_all(b"\"; ISOM_SRC \"")?;
+        gtf_bufwriter.write_all(source_attr.as_bytes())?;
 
         let isom_policy = format!(
             "{}:{}:{}",
@@ -582,20 +596,50 @@ impl GroupedPTIR {
             self.used_repr_right_policy,
         );
 
-        bufwriter.write_all(b"\"; ISOM_REPR_POLICY \"")?;
-        bufwriter.write_all(isom_policy.as_bytes())?;
-        bufwriter.write_all(b"\";\n")?;
+        gtf_bufwriter.write_all(b"\"; ISOM_REPR_POLICY \"")?;
+        gtf_bufwriter.write_all(isom_policy.as_bytes())?;
+        gtf_bufwriter.write_all(b"\";\n")?;
 
         for (idx, (start, end)) in exons.iter().enumerate() {
-            write!(bufwriter, "{chrom_name}\tisomatch\texon\t")?;
-            write!(bufwriter, "{start}\t{end}\t.\t{strand}\t.\t")?;
-            bufwriter.write_all(b"gene_id \"")?;
-            bufwriter.write_all(gene_id.as_bytes())?;
-            bufwriter.write_all(b"\"; transcript_id \"")?;
-            bufwriter.write_all(tx_id.as_bytes())?;
-            bufwriter.write_all(b"\"; exon_number \"")?;
-            write!(bufwriter, "{}", idx + 1)?;
-            bufwriter.write_all(b"\";\n")?;
+            write!(gtf_bufwriter, "{chrom_name}\tisomatch\texon\t")?;
+            write!(gtf_bufwriter, "{start}\t{end}\t.\t{strand}\t.\t")?;
+            gtf_bufwriter.write_all(b"gene_id \"")?;
+            gtf_bufwriter.write_all(gene_id.as_bytes())?;
+            gtf_bufwriter.write_all(b"\"; transcript_id \"")?;
+            gtf_bufwriter.write_all(tx_id.as_bytes())?;
+            gtf_bufwriter.write_all(b"\"; exon_number \"")?;
+            write!(gtf_bufwriter, "{}", idx + 1)?;
+            gtf_bufwriter.write_all(b"\";\n")?;
+        }
+
+        let total_src_count = self.all_canonical_ptir_counts + self.no_all_canonical_ptir_counts;
+        let junction_policy = if self.n_exon == 1 {
+            "NA".to_string()
+        } else {
+            self.used_repr_junction_policy.to_string()
+        };
+        let tss_policy = self.used_tss_policy().to_string();
+        let tes_policy = self.used_tes_policy().to_string();
+        for r in &src_records {
+            writeln!(
+                track_bufwriter,
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                tx_id,
+                gene_id,
+                self.repr_left,
+                self.repr_right,
+                strand,
+                self.n_exon,
+                junction_policy,
+                tss_policy,
+                tes_policy,
+                total_src_count,
+                r.ptir.source_txid,
+                r.ptir.source_geneid,
+                r.donor_diff,
+                r.acceptor_diff,
+                r.exon_diff_str,
+            )?;
         }
 
         Ok(())
@@ -626,6 +670,15 @@ impl std::fmt::Display for GroupedPTIR {
             self.no_all_canonical_ptir_list
         )
     }
+}
+
+/// temp output struct for src item
+struct SrcRecord<'a> {
+    gtf_str: String,
+    ptir: &'a PTIR,
+    donor_diff: u32,
+    acceptor_diff: u32,
+    exon_diff_str: String,
 }
 
 fn majority_vote_unique_pair(positions: &[(u32, u32)]) -> Option<(u32, u32)> {

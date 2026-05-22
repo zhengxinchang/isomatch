@@ -14,6 +14,7 @@ use crate::core::{
     tx_type::TxType,
 };
 
+/// core data structure for transcript that loaded from index file, used for merge and annotate.
 pub struct PTIR {
     pub tx_boundary: TxBoundary,
     pub start: u32,
@@ -39,7 +40,7 @@ impl PTIR {
         string_pool: &StringPool,
     ) -> Self {
         let splice_site_vec: Option<Vec<SpliceSitePair>> = if tb.n_exons() > 1 {
-            Some(tb.splice_sites(spl_site_pool))
+            Some(tb.splice_sites(spl_site_pool, string_pool))
         } else {
             None
         };
@@ -64,7 +65,7 @@ impl PTIR {
                 None
             },
             junction_vec: if tb.n_exons() > 1 {
-                Some(tb.junctions(junc_pool))
+                Some(tb.junctions(junc_pool, string_pool))
             } else {
                 None
             },

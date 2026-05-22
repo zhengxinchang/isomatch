@@ -8,9 +8,10 @@ use utils::greetings2;
 pub mod core;
 
 use crate::{index::run_index, merge::run_merge};
+pub mod classify;
 pub mod constants;
-pub mod fasta;
-pub mod gtf;
+// pub mod fasta;
+// pub mod gtf;
 pub mod index;
 pub mod merge;
 pub mod traits;
@@ -330,7 +331,7 @@ pub struct MergeArgs {
         short = 'o',
         long = "out",
         help_heading = "Output",
-        help = "Output union GTF"
+        help = "Output prefix, merged GTF will have name  out_prefx.merged.gtf.gz "
     )]
     pub out: PathBuf,
     // #[clap(

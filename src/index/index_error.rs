@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::fasta::FastaError;
+use crate::index::fasta::FastaError;
 
 #[derive(Error, Debug)]
 pub enum IndexError {
@@ -18,4 +18,7 @@ pub enum IndexError {
 
     #[error(transparent)]
     Fasta(#[from] FastaError),
+
+    #[error("Failed to read index. Reason: {reason}")]
+    FailReadIndex { reason: String },
 }

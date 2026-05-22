@@ -6,9 +6,9 @@ use crate::core::splice_site_span::SpliceSiteSpan;
 use crate::core::string_pool::StringPool;
 use crate::core::tx_base::TxBase;
 use crate::core::tx_strand::ISOMSTRAND;
-use crate::fasta::FastaReader;
-use crate::gtf::GTFTx;
 use crate::index::IndexStats;
+use crate::index::fasta::FastaReader;
+use crate::index::gtf::GTFTx;
 use crate::index::index_error::IndexError;
 use crate::traits::{Decodable, DiskSize, Encodable};
 use crate::utils;
@@ -530,7 +530,6 @@ impl ChromBlockBuilder {
         };
 
         let tx_base = TxBase::new(
-            gtf_tx.idx,
             self.chrom_id,
             gtf_tx.start,
             gtf_tx.end,

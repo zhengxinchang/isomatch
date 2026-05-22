@@ -19,3 +19,4 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 rustc-hash = "2.1.2"
 flate2 = "1.1.5"
 zstd = "0.13"
+rust-lapper = "1.2.0"

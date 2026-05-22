@@ -7,12 +7,12 @@ use crate::merge::grouped_ptirs::GroupedPTIR;
 use crate::merge::guide::GuideDb;
 use crate::merge::policy::MergePolicyUsed;
 use crate::merge::policy::merge_cluster;
-use crate::utils::is_gzipped;
 use crate::utils::print_json_block;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
 use serde::Serialize;
 use std::io::BufWriter;
 use std::io::Write;
+use std::path::PathBuf;
 use std::{
     collections::{BTreeMap, HashSet},
     fs::File,
@@ -46,6 +46,9 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         source_files: n_inputs as u32,
         ..MergeStats::default()
     };
+    let gtf_out_path = PathBuf::from(format!("{}.merged.gtf.gz", args.out.display()));
+    let merge_info_path = PathBuf::from(format!("{}.merge_info.json", args.out.display()));
+
     info!("Loading {n_inputs} gtf(s)");
     let mut fhs: Vec<IndexReader> = Vec::with_capacity(n_inputs);
     for (file_id, input_path) in args.inputs.iter().enumerate() {
@@ -103,20 +106,20 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         None
     };
 
-    // choose if output should be gzipped based on the suffix of the output
+    let f = File::create(&gtf_out_path)?;
+    let mut bufwriter: Box<dyn Write> =
+        Box::new(BufWriter::new(GzEncoder::new(f, Compression::default())));
 
-    let mut bufwriter: Box<dyn Write> = match is_gzipped(&args.out) {
-        true => {
-            let f = File::create(&args.out)?;
-            Box::new(BufWriter::new(GzEncoder::new(f, Compression::default())))
-        }
-        false => {
-            let f = File::create(&args.out)?;
-            Box::new(BufWriter::new(f))
-        }
-    };
-
-    // init min-heap
+    let track_out_path = PathBuf::from(format!("{}.track.tsv.gz", args.out.display()));
+    let track_f = File::create(&track_out_path)?;
+    let mut track_bufwriter: Box<dyn Write> = Box::new(BufWriter::new(GzEncoder::new(
+        track_f,
+        Compression::default(),
+    )));
+    writeln!(
+        track_bufwriter,
+        "merged_tx_id\tmerged_gene_id\tmerged_start\tmerged_end\tmerged_strand\tmerged_exon_num\tjunction_policy\ttss_policy\ttes_policy\tmerged_src_count\tsrc_tx_id\tsrc_gene_id\ttotal_donor_diff\ttotal_acceptor_diff\texon_diff"
+    )?;
 
     add_output_header(&mut bufwriter, &args)?;
 
@@ -127,9 +130,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         info!("Merging chromosome {}", chrom_name);
         let mut chrom_block_readers: Vec<ChromBlockReader> = Vec::new();
         for reader in &mut fhs {
-            if let std::result::Result::Ok(chrom_block_reader) =
-                reader.get_chromosome_reader(chrom_name)
-            {
+            if let Ok(chrom_block_reader) = reader.get_chromosome_reader(chrom_name) {
                 chrom_block_readers.push(chrom_block_reader);
             }
         }
@@ -163,6 +164,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
                 &mut stats,
                 &args,
                 bufwriter.as_mut(),
+                track_bufwriter.as_mut(),
                 &guide_tss_index,
                 &guide_tes_index,
             )?;
@@ -180,6 +182,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             &mut stats,
             &args,
             bufwriter.as_mut(),
+            track_bufwriter.as_mut(),
             &guide_tss_index,
             &guide_tes_index,
         )?;
@@ -189,16 +192,14 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
 
     bufwriter.flush()?;
     drop(bufwriter);
+    track_bufwriter.flush()?;
+    drop(track_bufwriter);
     stats.finalize();
     print_json_block("Merge summary", &stats);
-    info!(
-        "Output file have been seved at: {}",
-        &args.out.to_string_lossy()
-    );
-    let mut merge_info_path = args.out.clone();
-    merge_info_path.add_extension("merge_info.json");
+    info!("Output file saved at: {}", gtf_out_path.to_string_lossy());
+    info!("Track file saved at: {}", track_out_path.to_string_lossy());
 
-    let mut merge_info_writer = File::create(merge_info_path)?;
+    let mut merge_info_writer = File::create(&merge_info_path)?;
 
     let msg = serde_json::to_string_pretty(&stats)?;
 
@@ -217,6 +218,7 @@ pub fn process_super_cluster(
     stats: &mut MergeStats,
     args: &MergeArgs,
     bufwriter: &mut dyn Write,
+    track_bufwriter: &mut dyn Write,
     guide_tss: &Option<GuideDb>,
     guide_tes: &Option<GuideDb>,
 ) -> Result<(), MergeError> {
@@ -258,7 +260,7 @@ pub fn process_super_cluster(
             *global_tx_id += 1;
             grpptir.update_ids(*global_scluster_id, *global_tx_id);
             stats.observe_merged_tx(grpptir);
-            grpptir.write_gtf_block(chrom_name, super_cluster, bufwriter)?;
+            grpptir.write_gtf_block(chrom_name, super_cluster, bufwriter, track_bufwriter)?;
         }
     }
 

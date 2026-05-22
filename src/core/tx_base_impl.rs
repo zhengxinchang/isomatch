@@ -15,8 +15,9 @@ pub struct TxBaseLoadArgs {
 }
 
 impl TxBaseTrait for TxBase {
+    // 标注一下这个不应该被使用
     fn tx_idx(&self) -> u32 {
-        self.tx_idx
+        self._tx_idx
     }
     fn tx_boundary(&self) -> TxBoundary {
         self.boundary
@@ -57,11 +58,12 @@ impl TxBaseTrait for TxBase {
         self.n_exons
     }
 
-    fn junctions(&self, junction_pool: &JunctionPool) -> Vec<(u32, u32)> {
+    fn junctions(&self, junction_pool: &JunctionPool, string_pool: &StringPool) -> Vec<(u32, u32)> {
         let raw = junction_pool.get(self.junctions_span).unwrap_or_else(|e| {
             panic!(
-                "failed to resolve junction span for tx_idx {}: {}",
-                self.tx_idx, e
+                "failed to resolve junction span for transcript {}: {}",
+                self.source_tx_id(string_pool),
+                e
             )
         });
 
@@ -69,21 +71,26 @@ impl TxBaseTrait for TxBase {
         let remainder = chunks.remainder();
         assert!(
             remainder.is_empty(),
-            "junction coordinate count must be even for tx_idx {}, got {}",
-            self.tx_idx,
+            "junction coordinate count must be even for transcript {}, got {}",
+            self.source_tx_id(string_pool),
             raw.len()
         );
 
         chunks.map(|pair| (pair[0], pair[1])).collect()
     }
 
-    fn splice_sites(&self, splice_sites_pool: &SpliceSitePool) -> Vec<SpliceSitePair> {
+    fn splice_sites(
+        &self,
+        splice_sites_pool: &SpliceSitePool,
+        string_pool: &StringPool,
+    ) -> Vec<SpliceSitePair> {
         splice_sites_pool
             .get_pair(self.splice_sites_span)
             .unwrap_or_else(|e| {
                 panic!(
-                    "failed to resolve splice site span for tx_idx {}: {}",
-                    self.tx_idx, e
+                    "failed to resolve splice site span for transcript {}: {}",
+                    self.source_tx_id(string_pool),
+                    e
                 )
             })
             .to_vec()
@@ -94,8 +101,9 @@ impl TxBaseTrait for TxBase {
             .get(self.tx_id_span)
             .unwrap_or_else(|e| {
                 panic!(
-                    "failed to resolve transcript_id span for tx_idx {}: {}",
-                    self.tx_idx, e
+                    "failed to resolve transcript_id span for transcript {}: {}",
+                    self.source_tx_id(string_pool),
+                    e
                 )
             })
             .to_owned()
@@ -106,8 +114,9 @@ impl TxBaseTrait for TxBase {
             .get(self.gene_id_span)
             .unwrap_or_else(|e| {
                 panic!(
-                    "failed to resolve gene_id span for tx_idx {}: {}",
-                    self.tx_idx, e
+                    "failed to resolve gene_id span for transcript {}: {}",
+                    self.source_tx_id(string_pool),
+                    e
                 )
             })
             .to_owned()
@@ -125,7 +134,7 @@ impl Encodable for TxBase {
     /// no need to do the TxBoundary encoding here since TxBase already stores start, end, strand separately for easy access
     fn encode_to<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, Self::Error> {
         writer
-            .write_all(&self.tx_idx.to_le_bytes())
+            .write_all(&self._tx_idx.to_le_bytes())
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
         writer
             .write_all(&self.start.to_le_bytes())
@@ -209,7 +218,7 @@ impl PartialLoad for TxBase {
         let gene_span_byte_len = u32::from_le_bytes(buf[72..76].try_into().unwrap());
 
         Ok(Self {
-            tx_idx: tx_id,
+            _tx_idx: tx_id,
             boundary: TxBoundary::new(start, end, flags.get_strand()),
             chrom_id: args.chrom_id,
             start,
@@ -246,7 +255,7 @@ mod tests {
     #[test]
     fn txbase_roundtrip_preserves_ref_hash() {
         let tx = TxBase {
-            tx_idx: 7,
+            _tx_idx: 7,
             boundary: TxBoundary::new(101, 250, crate::core::tx_strand::ISOMSTRAND::Minus),
             chrom_id: 3,
             start: 101,
@@ -287,7 +296,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(decoded.tx_idx, tx.tx_idx);
+        assert_eq!(decoded._tx_idx, tx._tx_idx);
         assert_eq!(decoded.chrom_id, tx.chrom_id);
         assert_eq!(decoded.seq_hash, tx.seq_hash);
         assert_eq!(decoded.ref_hash, tx.ref_hash);

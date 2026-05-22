@@ -21,4 +21,12 @@ pub enum ClassifyError {
     #[error("Failed parse gtf: {reason}")]
     FailedParseGTF { reason: String },
 
+    #[error(transparent)]
+    ParseIntError(#[from] std::num::ParseIntError),
+
+    #[error("Failed to parse ISOM_SRC record: {reason}")]
+    ParseSrcRecord { reason: String },
+
+    #[error(transparent)]
+    IndexError(#[from] crate::index::index_error::IndexError),
 }
