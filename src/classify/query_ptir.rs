@@ -1,11 +1,18 @@
 //! struct of query PIIR
 
 use crate::{
-    classify::isofrom_src_entry::IsoSrcSpan,
-    core::{ptir::PTIR, tx_base::TxBase},
+    core::{ptir::PTIR, string_pool::StringSpan, tx_base::TxBase},
+    index::attributes_index::IsomSrcRecord,
+    merge::policy::MergePolicyUsed,
 };
 
 pub struct QueryPTIR {
-    txbase: PTIR,
-    isoform_src_span: IsoSrcSpan,
+    pub is_isomatch_merged: bool,
+    base: PTIR,
+    src_vec: Vec<IsomSrcRecord>,
+    merge_policies: (MergePolicyUsed, MergePolicyUsed, MergePolicyUsed),
 }
+
+impl QueryPTIR {}
+
+pub struct QueryPTIRManager {}

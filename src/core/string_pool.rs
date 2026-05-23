@@ -52,6 +52,18 @@ impl StringPool {
         }
     }
 
+    /// Drop the dedup index after building; only the raw byte buffer is needed for reads.
+    pub fn shrink_to_read_only(&mut self) {
+        self.index = HashMap::new();
+    }
+
+    /// Heap bytes consumed by this pool (strings buffer + index table).
+    pub fn heap_bytes(&self) -> usize {
+        self.strings.capacity()
+            + self.index.capacity()
+                * (std::mem::size_of::<String>() + std::mem::size_of::<StringSpan>())
+    }
+
     pub fn get(&self, span: StringSpan) -> Result<&str, TxBaseError> {
         let offset = usize::try_from(span.offset)
             .map_err(|_| TxBaseError::InvalidInternId { id: span.offset })?;

@@ -39,7 +39,7 @@ pub trait TxBaseTrait {
 /// for persistance on disk.
 #[derive(Debug, Clone, Copy, Hash)]
 pub struct TxBase {
-    pub(super) _tx_idx: u32,
+    pub tx_idx: u32,
     pub boundary: TxBoundary,
     pub chrom_id: u16,
     pub start: u32,
@@ -61,6 +61,7 @@ pub struct TxBase {
 
 impl TxBase {
     pub fn new(
+        gid: u32,
         chrom_id: u16,
         start: u32,
         end: u32,
@@ -81,7 +82,7 @@ impl TxBase {
         }
 
         Ok(Self {
-            _tx_idx: u32::MAX,
+            tx_idx: gid,
             boundary: TxBoundary::new(start, end, strand),
             chrom_id,
             start,

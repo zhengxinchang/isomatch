@@ -71,9 +71,25 @@ pub fn profile_gtf<P: AsRef<Path>>(path: P) -> Result<(Vec<String>, [u8; 16], u6
     Ok((chrom_names, hash, file_size))
 }
 
-/// GTF tx record, both for input GTF and referencce annotation GTF.
+pub enum GTFRecord {
+    TxAttrs(TxAttrs),
+    TxStructure(TxStructure),
+}
+
 #[derive(Debug, Clone)]
-pub struct GTFTx {
+pub struct TxAttrs {
+    attr_string: String,
+}
+
+impl TxAttrs {
+    pub fn attr_string(&self) -> &str {
+        &self.attr_string
+    }
+}
+
+/// GTF tx record
+#[derive(Debug, Clone)]
+pub struct TxStructure {
     pub idx: u32,
     pub chrom: String,
     pub start: u32,
@@ -85,7 +101,7 @@ pub struct GTFTx {
     pub is_empty: bool,
 }
 
-impl GTFTx {
+impl TxStructure {
     pub fn default() -> Self {
         Self {
             idx: 0,
@@ -175,8 +191,9 @@ pub struct MyGTFReader {
     pub bufreader: Box<dyn BufRead>,
     pub current_tx_idx: u32,
     pub current_chrom: Option<String>,
-    pub chrom_txs: FxHashMap<String, GTFTx>,
-    pub ready_txs: VecDeque<GTFTx>,
+    pub chrom_txs: FxHashMap<String, TxStructure>,
+    pub ready_txs: VecDeque<TxStructure>,
+    pub current_line_no: usize,
 }
 
 impl MyGTFReader {
@@ -187,6 +204,7 @@ impl MyGTFReader {
             current_chrom: None,
             chrom_txs: FxHashMap::default(),
             ready_txs: VecDeque::new(),
+            current_line_no: 0,
         })
     }
 
@@ -200,7 +218,7 @@ impl MyGTFReader {
         gene_id: String,
     ) {
         let tx = self.chrom_txs.entry(tx_id.clone()).or_insert_with(|| {
-            let mut tx = GTFTx::default();
+            let mut tx = TxStructure::default();
             tx.set_start(start);
             tx.set_end(end);
             tx.set_chrom(chrom.clone());
@@ -233,7 +251,7 @@ impl MyGTFReader {
             return;
         }
 
-        let mut txs: Vec<GTFTx> = self
+        let mut txs: Vec<TxStructure> = self
             .chrom_txs
             .drain()
             .map(|(_, mut tx)| {
@@ -267,34 +285,38 @@ impl MyGTFReader {
 
         self.current_chrom = None;
     }
-}
 
-impl Iterator for MyGTFReader {
-    type Item = GTFTx;
-
-    /// if the ready_txs is empty, this
-    /// next() will load all the records in next chromsome,
-    /// and rebuild the ready_txs.
-    /// this require the gtf sorted by at least the chromosome.
-    fn next(&mut self) -> Option<Self::Item> {
+    /// This function is designed to return multiple types of record
+    /// they are wrapped in GTFRecord enum
+    /// currently support
+    /// 1. TxStrcture, which have all exon structure of a transcript.
+    /// TxStrcture is constructed by aggregating all exon records share same transcript_id
+    ///
+    /// 2. TxAttr, which has attrbutes derived from transcript line in GTF file
+    /// TxAttr does not know if the GTF is generated from isomatch, it will return
+    /// the entire attr line anyways.
+    pub fn next(&mut self) -> Result<Option<GTFRecord>, GTFError> {
         if let Some(tx) = self.ready_txs.pop_front() {
-            return Some(tx);
+            return Ok(Some(GTFRecord::TxStructure(tx)));
         }
 
         let mut line = String::new();
         loop {
             line.clear();
             let n = match self.bufreader.read_line(&mut line) {
-                Ok(n) => n,
+                Ok(n) => {
+                    self.current_line_no += 1;
+                    n
+                }
                 Err(_) => {
                     self.flush_current_chrom_tx_to_ready();
-                    return self.ready_txs.pop_front();
+                    return Ok(self.ready_txs.pop_front().map(GTFRecord::TxStructure));
                 }
             };
 
             if n == 0 {
                 self.flush_current_chrom_tx_to_ready();
-                return self.ready_txs.pop_front();
+                return Ok(self.ready_txs.pop_front().map(GTFRecord::TxStructure));
             }
 
             if line.starts_with('#') {
@@ -303,38 +325,121 @@ impl Iterator for MyGTFReader {
 
             let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&line);
 
-            if feat != "exon" {
-                continue;
-            }
+            match feat.as_str() {
+                "exon" => {
+                    // validate the start and end coordinates of exons.
+                    // in case of invalide record has same start and end
+                    if start > end {
+                        warn!(
+                            "Invalid GTF record with start > end, affected line: {}",
+                            line
+                        );
+                        continue;
+                    }
 
-            // validate the start and end coordinates of exons.
-            // in case of invalide record has same start and end
-            if start > end {
-                warn!(
-                    "Invalid GTF record with start > end, affected line: {}",
-                    line
-                );
-                continue;
-            }
+                    if let Some(current_chrom) = &self.current_chrom {
+                        if current_chrom != &chrom {
+                            self.flush_current_chrom_tx_to_ready();
+                        }
+                    }
 
-            if let Some(current_chrom) = &self.current_chrom {
-                if current_chrom != &chrom {
-                    self.flush_current_chrom_tx_to_ready();
+                    if self.current_chrom.is_none() {
+                        self.current_chrom = Some(chrom.clone());
+                    }
+
+                    self.add_exon_to_current_chrom(chrom, start, end, strand, tx_id, gene_id);
+
+                    if let Some(tx) = self.ready_txs.pop_front() {
+                        return Ok(Some(GTFRecord::TxStructure(tx)));
+                    }
                 }
-            }
-
-            if self.current_chrom.is_none() {
-                self.current_chrom = Some(chrom.clone());
-            }
-
-            self.add_exon_to_current_chrom(chrom, start, end, strand, tx_id, gene_id);
-
-            if let Some(tx) = self.ready_txs.pop_front() {
-                return Some(tx);
+                "transcript" => {
+                    // return Attrs anyways no matter if it has ISOM_SRC
+                    // another function will handle this after this get returned.
+                    if let Some(attr_string) = line.splitn(9, '\t').nth(8) {
+                        return Ok(Some(GTFRecord::TxAttrs(TxAttrs {
+                            attr_string: attr_string.trim_end().to_string(),
+                        })));
+                    } else {
+                        return Err(GTFError::InvalidGTFFormat {
+                            line_no: self.current_line_no,
+                        });
+                    }
+                }
+                _ => {
+                    continue;
+                }
             }
         }
     }
 }
+
+// impl Iterator for MyGTFReader {
+//     type Item = GtfRecord;
+
+//     /// if the ready_txs is empty, this
+//     /// next() will load all the records in next chromsome,
+//     /// and rebuild the ready_txs.
+//     /// this require the gtf sorted by at least the chromosome.
+//     fn next(&mut self) -> Option<Self::Item> {
+//         if let Some(tx) = self.ready_txs.pop_front() {
+//             return Some(tx);
+//         }
+
+//         let mut line = String::new();
+//         loop {
+//             line.clear();
+//             let n = match self.bufreader.read_line(&mut line) {
+//                 Ok(n) => n,
+//                 Err(_) => {
+//                     self.flush_current_chrom_tx_to_ready();
+//                     return self.ready_txs.pop_front();
+//                 }
+//             };
+
+//             if n == 0 {
+//                 self.flush_current_chrom_tx_to_ready();
+//                 return self.ready_txs.pop_front();
+//             }
+
+//             if line.starts_with('#') {
+//                 continue;
+//             }
+
+//             let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&line);
+
+//             if feat != "exon" {
+//                 continue;
+//             }
+
+//             // validate the start and end coordinates of exons.
+//             // in case of invalide record has same start and end
+//             if start > end {
+//                 warn!(
+//                     "Invalid GTF record with start > end, affected line: {}",
+//                     line
+//                 );
+//                 continue;
+//             }
+
+//             if let Some(current_chrom) = &self.current_chrom {
+//                 if current_chrom != &chrom {
+//                     self.flush_current_chrom_tx_to_ready();
+//                 }
+//             }
+
+//             if self.current_chrom.is_none() {
+//                 self.current_chrom = Some(chrom.clone());
+//             }
+
+//             self.add_exon_to_current_chrom(chrom, start, end, strand, tx_id, gene_id);
+
+//             if let Some(tx) = self.ready_txs.pop_front() {
+//                 return Some(tx);
+//             }
+//         }
+//     }
+// }
 
 /// process one line of GTF file, return chrom, feature type, start, end, strand,
 /// transcript_id and gene_id. The start and end are 1-based and end is inclusive.

@@ -9,19 +9,64 @@ use crate::{
     core::tx_strand::ISOMSTRAND,
     // fasta::{self, FastaReader},
     // gtf::{self, profile_gtf},
-    index::format::ChromBlockBuilder,
+    index::{attributes_index::IsomAttrCache, format::ChromBlockBuilder},
     traits::ArgValidate,
     utils::print_json_block,
 };
 pub use anyhow::Result;
 use fasta::FastaReader;
 use gtf::profile_gtf;
+pub mod attributes_index;
 pub mod builder;
 pub mod fasta;
 pub mod format;
 pub mod gtf;
 pub mod index_error;
 pub mod reader;
+
+fn parse_gtf_attr_value(attrs: &str, key: &str) -> Option<String> {
+    attrs.split(';').find_map(|attr| {
+        let attr = attr.trim();
+        if !attr.starts_with(key) {
+            return None;
+        }
+
+        if let Some(q_start) = attr.find('"') {
+            let rest = &attr[q_start + 1..];
+            let q_len = rest.find('"')?;
+            return Some(rest[..q_len].to_string());
+        }
+
+        attr.split_ascii_whitespace()
+            .nth(1)
+            .map(ToString::to_string)
+    })
+}
+
+fn parse_isom_tx_id(tx_id: &str) -> Option<u32> {
+    tx_id
+        .strip_prefix("ISOMT_")
+        .and_then(|s| s.parse::<u32>().ok())
+        .and_then(|id| id.checked_sub(1))
+}
+
+fn parse_attr(tx_attr: &gtf::TxAttrs) -> Result<Option<(u32, String)>> {
+    let attrs = tx_attr.attr_string();
+    let Some(isom_src_vec) = parse_gtf_attr_value(attrs, "ISOM_SRC") else {
+        return Ok(None);
+    };
+
+    let tx_id_str = parse_gtf_attr_value(attrs, "transcript_id")
+        .context("merged transcript with ISOM_SRC is missing transcript_id")?;
+    let tx_id = parse_isom_tx_id(&tx_id_str).with_context(|| {
+        format!(
+            "merged transcript_id '{}' does not follow the expected ISOMT_<n> format",
+            tx_id_str
+        )
+    })?;
+
+    Ok(Some((tx_id, isom_src_vec)))
+}
 
 #[derive(Debug, Default, Serialize)]
 pub struct IndexStats {
@@ -253,44 +298,78 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
     .expect("Can not init index builder");
 
     info!("Indexing GTF...");
-    let gtf_reader = gtf::MyGTFReader::new(&args.input)
+    let mut gtf_reader = gtf::MyGTFReader::new(&args.input)
         .with_context(|| format!("Can not open GTF file: {}", args.input.display()))?;
 
     let mut current_chrom = String::new();
     let mut chrom_id = 0u16;
     let mut chrom_block: Option<ChromBlockBuilder> = None;
+    let mut next_written_tx_idx: u32 = 0;
 
-    for tx_record in gtf_reader {
-        if current_chrom != tx_record.chrom {
-            if let Some(cb) = chrom_block.take() {
-                builder.add_chrom(cb)?;
+    // init isomsrccache
+
+    let mut isom_src_cache = IsomAttrCache::init(&isomx_path);
+
+    // for mut tx_record in gtf_reader {
+    loop {
+        let Some(gtf_record) = gtf_reader.next()? else {
+            break;
+        };
+
+        match gtf_record {
+            gtf::GTFRecord::TxAttrs(tx_attr) => {
+                if let Some((tx_id, isom_src_vec)) = parse_attr(&tx_attr)? {
+                    // We first store the span by the merged transcript id parsed
+                    // from `transcript_id`. After structure indexing decides
+                    // whether this transcript survives chromosome filtering, we
+                    // remap that span onto the dense `TxBase.tx_idx`.
+                    isom_src_cache.dump_isom_src_string(isom_src_vec, tx_id)?;
+                }
             }
-            current_chrom = tx_record.chrom.clone();
-            if missing_ref_seqid_set.contains(&current_chrom) {
-                info!(
-                    "Skipping chromosome {} because it is absent from the reference FASTA",
-                    &current_chrom
-                );
-                chrom_block = None;
-            } else {
-                chrom_id += 1;
-                chrom_block = Some(ChromBlockBuilder::init(chrom_id));
-                info!("Processing chromosome {}", &current_chrom);
+            gtf::GTFRecord::TxStructure(mut tx_structure) => {
+                // process the tx_strucuture as previous
+                if current_chrom != tx_structure.chrom {
+                    if let Some(cb) = chrom_block.take() {
+                        builder.add_chrom(cb)?;
+                    }
+                    current_chrom = tx_structure.chrom.clone();
+                    if missing_ref_seqid_set.contains(&current_chrom) {
+                        info!(
+                            "Skipping chromosome {} because it is absent from the reference FASTA",
+                            &current_chrom
+                        );
+                        chrom_block = None;
+                    } else {
+                        chrom_id += 1;
+                        chrom_block = Some(ChromBlockBuilder::init(chrom_id));
+                        info!("Processing chromosome {}", &current_chrom);
+                    }
+                }
+                if missing_ref_seqid_set.contains(&tx_structure.chrom) {
+                    stats.observe_skipped_tx(&tx_structure.gene_id);
+                    continue;
+                }
+                // resign the no skip continue id for tx
+                // just incase the missing ref seqid skip
+                // the tx_idx in TxBase will be used to prject the txbase_idx to src records
+                // in isoms file.
+                if let Some(original_tx_id) = parse_isom_tx_id(&tx_structure.tx_id) {
+                    isom_src_cache.project_tx_id(original_tx_id, next_written_tx_idx);
+                }
+                tx_structure.set_idx(next_written_tx_idx);
+                chrom_block
+                    .as_mut()
+                    .expect("Can not access chromblock")
+                    .add_tx(tx_structure, &mut ref_far, &mut seq_far, &mut stats)?;
+                next_written_tx_idx += 1;
             }
         }
-        if missing_ref_seqid_set.contains(&tx_record.chrom) {
-            stats.observe_skipped_tx(&tx_record.gene_id);
-            continue;
-        }
-        chrom_block
-            .as_mut()
-            .expect("Can not access chromblock")
-            .add_tx(tx_record, &mut ref_far, &mut seq_far, &mut stats)?;
     }
 
     if let Some(cb) = chrom_block.take() {
         builder.add_chrom(cb)?;
     }
+    isom_src_cache.finalize()?;
     builder.finalize()?;
     stats.finalize();
 

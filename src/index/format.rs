@@ -8,7 +8,7 @@ use crate::core::tx_base::TxBase;
 use crate::core::tx_strand::ISOMSTRAND;
 use crate::index::IndexStats;
 use crate::index::fasta::FastaReader;
-use crate::index::gtf::GTFTx;
+use crate::index::gtf::TxStructure;
 use crate::index::index_error::IndexError;
 use crate::traits::{Decodable, DiskSize, Encodable};
 use crate::utils;
@@ -321,7 +321,7 @@ impl ChromBlockBuilder {
 
     pub fn add_tx(
         &mut self,
-        gtf_tx: GTFTx,
+        gtf_tx: TxStructure,
         refr: &mut FastaReader,
         seqr: &mut Option<FastaReader>,
         stats: &mut IndexStats,
@@ -530,6 +530,7 @@ impl ChromBlockBuilder {
         };
 
         let tx_base = TxBase::new(
+            gtf_tx.idx,
             self.chrom_id,
             gtf_tx.start,
             gtf_tx.end,
