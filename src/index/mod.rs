@@ -9,7 +9,7 @@ use crate::{
     core::tx_strand::ISOMSTRAND,
     // fasta::{self, FastaReader},
     // gtf::{self, profile_gtf},
-    index::{attributes_index::IsomAttrCache, format::ChromBlockBuilder},
+    index::{attributes_index::IsomAttrCacheBuilder, format::ChromBlockBuilder},
     traits::ArgValidate,
     utils::print_json_block,
 };
@@ -50,7 +50,7 @@ fn parse_isom_tx_id(tx_id: &str) -> Option<u32> {
         .and_then(|id| id.checked_sub(1))
 }
 
-fn parse_attr(tx_attr: &gtf::TxAttrs) -> Result<Option<(u32, String)>> {
+fn parse_isom_src_attr(tx_attr: &gtf::TxAttrs) -> Result<Option<(u32, String)>> {
     let attrs = tx_attr.attr_string();
     let Some(isom_src_vec) = parse_gtf_attr_value(attrs, "ISOM_SRC") else {
         return Ok(None);
@@ -308,7 +308,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
 
     // init isomsrccache
 
-    let mut isom_src_cache = IsomAttrCache::init(&isomx_path);
+    let mut isom_src_cache = IsomAttrCacheBuilder::init(&isomx_path);
 
     // for mut tx_record in gtf_reader {
     loop {
@@ -318,7 +318,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
 
         match gtf_record {
             gtf::GTFRecord::TxAttrs(tx_attr) => {
-                if let Some((tx_id, isom_src_vec)) = parse_attr(&tx_attr)? {
+                if let Some((tx_id, isom_src_vec)) = parse_isom_src_attr(&tx_attr)? {
                     // We first store the span by the merged transcript id parsed
                     // from `transcript_id`. After structure indexing decides
                     // whether this transcript survives chromosome filtering, we

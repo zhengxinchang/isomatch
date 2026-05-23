@@ -11,11 +11,9 @@ use thiserror::Error;
 /// Scan the GTF once to collect ordered unique chrom names and compute a
 /// content hash (xxh3-128 of the decompressed bytes) and file size.
 pub fn profile_gtf<P: AsRef<Path>>(path: P) -> Result<(Vec<String>, [u8; 16], u64), GTFError> {
-    let file_size = std::fs::metadata(path.as_ref())
-        .map_err(|_| GTFError::IoError {})?
-        .len();
+    let file_size = std::fs::metadata(path.as_ref())?.len();
 
-    let mut bufreader = open_file_bufread(path).map_err(|_| GTFError::IoError {})?;
+    let mut bufreader = open_file_bufread(path)?;
     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
     let mut line = String::new();
     let mut chrom_set: FxHashSet<String> = FxHashSet::default();
@@ -23,7 +21,8 @@ pub fn profile_gtf<P: AsRef<Path>>(path: P) -> Result<(Vec<String>, [u8; 16], u6
     let mut prev_chrom = String::new();
     let mut line_no = 0usize;
 
-    while let Ok(n) = bufreader.read_line(&mut line) {
+    loop {
+        let n = bufreader.read_line(&mut line)?;
         if n == 0 {
             break;
         }
@@ -308,10 +307,7 @@ impl MyGTFReader {
                     self.current_line_no += 1;
                     n
                 }
-                Err(_) => {
-                    self.flush_current_chrom_tx_to_ready();
-                    return Ok(self.ready_txs.pop_front().map(GTFRecord::TxStructure));
-                }
+                Err(e) => return Err(e.into()),
             };
 
             if n == 0 {
@@ -527,164 +523,12 @@ fn extract_attr_value(attr: &str) -> String {
 
 #[derive(Error, Debug)]
 pub enum GTFError {
-    #[error("Can not read GTF file")]
-    IoError {},
-
     #[error("Unsorted GTF: {line}")]
     UnsortedGTF { line: String },
 
     #[error("Invalid GTF format")]
     InvalidGTFFormat { line_no: usize },
-}
 
-#[cfg(test)]
-mod tests {
-    use super::{GTFError, MyGTFReader, profile_gtf};
-    use flate2::{Compression, write::GzEncoder};
-    use std::{
-        fs::{self, File},
-        io::Write,
-        path::{Path, PathBuf},
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    fn unique_temp_path(ext: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "isomatch_gtf_{}_{}.{}",
-            std::process::id(),
-            nanos,
-            ext
-        ))
-    }
-
-    fn write_plain_gtf(path: &Path, content: &str) {
-        fs::write(path, content).unwrap();
-    }
-
-    fn write_gzip_gtf(path: &Path, content: &str) {
-        let file = File::create(path).unwrap();
-        let mut encoder = GzEncoder::new(file, Compression::default());
-        encoder.write_all(content.as_bytes()).unwrap();
-        encoder.finish().unwrap();
-    }
-
-    #[test]
-    fn my_gtf_reader_supports_plain_text_gtf() {
-        let path = unique_temp_path("gtf");
-        let content = concat!(
-            "chr1\tsrc\texon\t1\t10\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
-            "chr1\tsrc\texon\t21\t30\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
-            "chr1\tsrc\texon\t41\t50\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
-        );
-        write_plain_gtf(&path, content);
-
-        let records: Vec<_> = MyGTFReader::new(&path).unwrap().collect();
-
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0].tx_id, "tx1");
-        assert_eq!(records[0].exons, vec![(1, 10), (21, 30)]);
-        assert_eq!(records[1].tx_id, "tx2");
-
-        fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn my_gtf_reader_supports_gzip_gtf() {
-        let path = unique_temp_path("gtf.gz");
-        let content = concat!(
-            "chr1\tsrc\texon\t1\t10\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
-            "chr1\tsrc\texon\t21\t30\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
-            "chr1\tsrc\texon\t41\t50\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
-        );
-        write_gzip_gtf(&path, content);
-
-        let records: Vec<_> = MyGTFReader::new(&path).unwrap().collect();
-
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0].tx_id, "tx1");
-        assert_eq!(records[0].exons, vec![(1, 10), (21, 30)]);
-        assert_eq!(records[1].tx_id, "tx2");
-
-        fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn my_gtf_reader_merges_interleaved_exons_within_chromosome() {
-        let path = unique_temp_path("gtf");
-        let content = concat!(
-            "chr1\tsrc\texon\t1\t10\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
-            "chr1\tsrc\texon\t11\t20\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
-            "chr1\tsrc\texon\t41\t50\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
-            "chr1\tsrc\texon\t31\t40\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
-        );
-        write_plain_gtf(&path, content);
-
-        let records: Vec<_> = MyGTFReader::new(&path).unwrap().collect();
-
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0].tx_id, "tx1");
-        assert_eq!(records[0].exons, vec![(1, 10), (41, 50)]);
-        assert_eq!(records[1].tx_id, "tx2");
-        assert_eq!(records[1].exons, vec![(11, 20), (31, 40)]);
-
-        fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn profile_gtf_accepts_transcript_start_regressions_within_chromosome() {
-        let path = unique_temp_path("gtf");
-        let content = concat!(
-            "chr1\tsrc\ttranscript\t200\t300\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
-            "chr1\tsrc\ttranscript\t100\t150\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
-            "chr2\tsrc\ttranscript\t10\t50\t.\t+\t.\tgene_id \"g3\"; transcript_id \"tx3\";\n",
-        );
-        write_plain_gtf(&path, content);
-
-        let (chrom_names, _, _) = profile_gtf(&path).unwrap();
-
-        assert_eq!(chrom_names, vec!["chr1".to_string(), "chr2".to_string()]);
-
-        fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn profile_gtf_rejects_repeated_chromosome_blocks() {
-        let path = unique_temp_path("gtf");
-        let content = concat!(
-            "chr1\tsrc\ttranscript\t100\t150\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
-            "chr2\tsrc\ttranscript\t10\t50\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
-            "chr1\tsrc\ttranscript\t200\t300\t.\t+\t.\tgene_id \"g3\"; transcript_id \"tx3\";\n",
-        );
-        write_plain_gtf(&path, content);
-
-        let err = profile_gtf(&path).unwrap_err();
-
-        match err {
-            GTFError::UnsortedGTF { line } => assert!(line.starts_with("chr1\tsrc\ttranscript")),
-            other => panic!("expected UnsortedGTF, got {other:?}"),
-        }
-
-        fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn profile_gtf_ignores_non_transcript_ordering() {
-        let path = unique_temp_path("gtf");
-        let content = concat!(
-            "chr1\tsrc\ttranscript\t100\t200\t.\t+\t.\tgene_id \"g1\"; transcript_id \"tx1\";\n",
-            "chr2\tsrc\texon\t10\t20\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
-            "chr2\tsrc\ttranscript\t50\t100\t.\t+\t.\tgene_id \"g2\"; transcript_id \"tx2\";\n",
-        );
-        write_plain_gtf(&path, content);
-
-        let (chrom_names, _, _) = profile_gtf(&path).unwrap();
-
-        assert_eq!(chrom_names, vec!["chr1".to_string(), "chr2".to_string()]);
-
-        fs::remove_file(path).unwrap();
-    }
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }

@@ -104,7 +104,7 @@ pub struct IosmSrcSpan {
     pub count: u32,  // number of contiguous source records
 }
 
-pub struct IsomAttrCache {
+pub struct IsomAttrCacheBuilder {
     span_file_name: PathBuf,
     src_file: File,
     string_pool_file: File,
@@ -117,7 +117,7 @@ pub struct IsomAttrCache {
     tx_id_to_span: Vec<IosmSrcSpan>,
 }
 
-impl IsomAttrCache {
+impl IsomAttrCacheBuilder {
     pub fn init<P: AsRef<Path>>(path: P) -> Self {
         let base_path = path.as_ref().to_path_buf();
         let span_file_name = sidecar_path(&base_path, "isomsrc.spans");
