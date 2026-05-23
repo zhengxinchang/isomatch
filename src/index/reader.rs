@@ -4,9 +4,12 @@ use std::{
     io::{self, BufReader, Cursor, ErrorKind, Read, Seek, SeekFrom},
 };
 
-use log::warn;
+use log::{error, warn};
 
-use crate::traits::{Decodable, DiskSize, PartialLoad};
+use crate::{
+    constants::ISOMX_VERSION,
+    traits::{Decodable, DiskSize, PartialLoad},
+};
 use crate::{
     core::{
         junction_pool::JunctionPool, splice_site_pool::SpliceSitePool, string_pool::StringPool,
@@ -34,6 +37,14 @@ impl IndexReader {
     pub fn open(file: File, file_id: usize) -> io::Result<Self> {
         let mut reader = BufReader::new(file);
         let header = IndexHeader::decode_from(&mut reader, ())?;
+
+        if header.version != ISOMX_VERSION {
+            error!(
+                "The isomx version ({}) is outdated, please rebuild the index.",
+                header.version
+            );
+            std::process::exit(1);
+        }
 
         let mut chroms = Vec::with_capacity(header.chrom_count as usize);
         for _ in 0..header.chrom_count {

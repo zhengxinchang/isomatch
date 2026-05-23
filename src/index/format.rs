@@ -1,3 +1,4 @@
+use crate::constants::ISOMX_VERSION;
 use crate::core::core_error::TxBaseError;
 use crate::core::junction_pool::JunctionPool;
 use crate::core::splice_site_pair::SpliceSitePair;
@@ -10,7 +11,6 @@ use crate::index::IndexStats;
 use crate::index::fasta::FastaReader;
 use crate::index::gtf::TxStructure;
 use crate::index::index_error::IndexError;
-use crate::constants::ISOMX_VERSION;
 use crate::traits::{Decodable, DiskSize, Encodable};
 use crate::utils;
 use std::io::{Error, ErrorKind, Read, Seek, SeekFrom, Write};
@@ -84,25 +84,26 @@ pub struct IndexHeader {
     pub version: u8,
     pub flags: Flags,
     pub chrom_count: u32,
-    pub gtf_size: u64,
-    pub index_size: u64,
+    // gtf
+    pub gtf_file_size: u64,
+    pub index_file_size: u64,
     pub md5: [u8; 16],
     /// Byte length of the chrom name table that immediately follows the directory.
     pub chrom_name_table_len: u32,
+    /// Total number of transcripts written into this index.
+    pub total_tx_n: u32,
     /// Number of seqids in the GTF that were absent from the reference FASTA.
     pub missing_seqid_count: u32,
     /// Byte length of the missing seqid table that follows the chrom name table.
     pub missing_seqid_table_len: u32,
-    pub reserved_to_4k: [u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4], // 4035 bytes
+    pub reserved_to_4k: [u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4 - 4], // 4031 bytes
 }
 
 impl IndexHeader {
-    
-
     pub fn new(
         chrom_count: u32,
-        gtf_size: u64,
-        index_size: u64,
+        gtf_file_size: u64,
+        index_file_size: u64,
         md5: [u8; 16],
         has_ref_hash: bool,
         has_seq_hash: bool,
@@ -118,13 +119,14 @@ impl IndexHeader {
             version: ISOMX_VERSION,
             flags,
             chrom_count,
-            gtf_size,
-            index_size,
+            gtf_file_size,
+            index_file_size,
             md5,
             chrom_name_table_len,
+            total_tx_n: 0,
             missing_seqid_count,
             missing_seqid_table_len,
-            reserved_to_4k: [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4],
+            reserved_to_4k: [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4 - 4],
         }
     }
 }
@@ -142,10 +144,11 @@ impl Encodable for IndexHeader {
         buf.push(self.version);
         buf.extend_from_slice(&self.flags.bits.to_le_bytes());
         buf.extend_from_slice(&self.chrom_count.to_le_bytes());
-        buf.extend_from_slice(&self.gtf_size.to_le_bytes());
-        buf.extend_from_slice(&self.index_size.to_le_bytes());
+        buf.extend_from_slice(&self.gtf_file_size.to_le_bytes());
+        buf.extend_from_slice(&self.index_file_size.to_le_bytes());
         buf.extend_from_slice(&self.md5);
         buf.extend_from_slice(&self.chrom_name_table_len.to_le_bytes());
+        buf.extend_from_slice(&self.total_tx_n.to_le_bytes());
         buf.extend_from_slice(&self.missing_seqid_count.to_le_bytes());
         buf.extend_from_slice(&self.missing_seqid_table_len.to_le_bytes());
         buf.extend_from_slice(&self.reserved_to_4k);
@@ -171,13 +174,12 @@ impl Decodable for IndexHeader {
         let mut version_buf = [0u8; 1];
         reader.read_exact(&mut version_buf)?;
         let version = version_buf[0];
-        if version != Self::ISOMX_VERSION {
+        if version != ISOMX_VERSION {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!(
                     "unsupported index version: expected {}, got {}",
-                    Self::ISOMX_VERSION,
-                    version
+                    ISOMX_VERSION, version
                 ),
             ));
         }
@@ -206,6 +208,10 @@ impl Decodable for IndexHeader {
         reader.read_exact(&mut chrom_name_table_len_buf)?;
         let chrom_name_table_len = u32::from_le_bytes(chrom_name_table_len_buf);
 
+        let mut total_tx_n_buf = [0u8; 4];
+        reader.read_exact(&mut total_tx_n_buf)?;
+        let total_tx_n = u32::from_le_bytes(total_tx_n_buf);
+
         let mut missing_seqid_count_buf = [0u8; 4];
         reader.read_exact(&mut missing_seqid_count_buf)?;
         let missing_seqid_count = u32::from_le_bytes(missing_seqid_count_buf);
@@ -215,7 +221,7 @@ impl Decodable for IndexHeader {
         let missing_seqid_table_len = u32::from_le_bytes(missing_seqid_table_len_buf);
 
         // consume remaining reserved bytes to stay at 4 KB boundary
-        let mut reserved_to_4k = [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4];
+        let mut reserved_to_4k = [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4 - 4]; // 4031 bytes
         reader.read_exact(&mut reserved_to_4k)?;
 
         if index_size < Self::DISK_SIZE as u64 {
@@ -248,10 +254,11 @@ impl Decodable for IndexHeader {
             version,
             flags,
             chrom_count,
-            gtf_size,
-            index_size,
+            gtf_file_size: gtf_size,
+            index_file_size: index_size,
             md5,
             chrom_name_table_len,
+            total_tx_n,
             missing_seqid_count,
             missing_seqid_table_len,
             reserved_to_4k,

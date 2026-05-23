@@ -4,6 +4,8 @@ use std::{
     path::Path,
 };
 
+use log::error;
+
 use crate::{constants::ISOMS_VERSION, index::index_error::IndexError};
 
 /// Sidecar file layout (.isomattr):
@@ -17,13 +19,13 @@ pub struct RawStringSpan {
     pub length: u32, // byte length of the compressed blob
 }
 
-const MAGIC: [u8; 7] = *b"ISOMSRC";
+const MAGIC: [u8; 5] = *b"ISOMS";
 
-// magic(7) + version(1) + total_tx_n(4) + span_table_off(8) = 20
-const HEADER_SIZE: usize = 20;
+// magic(5) + version(1) + total_tx_n(4) + span_table_off(8) = 18
+const HEADER_SIZE: usize = 18;
 
 pub struct AttrIndexBuilder {
-    magic: [u8; 7],
+    magic: [u8; 5],
     version: u8,
     total_tx_n: usize,
     current_tx_n: usize,
@@ -116,10 +118,18 @@ impl AttrIndexBuilder {
     }
 }
 
-pub struct AttrIndexReader {
-    file: File,
+pub struct AttrIndexHeader {
+    magic: [u8; 5],
+    version: u8,
     total_tx_n: u32,
     span_table_off: u64,
+}
+
+pub struct AttrIndexReader {
+    file: File,
+    header: AttrIndexHeader,
+    // total_tx_n: u32,
+    // span_table_off: u64,
 }
 
 impl AttrIndexReader {
@@ -130,20 +140,24 @@ impl AttrIndexReader {
 
         let mut file = File::open(path).map_err(e)?;
 
-        let mut magic = [0u8; 7];
+        // let mut header =
+
+        let mut magic = [0u8; 5];
         file.read_exact(&mut magic).map_err(e)?;
         if magic != MAGIC {
             return Err(IndexError::FailReadIndex {
-                reason: format!("invalid magic: expected ISOMSRC, got {:?}", magic),
+                reason: format!("invalid magic: expected ISOMS, got {:?}", magic),
             });
         }
 
         let mut version = [0u8; 1];
         file.read_exact(&mut version).map_err(e)?;
         if version[0] != ISOMS_VERSION {
-            return Err(IndexError::FailReadIndex {
-                reason: format!("unsupported version: {}", version[0]),
-            });
+            error!(
+                "The isomx version ({}) is outdated, please rebuild the index.",
+                version[0]
+            );
+            std::process::exit(1);
         }
 
         let mut buf4 = [0u8; 4];
@@ -154,16 +168,19 @@ impl AttrIndexReader {
         file.read_exact(&mut buf8).map_err(e)?;
         let span_table_off = u64::from_le_bytes(buf8);
 
-        Ok(Self {
-            file,
+        let header = AttrIndexHeader {
+            magic,
+            version: version[0],
             total_tx_n,
             span_table_off,
-        })
+        };
+
+        Ok(Self { file, header })
     }
 
     /// Returns the decompressed attr bytes for `tx_idx`, or `None` if not set.
     pub fn get_attr(&mut self, tx_idx: u32) -> Result<Option<Vec<u8>>, IndexError> {
-        if tx_idx >= self.total_tx_n {
+        if tx_idx >= self.header.total_tx_n {
             return Ok(None);
         }
         let e: fn(std::io::Error) -> IndexError = |err| IndexError::FailReadIndex {
@@ -171,7 +188,7 @@ impl AttrIndexReader {
         };
 
         // Read the RawStringSpan for this tx_idx from the span table.
-        let span_entry_off = self.span_table_off + tx_idx as u64 * 8;
+        let span_entry_off = self.header.span_table_off + tx_idx as u64 * 8;
         self.file.seek(SeekFrom::Start(span_entry_off)).map_err(e)?;
         let mut buf4 = [0u8; 4];
         self.file.read_exact(&mut buf4).map_err(e)?;

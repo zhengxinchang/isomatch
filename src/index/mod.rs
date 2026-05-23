@@ -216,7 +216,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
     };
 
     info!("Profiling GTF");
-    let (profiled_chrom_names, md5, gtf_size) = profile_gtf(&args.input)
+    let (profiled_chrom_names, md5, gtf_file_size) = profile_gtf(&args.input)
         .with_context(|| format!("Can not profile GTF file: {}", args.input.display()))?;
 
     let missing_ref_seqids: Vec<String> = profiled_chrom_names
@@ -266,7 +266,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
     let mut builder = builder::IndexBuilder::new(
         std::fs::File::create(&isomx_path).expect("Can not create output file"),
         chrom_names,
-        gtf_size,
+        gtf_file_size,
         md5,
         true,
         args.seqfa.is_some(),
@@ -325,7 +325,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
     builder.finalize()?;
     stats.finalize();
 
-    // second pass to build the sidecar file isomsrc
+    // second pass to build the sidecar file isoms
     {
         use std::io::BufRead;
 
@@ -341,13 +341,13 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
             .build_txid_index()
             .with_context(|| "cannot build txid index")?;
 
-        let mut isomsrc_path = isomx_path.clone();
-        isomsrc_path.add_extension("isomsrc");
+        let mut isoms_path = isomx_path.clone();
+        isoms_path.add_extension("isoms");
         let mut attr_builder =
-            attributes_index::AttrIndexBuilder::init(&isomsrc_path, next_written_tx_idx as usize)
+            attributes_index::AttrIndexBuilder::init(&isoms_path, next_written_tx_idx as usize)
                 .with_context(|| {
-                format!("cannot init AttrIndexBuilder at {}", isomsrc_path.display())
-            })?;
+                    format!("cannot init AttrIndexBuilder at {}", isoms_path.display())
+                })?;
 
         let gtf_lines = crate::utils::open_file_bufread(&args.input).with_context(|| {
             format!(
@@ -378,8 +378,8 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
 
         attr_builder
             .finish()
-            .with_context(|| format!("cannot finalize isomsrc at {}", isomsrc_path.display()))?;
-        info!("Sidecar isomsrc written to {:?}", isomsrc_path);
+            .with_context(|| format!("cannot finalize isoms at {}", isoms_path.display()))?;
+        info!("Sidecar isoms written to {:?}", isoms_path);
     }
 
     info!("Index written to {:?}", isomx_path);

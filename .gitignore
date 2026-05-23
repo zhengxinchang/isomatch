@@ -34,3 +34,5 @@ bb*
 /stage/
 CLAUDE.md
 AGENTS.md
+flamegraph.svg
+*.png

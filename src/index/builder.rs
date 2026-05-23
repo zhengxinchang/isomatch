@@ -23,18 +23,16 @@ use crate::core::tx_base::TxBase;
 use crate::index::format::{ChromBlockBuilder, ChromDirectoryEntry, IndexHeader};
 use crate::traits::{DiskSize, Encodable};
 
-/// Index 写入器。
-///
-/// # 写入流程
-/// 1. `new()` — 写入 4KB 占位 Header + N×34B 占位 Directory + Chrom Name Table + Missing SeqID Table（一次写定）
-/// 2. `add_chrom()` — 逐 chrom 顺序写入数据，写完立即可 drop，记录真实 offset 到 `entries`
-/// 3. `finalize()` — seek 回文件头，回填真实 Header 与 Directory
+/// 1. new() write 4k header place holder,  + N×34B  Directory + Chrom Name Table + Missing SeqID Table
+/// 2. add_chrom() write per-chrom data. drop immediately after it is done.
+/// 3. finalize() seek back header place holder, fill up with Header and Directory
 pub struct IndexBuilder {
     header: IndexHeader,
     entries: Vec<ChromDirectoryEntry>,
     /// Pre-computed (offset_in_table, len) for each chrom, indexed by chrom_id - 1.
     chrom_name_offsets: Vec<(u32, u32)>,
     current_offset: u64,
+    // total_tx_n: u32,
     file: BufWriter<File>,
 }
 
@@ -44,7 +42,7 @@ impl IndexBuilder {
     pub fn new(
         file: File,
         chrom_names: Vec<String>,
-        gtf_size: u64,
+        gtf_file_size: u64,
         md5: [u8; 16],
         has_ref_hash: bool,
         has_seq_hash: bool,
@@ -76,7 +74,7 @@ impl IndexBuilder {
 
         let header = IndexHeader::new(
             chrom_count,
-            gtf_size,
+            gtf_file_size,
             0,
             md5,
             has_ref_hash,
@@ -108,6 +106,7 @@ impl IndexBuilder {
             entries: Vec::with_capacity(chrom_count as usize),
             chrom_name_offsets,
             current_offset,
+            // total_tx_n: 0,
             file,
         })
     }
@@ -147,6 +146,7 @@ impl IndexBuilder {
         // generate a chromsome directory entry
         // and insert it into entries
         // each add_chrom will generate one entry on the fly
+        self.header.total_tx_n += entry.txs.len() as u32;
         self.entries.push(ChromDirectoryEntry {
             chrom_id: entry.chrom_id,
             chrom_name_offset,
@@ -166,7 +166,8 @@ impl IndexBuilder {
 
     /// Seek back and write the real header and directory.
     pub fn finalize(mut self) -> std::io::Result<()> {
-        self.header.index_size = self.current_offset;
+        self.header.index_file_size = self.current_offset;
+        // self.header.total_tx_n = self.total_tx_n;
         self.file.seek(SeekFrom::Start(0))?;
         self.header.encode_to(&mut self.file)?;
 
