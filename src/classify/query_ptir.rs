@@ -1,18 +1,42 @@
 //! struct of query PIIR
 
+use std::path::{Path, PathBuf};
+
 use crate::{
-    core::{ptir::PTIR, string_pool::StringSpan, tx_base::TxBase},
-    index::attributes_index::IsomSrcRecord,
-    merge::policy::MergePolicyUsed,
+    core::ptir::PTIR,
+    index::{
+        attributes_index::{AttrIndexReader, RawStringSpan},
+        reader::IndexReader,
+    },
 };
 
 pub struct QueryPTIR {
     pub is_isomatch_merged: bool,
-    base: PTIR,
-    src_vec: Vec<IsomSrcRecord>,
-    merge_policies: (MergePolicyUsed, MergePolicyUsed, MergePolicyUsed),
+    pub base: PTIR,
+    pub attr_raw_string: Vec<u8>,
 }
 
-impl QueryPTIR {}
+impl QueryPTIR {
+    pub fn new(ptir: &PTIR, attr_string: Vec<u8>) -> Self {
+        // construct the QueryPTIR
+        todo!()
+    }
+}
 
-pub struct QueryPTIRManager {}
+pub struct QueryPTIRManager {
+    index_file_name: PathBuf,
+    attr_file_name: PathBuf,
+    index_reader: IndexReader,
+    attr_index_reader: AttrIndexReader,
+    total_tx_n: usize, // from IndexReader
+}
+
+impl QueryPTIRManager {
+    pub fn open<P: AsRef<Path>>(gtf_path: P) -> Self {
+        todo!()
+    }
+
+    pub fn next(&mut self) -> Option<QueryPTIR> {
+        todo!()
+    }
+}

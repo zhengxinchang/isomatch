@@ -10,6 +10,7 @@ use crate::index::IndexStats;
 use crate::index::fasta::FastaReader;
 use crate::index::gtf::TxStructure;
 use crate::index::index_error::IndexError;
+use crate::constants::ISOMX_VERSION;
 use crate::traits::{Decodable, DiskSize, Encodable};
 use crate::utils;
 use std::io::{Error, ErrorKind, Read, Seek, SeekFrom, Write};
@@ -88,11 +89,15 @@ pub struct IndexHeader {
     pub md5: [u8; 16],
     /// Byte length of the chrom name table that immediately follows the directory.
     pub chrom_name_table_len: u32,
-    pub reserved_to_4k: [u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4], // 4043 bytes
+    /// Number of seqids in the GTF that were absent from the reference FASTA.
+    pub missing_seqid_count: u32,
+    /// Byte length of the missing seqid table that follows the chrom name table.
+    pub missing_seqid_table_len: u32,
+    pub reserved_to_4k: [u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4], // 4035 bytes
 }
 
 impl IndexHeader {
-    pub const CURRENT_VERSION: u8 = 1;
+    
 
     pub fn new(
         chrom_count: u32,
@@ -102,20 +107,24 @@ impl IndexHeader {
         has_ref_hash: bool,
         has_seq_hash: bool,
         chrom_name_table_len: u32,
+        missing_seqid_count: u32,
+        missing_seqid_table_len: u32,
     ) -> Self {
         let mut flags = Flags::new();
         flags.set_ref_hash(has_ref_hash);
         flags.set_seq_hash(has_seq_hash);
         Self {
             magic: *b"ISOM",
-            version: Self::CURRENT_VERSION,
+            version: ISOMX_VERSION,
             flags,
             chrom_count,
             gtf_size,
             index_size,
             md5,
             chrom_name_table_len,
-            reserved_to_4k: [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4],
+            missing_seqid_count,
+            missing_seqid_table_len,
+            reserved_to_4k: [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4],
         }
     }
 }
@@ -137,6 +146,8 @@ impl Encodable for IndexHeader {
         buf.extend_from_slice(&self.index_size.to_le_bytes());
         buf.extend_from_slice(&self.md5);
         buf.extend_from_slice(&self.chrom_name_table_len.to_le_bytes());
+        buf.extend_from_slice(&self.missing_seqid_count.to_le_bytes());
+        buf.extend_from_slice(&self.missing_seqid_table_len.to_le_bytes());
         buf.extend_from_slice(&self.reserved_to_4k);
         writer.write_all(&buf)?;
         Ok(buf.len())
@@ -160,12 +171,12 @@ impl Decodable for IndexHeader {
         let mut version_buf = [0u8; 1];
         reader.read_exact(&mut version_buf)?;
         let version = version_buf[0];
-        if version != Self::CURRENT_VERSION {
+        if version != Self::ISOMX_VERSION {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!(
                     "unsupported index version: expected {}, got {}",
-                    Self::CURRENT_VERSION,
+                    Self::ISOMX_VERSION,
                     version
                 ),
             ));
@@ -195,8 +206,16 @@ impl Decodable for IndexHeader {
         reader.read_exact(&mut chrom_name_table_len_buf)?;
         let chrom_name_table_len = u32::from_le_bytes(chrom_name_table_len_buf);
 
+        let mut missing_seqid_count_buf = [0u8; 4];
+        reader.read_exact(&mut missing_seqid_count_buf)?;
+        let missing_seqid_count = u32::from_le_bytes(missing_seqid_count_buf);
+
+        let mut missing_seqid_table_len_buf = [0u8; 4];
+        reader.read_exact(&mut missing_seqid_table_len_buf)?;
+        let missing_seqid_table_len = u32::from_le_bytes(missing_seqid_table_len_buf);
+
         // consume remaining reserved bytes to stay at 4 KB boundary
-        let mut reserved_to_4k = [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4];
+        let mut reserved_to_4k = [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4];
         reader.read_exact(&mut reserved_to_4k)?;
 
         if index_size < Self::DISK_SIZE as u64 {
@@ -233,6 +252,8 @@ impl Decodable for IndexHeader {
             index_size,
             md5,
             chrom_name_table_len,
+            missing_seqid_count,
+            missing_seqid_table_len,
             reserved_to_4k,
         })
     }
@@ -530,7 +551,7 @@ impl ChromBlockBuilder {
         };
 
         let tx_base = TxBase::new(
-            gtf_tx.idx,
+            gtf_tx.gidx,
             self.chrom_id,
             gtf_tx.start,
             gtf_tx.end,

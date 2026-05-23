@@ -26,7 +26,7 @@ use crate::traits::{DiskSize, Encodable};
 /// Index 写入器。
 ///
 /// # 写入流程
-/// 1. `new()` — 写入 4KB 占位 Header + N×34B 占位 Directory + Chrom Name Table（一次写定）
+/// 1. `new()` — 写入 4KB 占位 Header + N×34B 占位 Directory + Chrom Name Table + Missing SeqID Table（一次写定）
 /// 2. `add_chrom()` — 逐 chrom 顺序写入数据，写完立即可 drop，记录真实 offset 到 `entries`
 /// 3. `finalize()` — seek 回文件头，回填真实 Header 与 Directory
 pub struct IndexBuilder {
@@ -48,6 +48,7 @@ impl IndexBuilder {
         md5: [u8; 16],
         has_ref_hash: bool,
         has_seq_hash: bool,
+        missing_seqids: Vec<String>,
     ) -> std::io::Result<Self> {
         let mut file = BufWriter::new(file);
         let chrom_count = chrom_names.len() as u32;
@@ -63,6 +64,16 @@ impl IndexBuilder {
         }
         let chrom_name_table_len = name_table.len() as u32;
 
+        // Build the missing seqid table: each entry is u16 len + utf-8 bytes.
+        let mut missing_seqid_table: Vec<u8> = Vec::new();
+        for name in &missing_seqids {
+            let bytes = name.as_bytes();
+            missing_seqid_table.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+            missing_seqid_table.extend_from_slice(bytes);
+        }
+        let missing_seqid_count = missing_seqids.len() as u32;
+        let missing_seqid_table_len = missing_seqid_table.len() as u32;
+
         let header = IndexHeader::new(
             chrom_count,
             gtf_size,
@@ -71,21 +82,26 @@ impl IndexBuilder {
             has_ref_hash,
             has_seq_hash,
             chrom_name_table_len,
+            missing_seqid_count,
+            missing_seqid_table_len,
         );
 
         // Write placeholder header (4 KB)
         file.write_all(&[0u8; IndexHeader::DISK_SIZE])?;
-        // Write placeholder directory (N × 34 B)
+        // Write placeholder directory (N × DISK_SIZE B)
         file.write_all(&vec![
             0u8;
             chrom_count as usize * ChromDirectoryEntry::DISK_SIZE
         ])?;
         // Write chrom name table — fixed, never rewritten
         file.write_all(&name_table)?;
+        // Write missing seqid table — fixed, never rewritten
+        file.write_all(&missing_seqid_table)?;
 
         let current_offset = (IndexHeader::DISK_SIZE
             + chrom_count as usize * ChromDirectoryEntry::DISK_SIZE
-            + name_table.len()) as u64;
+            + name_table.len()
+            + missing_seqid_table.len()) as u64;
 
         Ok(Self {
             header,

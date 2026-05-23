@@ -33,9 +33,9 @@ merge: build
 INPUT := test/isoseq_transcripts.sorted.filtered_lite.clean.gtf
 N := 1000
 
-merge2: build
+merge_1k: build
 	/usr/bin/time -v target/release/isomatch merge \
-		-o test/merge.gtf.gz \
+		-o test/merge.large.gtf.gz \
 		$(foreach i,$(shell seq 1 $(N)),$(INPUT))
 
 merge2gffcompare: build

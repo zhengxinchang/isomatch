@@ -9,7 +9,7 @@ use crate::{
     core::tx_strand::ISOMSTRAND,
     // fasta::{self, FastaReader},
     // gtf::{self, profile_gtf},
-    index::{attributes_index::IsomAttrCacheBuilder, format::ChromBlockBuilder},
+    index::format::ChromBlockBuilder,
     traits::ArgValidate,
     utils::print_json_block,
 };
@@ -41,31 +41,6 @@ fn parse_gtf_attr_value(attrs: &str, key: &str) -> Option<String> {
             .nth(1)
             .map(ToString::to_string)
     })
-}
-
-fn parse_isom_tx_id(tx_id: &str) -> Option<u32> {
-    tx_id
-        .strip_prefix("ISOMT_")
-        .and_then(|s| s.parse::<u32>().ok())
-        .and_then(|id| id.checked_sub(1))
-}
-
-fn parse_isom_src_attr(tx_attr: &gtf::TxAttrs) -> Result<Option<(u32, String)>> {
-    let attrs = tx_attr.attr_string();
-    let Some(isom_src_vec) = parse_gtf_attr_value(attrs, "ISOM_SRC") else {
-        return Ok(None);
-    };
-
-    let tx_id_str = parse_gtf_attr_value(attrs, "transcript_id")
-        .context("merged transcript with ISOM_SRC is missing transcript_id")?;
-    let tx_id = parse_isom_tx_id(&tx_id_str).with_context(|| {
-        format!(
-            "merged transcript_id '{}' does not follow the expected ISOMT_<n> format",
-            tx_id_str
-        )
-    })?;
-
-    Ok(Some((tx_id, isom_src_vec)))
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -240,7 +215,7 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
         None
     };
 
-    info!("Profiling GTF...");
+    info!("Profiling GTF");
     let (profiled_chrom_names, md5, gtf_size) = profile_gtf(&args.input)
         .with_context(|| format!("Can not profile GTF file: {}", args.input.display()))?;
 
@@ -286,7 +261,8 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
         default_out
     };
 
-    info!("Initializing Builder...");
+    info!("Initializing Builder");
+    let missing_seqids_vec: Vec<String> = missing_ref_seqid_set.iter().cloned().collect();
     let mut builder = builder::IndexBuilder::new(
         std::fs::File::create(&isomx_path).expect("Can not create output file"),
         chrom_names,
@@ -294,84 +270,117 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
         md5,
         true,
         args.seqfa.is_some(),
+        missing_seqids_vec,
     )
     .expect("Can not init index builder");
 
-    info!("Indexing GTF...");
+    info!("Indexing GTF");
     let mut gtf_reader = gtf::MyGTFReader::new(&args.input)
         .with_context(|| format!("Can not open GTF file: {}", args.input.display()))?;
 
     let mut current_chrom = String::new();
     let mut chrom_id = 0u16;
     let mut chrom_block: Option<ChromBlockBuilder> = None;
-    let mut next_written_tx_idx: u32 = 0;
-
-    // init isomsrccache
-
-    let mut isom_src_cache = IsomAttrCacheBuilder::init(&isomx_path);
-
-    // for mut tx_record in gtf_reader {
+    let mut next_written_tx_idx = 0u32;
     loop {
-        let Some(gtf_record) = gtf_reader.next()? else {
+        let Some(mut tx_structure) = gtf_reader.next()? else {
             break;
         };
 
-        match gtf_record {
-            gtf::GTFRecord::TxAttrs(tx_attr) => {
-                if let Some((tx_id, isom_src_vec)) = parse_isom_src_attr(&tx_attr)? {
-                    // We first store the span by the merged transcript id parsed
-                    // from `transcript_id`. After structure indexing decides
-                    // whether this transcript survives chromosome filtering, we
-                    // remap that span onto the dense `TxBase.tx_idx`.
-                    isom_src_cache.dump_isom_src_string(isom_src_vec, tx_id)?;
-                }
+        if current_chrom != tx_structure.chrom {
+            if let Some(cb) = chrom_block.take() {
+                builder.add_chrom(cb)?;
             }
-            gtf::GTFRecord::TxStructure(mut tx_structure) => {
-                // process the tx_strucuture as previous
-                if current_chrom != tx_structure.chrom {
-                    if let Some(cb) = chrom_block.take() {
-                        builder.add_chrom(cb)?;
-                    }
-                    current_chrom = tx_structure.chrom.clone();
-                    if missing_ref_seqid_set.contains(&current_chrom) {
-                        info!(
-                            "Skipping chromosome {} because it is absent from the reference FASTA",
-                            &current_chrom
-                        );
-                        chrom_block = None;
-                    } else {
-                        chrom_id += 1;
-                        chrom_block = Some(ChromBlockBuilder::init(chrom_id));
-                        info!("Processing chromosome {}", &current_chrom);
-                    }
-                }
-                if missing_ref_seqid_set.contains(&tx_structure.chrom) {
-                    stats.observe_skipped_tx(&tx_structure.gene_id);
-                    continue;
-                }
-                // resign the no skip continue id for tx
-                // just incase the missing ref seqid skip
-                // the tx_idx in TxBase will be used to prject the txbase_idx to src records
-                // in isoms file.
-                if let Some(original_tx_id) = parse_isom_tx_id(&tx_structure.tx_id) {
-                    isom_src_cache.project_tx_id(original_tx_id, next_written_tx_idx);
-                }
-                tx_structure.set_idx(next_written_tx_idx);
-                chrom_block
-                    .as_mut()
-                    .expect("Can not access chromblock")
-                    .add_tx(tx_structure, &mut ref_far, &mut seq_far, &mut stats)?;
-                next_written_tx_idx += 1;
+            current_chrom = tx_structure.chrom.clone();
+            if missing_ref_seqid_set.contains(&current_chrom) {
+                info!(
+                    "Skipping chromosome {} because it is absent from the reference FASTA",
+                    &current_chrom
+                );
+                chrom_block = None;
+            } else {
+                chrom_id += 1;
+                chrom_block = Some(ChromBlockBuilder::init(chrom_id));
+                info!("Processing chromosome {}", &current_chrom);
             }
         }
+        if missing_ref_seqid_set.contains(&tx_structure.chrom) {
+            stats.observe_skipped_tx(&tx_structure.gene_id);
+            continue;
+        }
+
+        tx_structure.set_gidx(next_written_tx_idx);
+        chrom_block
+            .as_mut()
+            .expect("Can not access chromblock")
+            .add_tx(tx_structure, &mut ref_far, &mut seq_far, &mut stats)?;
+
+        next_written_tx_idx += 1;
     }
 
     if let Some(cb) = chrom_block.take() {
         builder.add_chrom(cb)?;
     }
-    isom_src_cache.finalize()?;
+    // isom_src_cache_builder.finalize()?;
     builder.finalize()?;
     stats.finalize();
+
+    // second pass to build the sidecar file isomsrc
+    {
+        use std::io::BufRead;
+
+        let index_file = File::open(&isomx_path).with_context(|| {
+            format!(
+                "cannot reopen index for second pass: {}",
+                isomx_path.display()
+            )
+        })?;
+        let mut index_reader = reader::IndexReader::open(index_file, 0)
+            .with_context(|| "cannot open IndexReader for second pass")?;
+        let txid_index = index_reader
+            .build_txid_index()
+            .with_context(|| "cannot build txid index")?;
+
+        let mut isomsrc_path = isomx_path.clone();
+        isomsrc_path.add_extension("isomsrc");
+        let mut attr_builder =
+            attributes_index::AttrIndexBuilder::init(&isomsrc_path, next_written_tx_idx as usize)
+                .with_context(|| {
+                format!("cannot init AttrIndexBuilder at {}", isomsrc_path.display())
+            })?;
+
+        let gtf_lines = crate::utils::open_file_bufread(&args.input).with_context(|| {
+            format!(
+                "cannot reopen GTF for second pass: {}",
+                args.input.display()
+            )
+        })?;
+        for line in gtf_lines.lines() {
+            let line = line.with_context(|| "error reading GTF line in second pass")?;
+            if line.starts_with('#') {
+                continue;
+            }
+            let fields: Vec<&str> = line.splitn(9, '\t').collect();
+            if fields.len() < 9 || fields[2] != "transcript" {
+                continue;
+            }
+            let attr_str = fields[8];
+            let Some(tx_id) = parse_gtf_attr_value(attr_str, "transcript_id") else {
+                continue;
+            };
+            let Some(&tx_gidx) = txid_index.get(&tx_id) else {
+                continue; // filtered out (e.g. missing ref seqid)
+            };
+            attr_builder
+                .dump_attr(attr_str.as_bytes().to_vec(), tx_gidx)
+                .with_context(|| format!("dump_attr failed for {}", tx_id))?;
+        }
+
+        attr_builder
+            .finish()
+            .with_context(|| format!("cannot finalize isomsrc at {}", isomsrc_path.display()))?;
+        info!("Sidecar isomsrc written to {:?}", isomsrc_path);
+    }
 
     info!("Index written to {:?}", isomx_path);
 

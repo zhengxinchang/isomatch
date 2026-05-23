@@ -4,6 +4,8 @@ use std::{
     io::{self, BufReader, Cursor, ErrorKind, Read, Seek, SeekFrom},
 };
 
+use log::warn;
+
 use crate::traits::{Decodable, DiskSize, PartialLoad};
 use crate::{
     core::{
@@ -23,6 +25,8 @@ pub struct IndexReader {
     pub chrom_names: Vec<String>,
     /// Map from chrom name to chrom_id for fast lookup.
     pub chrom_name_to_id: HashMap<String, u16>,
+    /// Seqids present in the source GTF but absent from the reference FASTA.
+    pub missing_seqids: Vec<String>,
     pub file: File,
 }
 
@@ -91,12 +95,38 @@ impl IndexReader {
             chrom_names[chrom_idx] = chrom_name;
         }
 
+        let mut missing_seqids = Vec::with_capacity(header.missing_seqid_count as usize);
+        if header.missing_seqid_table_len > 0 {
+            let mut table = vec![0u8; header.missing_seqid_table_len as usize];
+            reader.read_exact(&mut table)?;
+            let mut pos = 0usize;
+            while pos + 2 <= table.len() {
+                let len = u16::from_le_bytes(table[pos..pos + 2].try_into().unwrap()) as usize;
+                pos += 2;
+                if pos + len > table.len() {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidData,
+                        "missing seqid table entry exceeds table bounds",
+                    ));
+                }
+                let name = std::str::from_utf8(&table[pos..pos + len])
+                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))?
+                    .to_string();
+                missing_seqids.push(name);
+                pos += len;
+            }
+            warn!("Index skipped transcripts on missing reference seqid(s):",);
+            warn!("{}", missing_seqids.join(","));
+            warn!("Those transcripts will not be processed. You may consider redo index step.");
+        }
+
         Ok(Self {
             file_id,
             header,
             chroms,
             chrom_names,
             chrom_name_to_id,
+            missing_seqids,
             file: reader.into_inner(),
         })
     }
@@ -155,6 +185,35 @@ impl IndexReader {
             readers.insert(chr_name.to_string(), reader);
         }
         Ok(readers)
+    }
+
+    /// Scan all chromosomes and build a transcript_id → tx_idx lookup map.
+    /// O(n) one-time cost
+    pub fn build_txid_index(&mut self) -> Result<HashMap<String, u32>, IndexError> {
+        let mut map = HashMap::new();
+        for chrom_name in self.chrom_names.clone() {
+            let mut cr =
+                self.get_chromosome_reader(&chrom_name)
+                    .map_err(|e| IndexError::FailReadIndex {
+                        reason: e.to_string(),
+                    })?;
+            loop {
+                match ChromBlockReader::next(&mut cr).map_err(|e| IndexError::FailReadIndex {
+                    reason: e.to_string(),
+                })? {
+                    Some(tx) => {
+                        let tx_id = cr.string_pool.get(tx.tx_id_span).map_err(|e| {
+                            IndexError::FailReadIndex {
+                                reason: e.to_string(),
+                            }
+                        })?;
+                        map.insert(tx_id.to_string(), tx.tx_idx);
+                    }
+                    None => break,
+                }
+            }
+        }
+        Ok(map)
     }
 }
 

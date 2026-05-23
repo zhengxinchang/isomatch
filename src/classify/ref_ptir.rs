@@ -19,7 +19,7 @@ use crate::{
 };
 
 pub struct RefPTIR {
-    pub txbase: PTIR,
+    pub base: PTIR,
     pub attrs: Vec<(StringSpan, StringSpan)>, // key,value
 }
 
@@ -81,7 +81,7 @@ impl RefPTIRManager {
                     val: ptir_idx,
                 });
                 ptirs.push(RefPTIR {
-                    txbase: ptir,
+                    base: ptir,
                     attrs: span_vec,
                 });
             }
@@ -123,12 +123,12 @@ impl LogMemSize for RefPTIRManager {
         let mut total = self.ptirs.capacity() * size_of::<RefPTIR>();
 
         for rp in &self.ptirs {
-            total += rp.txbase.source_txid.capacity();
-            total += rp.txbase.source_geneid.capacity();
-            if let Some(jv) = &rp.txbase.junction_vec {
+            total += rp.base.source_txid.capacity();
+            total += rp.base.source_geneid.capacity();
+            if let Some(jv) = &rp.base.junction_vec {
                 total += jv.capacity() * size_of::<(u32, u32)>();
             }
-            if let Some(sv) = &rp.txbase.splice_site_vec {
+            if let Some(sv) = &rp.base.splice_site_vec {
                 total += sv.capacity() * size_of::<SpliceSitePair>();
             }
             total += rp.attrs.capacity() * size_of::<(StringSpan, StringSpan)>();
@@ -234,11 +234,11 @@ mod tests {
         let tx = mgr
             .ptirs
             .iter()
-            .find(|p| p.txbase.source_txid == "ENST00000832828.1")
+            .find(|p| p.base.source_txid == "ENST00000832828.1")
             .expect("ENST00000832828.1 not found");
 
-        assert_eq!(tx.txbase.start, 11426);
-        assert_eq!(tx.txbase.end, 14409);
+        assert_eq!(tx.base.start, 11426);
+        assert_eq!(tx.base.end, 14409);
 
         // gene_id attribute is present and correct
         let gene_id = tx
@@ -264,7 +264,7 @@ mod tests {
             .find_ovlp("chr1", 11000, 12500)
             .expect("expected overlapping transcripts");
         assert_eq!(hits.len(), 2);
-        let mut ids: Vec<&str> = hits.iter().map(|p| p.txbase.source_txid.as_str()).collect();
+        let mut ids: Vec<&str> = hits.iter().map(|p| p.base.source_txid.as_str()).collect();
         ids.sort_unstable();
         assert_eq!(ids, ["ENST00000450305.2", "ENST00000832828.1"]);
 
