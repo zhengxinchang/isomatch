@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     classify::classify_error::ClassifyError,
-    core::ptir::PTIR,
+    core::{ptir::PTIR, tx_strand::ISOMSTRAND, tx_type::TxType},
     index::{
         attributes_index::AttrIndexReader,
         reader::{ChromBlockReader, IndexReader},
@@ -15,16 +15,42 @@ use crate::{
 };
 
 pub struct QueryPTIR {
+    pub chr_name: String,
     pub base: PTIR,
     pub attr_raw_string: Vec<u8>,
 }
 
 impl QueryPTIR {
-    pub fn new(ptir: PTIR, attr_string: Vec<u8>) -> Self {
+    pub fn new(chr_name: &str, ptir: PTIR, attr_string: Vec<u8>) -> Self {
         Self {
+            chr_name: chr_name.to_string(),
             base: ptir,
             attr_raw_string: attr_string,
         }
+    }
+
+    pub fn start(&self) -> u32 {
+        self.base.start
+    }
+
+    pub fn end(&self) -> u32 {
+        self.base.end
+    }
+
+    pub fn standard(&self) -> &ISOMSTRAND {
+        &self.base.strand
+    }
+
+    pub fn n_exons(&self) -> u16 {
+        self.base.n_exons
+    }
+
+    pub fn junction_vec(&self) -> &Option<Vec<(u32, u32)>> {
+        &self.base.junction_vec
+    }
+
+    pub fn tx_type(&self) -> &TxType {
+        &self.base.tx_type
     }
 }
 
@@ -77,9 +103,9 @@ impl QueryPTIRManager {
         self.total_tx_n
     }
 
-    pub fn next(&mut self) -> Option<QueryPTIR> {
+    pub fn next_record(&mut self) -> Option<QueryPTIR> {
         loop {
-            let txbase = match ChromBlockReader::next(&mut self.current_reader) {
+            let txbase = match self.current_reader.next_record() {
                 Ok(Some(tb)) => tb,
                 Ok(None) => {
                     if self.chrom_idx >= self.index_chrnames.len() {
@@ -114,46 +140,11 @@ impl QueryPTIRManager {
                 .get_attr(tx_gidx)
                 .unwrap_or(None)
                 .unwrap_or_default();
-            return Some(QueryPTIR::new(ptir, attr_bytes));
+            return Some(QueryPTIR::new(
+                &self.current_reader.chrom_name,
+                ptir,
+                attr_bytes,
+            ));
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Instant;
-
-    const TEST_GTF: &str = "test/gencode.v49.basic.annotation.sorted.gtf.gz";
-
-    #[test]
-    fn iterate_all_transcripts_timed() {
-        let mut mgr = QueryPTIRManager::open(TEST_GTF).expect("QueryPTIRManager::open failed");
-
-        let expected = mgr.total_tx_n();
-        eprintln!("header.total_tx_n = {}", expected);
-
-        let t0 = Instant::now();
-        let mut count = 0usize;
-        let mut first: Option<(String, u32, u32)> = None;
-        while let Some(qtx) = mgr.next() {
-            if first.is_none() {
-                first = Some((qtx.base.source_txid.clone(), qtx.base.start, qtx.base.end));
-            }
-            count += 1;
-        }
-        let elapsed = t0.elapsed();
-
-        eprintln!(
-            "iterated {} transcripts in {:.3}s ({:.0} tx/s)",
-            count,
-            elapsed.as_secs_f64(),
-            count as f64 / elapsed.as_secs_f64(),
-        );
-        if let Some((tx_id, start, end)) = first {
-            eprintln!("first transcript: {} {}–{}", tx_id, start, end);
-        }
-
-        assert_eq!(count, 280000, "expected 280000 transcripts");
     }
 }

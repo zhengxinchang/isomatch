@@ -13,7 +13,7 @@ use crate::{
     traits::ArgValidate,
     utils::print_json_block,
 };
-pub use anyhow::Result;
+pub use anyhow::Result as AnyResult;
 use fasta::FastaReader;
 use gtf::profile_gtf;
 pub mod attributes_index;
@@ -144,21 +144,21 @@ impl ArgValidate for IndexArgs {
             has_error = true;
         }
 
-        if !self.reffa.exists() {
+        if !self.ref_fa.exists() {
             error_msg.push_str(&format!(
                 "\nReference FASTA file does not exist: {:?}",
-                self.reffa
+                self.ref_fa
             ));
             has_error = true;
         }
 
-        let mut fai1 = self.reffa.clone();
+        let mut fai1 = self.ref_fa.clone();
         fai1.add_extension("fai");
         if !fai1.exists() {
             error_msg.push_str(&format!(
                 "\nReference FASTA index file does not exist: {:?}, use ' samtools faidx {} ' to create one.",
                 fai1,
-                self.reffa.display()
+                self.ref_fa.display()
             ));
             has_error = true;
         }
@@ -191,7 +191,7 @@ impl ArgValidate for IndexArgs {
     }
 }
 
-pub fn run_index(args: &mut IndexArgs) -> Result<()> {
+pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     args.validate();
     let mut stats = IndexStats::default();
 
@@ -199,8 +199,8 @@ pub fn run_index(args: &mut IndexArgs) -> Result<()> {
 
     info!("Loading Reference and/or Sequence FASTA...");
 
-    let mut ref_far = FastaReader::open(args.reffa.clone(), fasta::FaType::Ref)
-        .with_context(|| format!("Can not load reference sequence: {}", args.reffa.display()))?;
+    let mut ref_far = FastaReader::open(args.ref_fa.clone(), fasta::FaType::Ref)
+        .with_context(|| format!("Can not load reference sequence: {}", args.ref_fa.display()))?;
 
     let mut seq_far = if let Some(seqfa) = &args.seqfa {
         Some(

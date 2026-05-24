@@ -7,6 +7,7 @@ pub mod utils;
 use utils::greetings2;
 pub mod core;
 
+use crate::classify::run_classify;
 use crate::{index::run_index, merge::run_merge};
 pub mod classify;
 pub mod constants;
@@ -39,7 +40,7 @@ pub enum Commands {
     Index(IndexArgs),
     Merge(MergeArgs),
     // Bench(BenchArgs),
-    // Annotate(AnnotateArgs),
+    Classify(ClassifyArgs),
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
@@ -51,8 +52,8 @@ pub struct IndexArgs {
     #[clap(help = "Input GTF")]
     pub input: PathBuf,
 
-    #[clap(short = 'r', long = "reffa", help = "Reference FASTA")]
-    pub reffa: PathBuf,
+    #[clap(short = 'r', long = "ref-fa", help = "Reference FASTA")]
+    pub ref_fa: PathBuf,
 
     // hide this because the tx seqs usually not have paried sequence.
     #[clap(skip = None)]
@@ -363,23 +364,21 @@ pub struct MergeArgs {
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(about = "Annotate query transcripts with a reference annotation
 ")]
-pub struct AnnotateArgs {
+pub struct ClassifyArgs {
     #[clap(help = "Query GTF")]
     pub input: PathBuf,
 
-    #[clap(short = 'r', long = "annotation", help = "Reference annotation GTF")]
-    pub annotation: PathBuf,
+    #[clap(short = 'b', long = "ref-gtf", help = "Reference annotation GTF")]
+    pub ref_gtf: PathBuf,
 
-    #[clap(short = 'o', long = "out", help = "Output annotated GTF")]
+    #[clap(short = 'c', long = "cmp-gtf", help = "Query GTF for comparison")]
+    pub cmp_gtf: PathBuf,
+
+    #[clap(short = 'r', long = "ref-fa", help = "Reference FASTA")]
+    pub ref_fa: PathBuf,
+
+    #[clap(short = 'o', long = "out", help = "Output prefix")]
     pub out: PathBuf,
-
-    #[clap(
-        short = 'c',
-        long = "classification",
-        help = "Classification mode: squant3, gffcompare, or both",
-        default_value = "both"
-    )]
-    pub classification: String,
 }
 
 fn main() {
@@ -405,14 +404,19 @@ fn main() {
                 std::process::exit(1);
             }
         } // Cli {
-          //     command: Commands::Bench(args),
-          // } => {
-          //     greetings2(&args);
-          // }
-          // Cli {
-          //     command: Commands::Annotate(args),
-          // } => {
-          //     greetings2(&args);
-          // }
+        //     command: Commands::Bench(args),
+        // } => {
+        //     greetings2(&args);
+        // }
+        Cli {
+            command: Commands::Classify(args),
+        } => {
+            greetings2(&args);
+
+            if let Err(e) = run_classify(args) {
+                error!("{}", e);
+                std::process::exit(1);
+            }
+        }
     }
 }

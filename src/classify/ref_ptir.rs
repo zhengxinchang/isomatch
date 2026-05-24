@@ -13,6 +13,8 @@ use crate::{
         ptir::PTIR,
         splice_site_pair::SpliceSitePair,
         string_pool::{StringPool, StringSpan},
+        tx_strand::ISOMSTRAND,
+        tx_type::TxType,
     },
     index::reader::IndexReader,
     traits::LogMemSize,
@@ -21,6 +23,32 @@ use crate::{
 pub struct RefPTIR {
     pub base: PTIR,
     pub attrs: Vec<(StringSpan, StringSpan)>, // key,value
+}
+
+impl RefPTIR {
+    pub fn start(&self) -> u32 {
+        self.base.start
+    }
+
+    pub fn end(&self) -> u32 {
+        self.base.end
+    }
+
+    pub fn standard(&self) -> &ISOMSTRAND {
+        &self.base.strand
+    }
+
+    pub fn n_exons(&self) -> u16 {
+        self.base.n_exons
+    }
+
+    pub fn junction_vec(&self) -> &Option<Vec<(u32, u32)>> {
+        &self.base.junction_vec
+    }
+
+    pub fn tx_type(&self) -> &TxType {
+        &self.base.tx_type
+    }
 }
 
 pub struct RefPTIRManager {
@@ -49,7 +77,7 @@ impl RefPTIRManager {
         let mut chr_maps = index_reader.get_chromosome_readers_map()?;
         for (chr_name, chrom_block_builder) in &mut chr_maps {
             let chr_ivs = temp_intervals.entry(chr_name.clone()).or_default();
-            while let Some(txbase) = chrom_block_builder.next()? {
+            while let Some(txbase) = chrom_block_builder.next_record()? {
                 let ptir = PTIR::from_tx_base(
                     txbase,
                     0,

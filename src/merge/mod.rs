@@ -278,7 +278,7 @@ impl KwayMerger {
 
         for (idx, reader) in readers.iter_mut().enumerate() {
             let file_id = reader.file_id;
-            if let Some(tx_base) = reader.next()? {
+            if let Some(tx_base) = reader.next_record()? {
                 heap.push(Reverse((tx_base, file_id, idx)));
             }
         }
@@ -293,7 +293,7 @@ impl KwayMerger {
 
         let (next_tx_base, file_id) = {
             let state = &mut self.readers[vec_idx];
-            (state.next()?, state.file_id)
+            (state.next_record()?, state.file_id)
         };
 
         if let Some(next_tx_base) = next_tx_base {

@@ -209,8 +209,10 @@ impl IndexReader {
                         reason: e.to_string(),
                     })?;
             loop {
-                match ChromBlockReader::next(&mut cr).map_err(|e| IndexError::FailReadIndex {
-                    reason: e.to_string(),
+                match ChromBlockReader::next_record(&mut cr).map_err(|e| {
+                    IndexError::FailReadIndex {
+                        reason: e.to_string(),
+                    }
                 })? {
                     Some(tx) => {
                         let tx_id = cr.string_pool.get(tx.tx_id_span).map_err(|e| {
@@ -295,7 +297,7 @@ impl ChromBlockReader {
         })
     }
 
-    pub fn next(&mut self) -> io::Result<Option<TxBase>> {
+    pub fn next_record(&mut self) -> io::Result<Option<TxBase>> {
         if self.next_tx_idx >= self.tx_count {
             return Ok(None);
         }
@@ -365,7 +367,7 @@ impl Iterator for ChromBlockReader {
     type Item = TxBase;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match ChromBlockReader::next(self) {
+        match ChromBlockReader::next_record(self) {
             Ok(txbase) => txbase,
             Err(e) => {
                 eprintln!("cannot read next transcript from isomx index: {}", e);
