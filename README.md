@@ -276,7 +276,7 @@ Each merged transcript record in the output GTF includes the following extra att
 | `ISOM_EXONS` | Number of exons |
 | `ISOM_COUNT` | Number of source transcripts merged into this record |
 | `ISOM_SRC` | `\|`-separated list of source transcripts, each formatted as `S{sample_index}:{tx_id}:{start}:{end}:{tx_type}:{donor_diff}:{acceptor_diff}:{exon_diffs}` |
-| `ISOM_REPR_POLICY` | Representative selection policies as `SJ_POLICY:LEFT_POLICY:RIGHT_POLICY`; `SJ_POLICY` is `NA` for mono-exon transcripts; `LEFT_POLICY`/`RIGHT_POLICY` are the policies used for the left and right genomic boundaries respectively |
+| `ISOM_REPR_POLICY` | Representative selection policies as `SJ_POLICY:TSS_POLICY:TES_POLICY`; `SJ_POLICY` is `NA` for mono-exon transcripts |
 
 The `exon_diffs` field in `ISOM_SRC` records only exons that differ from the representative, in the format `(exon_number,left_offset,right_offset)`. Exons with no difference are omitted and shown as `no_diff`.
 
@@ -306,4 +306,4 @@ Policy values for all policy fields: `major`, `longer`, `shorter`, `guide_defini
 | `total_acceptor_diff` | Sum of acceptor-site deviations between source and representative junctions |
 | `exon_diff` | Per-exon coordinate differences in `(exon_number,left_offset,right_offset)` format; `no_diff` if identical |
 
-Note: `junction_policy`, `tss_policy`, and `tes_policy` are the same for all rows sharing the same `merged_tx_id`. `tss_policy`/`tes_policy` are strand-aware, unlike the `LEFT_POLICY`/`RIGHT_POLICY` in `ISOM_REPR_POLICY`.
+Note: `junction_policy`, `tss_policy`, and `tes_policy` are the same for all rows sharing the same `merged_tx_id`, and `ISOM_REPR_POLICY` now uses the same strand-aware `SJ_POLICY:TSS_POLICY:TES_POLICY` ordering.
