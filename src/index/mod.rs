@@ -50,7 +50,6 @@ pub struct IndexStats {
     pub skipped_transcript_count: u64,
     pub skipped_gene_count: u64,
     pub missing_seqid_count: u64,
-    // #[serde(skip_serializing_if = "Vec::is_empty")]
     pub missing_seqids: Vec<String>,
     pub plus_strand_tx_count: u64,
     pub minus_strand_tx_count: u64,
@@ -324,11 +323,12 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     // isom_src_cache_builder.finalize()?;
     builder.finalize()?;
     stats.finalize();
-
+    info!("Index written to {:?}", isomx_path);
     // second pass to build the sidecar file isoms
+
     {
         use std::io::BufRead;
-
+        info!("Profiling attributes sidecar file");
         let index_file = File::open(&isomx_path).with_context(|| {
             format!(
                 "cannot reopen index for second pass: {}",
@@ -342,7 +342,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
             .with_context(|| "cannot build txid index")?;
 
         let mut isoms_path = isomx_path.clone();
-        isoms_path.add_extension("isoms");
+        isoms_path.set_extension("isoms");
         let mut attr_builder =
             attributes_index::AttrIndexBuilder::init(&isoms_path, next_written_tx_idx as usize)
                 .with_context(|| {
@@ -382,10 +382,8 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         info!("Sidecar isoms written to {:?}", isoms_path);
     }
 
-    info!("Index written to {:?}", isomx_path);
-
     let mut isomx_info_path = isomx_path.clone();
-    isomx_info_path.add_extension("index_info.json");
+    isomx_info_path.add_extension("info.json");
     let mut isomx_info_writer = File::create(isomx_info_path)?;
     print_json_block("Index summary", &stats);
 

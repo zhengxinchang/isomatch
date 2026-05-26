@@ -13,7 +13,7 @@ use crate::core::{
     tx_strand::ISOMSTRAND,
     tx_type::TxType,
 };
-
+#[derive(Debug, Clone)]
 /// core data structure for transcript that loaded from index file, used for merge and annotate.
 pub struct PTIR {
     pub tx_boundary: TxBoundary,

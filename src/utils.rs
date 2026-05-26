@@ -91,11 +91,11 @@ pub fn open_file_bufread<P: AsRef<Path>>(path: P) -> std::io::Result<Box<dyn Buf
     }
 }
 
-fn rev_comp(seq: &[u8]) -> Vec<u8> {
+pub fn rev_comp(seq: &[u8]) -> Vec<u8> {
     seq.iter().rev().map(|&b| complement(b)).collect()
 }
 
-fn complement(b: u8) -> u8 {
+pub fn complement(b: u8) -> u8 {
     match b.to_ascii_uppercase() {
         b'A' => b'T',
         b'T' => b'A',
@@ -105,6 +105,19 @@ fn complement(b: u8) -> u8 {
         other => other,
     }
 }
+
+// fn rev_comp(seq: &[u8]) -> Vec<u8> {
+//     seq.iter()
+//         .rev()
+//         .map(|&b| match b {
+//             b'A' | b'a' => b'T',
+//             b'T' | b't' => b'A',
+//             b'G' | b'g' => b'C',
+//             b'C' | b'c' => b'G',
+//             other => other,
+//         })
+//         .collect()
+// }
 
 fn upper_nuc(b: u8) -> u8 {
     match b {

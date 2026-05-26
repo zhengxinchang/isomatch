@@ -23,6 +23,7 @@ use crate::{
 pub struct RefPTIR {
     pub base: PTIR,
     pub attrs: Vec<(StringSpan, StringSpan)>, // key,value
+    pub gene_name: String,
 }
 
 impl RefPTIR {
@@ -95,6 +96,12 @@ impl RefPTIRManager {
                     }
                 })?;
 
+                let gene_name = attr_kvs
+                    .iter()
+                    .find(|(k, _)| k == "gene_name")
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+
                 let mut span_vec = Vec::new();
                 for (k, v) in attr_kvs {
                     let k_span = attr_string_pool.add(k)?;
@@ -111,6 +118,7 @@ impl RefPTIRManager {
                 ptirs.push(RefPTIR {
                     base: ptir,
                     attrs: span_vec,
+                    gene_name,
                 });
             }
         }
@@ -153,6 +161,7 @@ impl LogMemSize for RefPTIRManager {
         for rp in &self.ptirs {
             total += rp.base.source_txid.capacity();
             total += rp.base.source_geneid.capacity();
+            total += rp.gene_name.capacity();
             if let Some(jv) = &rp.base.junction_vec {
                 total += jv.capacity() * size_of::<(u32, u32)>();
             }

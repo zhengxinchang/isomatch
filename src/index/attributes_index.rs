@@ -119,8 +119,8 @@ impl AttrIndexBuilder {
 }
 
 pub struct AttrIndexHeader {
-    magic: [u8; 5],
-    version: u8,
+    _magic: [u8; 5],
+    _version: u8,
     total_tx_n: u32,
     span_table_off: u64,
 }
@@ -134,16 +134,21 @@ pub struct AttrIndexReader {
 
 impl AttrIndexReader {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, IndexError> {
-        let e: fn(std::io::Error) -> IndexError = |err| IndexError::FailReadIndex {
-            reason: err.to_string(),
-        };
+        // let e: fn(std::io::Error) -> IndexError = |err| IndexError::FailReadIndex {
+        //     reason: err.to_string(),
+        // };
 
-        let mut file = File::open(path).map_err(e)?;
+        let mut file = File::open(path).map_err(|e| IndexError::FailReadIndex {
+            reason: "Can not read AttrIndex file".to_string(),
+        })?;
 
         // let mut header =
 
         let mut magic = [0u8; 5];
-        file.read_exact(&mut magic).map_err(e)?;
+        file.read_exact(&mut magic)
+            .map_err(|e| IndexError::FailReadIndex {
+                reason: "Can not read magic in AttrIndex file".to_string(),
+            })?;
         if magic != MAGIC {
             return Err(IndexError::FailReadIndex {
                 reason: format!("invalid magic: expected ISOMS, got {:?}", magic),
@@ -151,7 +156,10 @@ impl AttrIndexReader {
         }
 
         let mut version = [0u8; 1];
-        file.read_exact(&mut version).map_err(e)?;
+        file.read_exact(&mut version)
+            .map_err(|e| IndexError::FailReadIndex {
+                reason: "Can not read version in AttrIndex file".to_string(),
+            })?;
         if version[0] != ISOMS_VERSION {
             error!(
                 "The isomx version ({}) is outdated, please rebuild the index.",
@@ -161,16 +169,22 @@ impl AttrIndexReader {
         }
 
         let mut buf4 = [0u8; 4];
-        file.read_exact(&mut buf4).map_err(e)?;
+        file.read_exact(&mut buf4)
+            .map_err(|e| IndexError::FailReadIndex {
+                reason: "Can not read total tx number in AttrIndex file".to_string(),
+            })?;
         let total_tx_n = u32::from_le_bytes(buf4);
 
         let mut buf8 = [0u8; 8];
-        file.read_exact(&mut buf8).map_err(e)?;
+        file.read_exact(&mut buf8)
+            .map_err(|e| IndexError::FailReadIndex {
+                reason: "Can not read span table offset in AttrIndex file".to_string(),
+            })?;
         let span_table_off = u64::from_le_bytes(buf8);
 
         let header = AttrIndexHeader {
-            magic,
-            version: version[0],
+            _magic: magic,
+            _version: version[0],
             total_tx_n,
             span_table_off,
         };

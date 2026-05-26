@@ -46,8 +46,12 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         source_files: n_inputs as u32,
         ..MergeStats::default()
     };
-    let gtf_out_path = PathBuf::from(format!("{}.merged.gtf.gz", args.out.display()));
-    let merge_info_path = PathBuf::from(format!("{}.merge_info.json", args.out.display()));
+
+    let mut gtf_out_path = args.out.clone();
+    gtf_out_path.add_extension("merged.gtf.gz");
+
+    let mut merge_info_path = args.out.clone();
+    merge_info_path.add_extension("merged_info.json");
 
     info!("Loading {n_inputs} gtf(s)");
     let mut fhs: Vec<IndexReader> = Vec::with_capacity(n_inputs);
@@ -118,7 +122,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     )));
     writeln!(
         track_bufwriter,
-        "merged_tx_id\tmerged_gene_id\tmerged_start\tmerged_end\tmerged_strand\tmerged_exon_num\tjunction_policy\ttss_policy\ttes_policy\tmerged_src_count\tsrc_tx_id\tsrc_gene_id\ttotal_donor_diff\ttotal_acceptor_diff\texon_diff"
+        "merged_tx_id\tmerged_gene_id\tmerged_start\tmerged_end\tmerged_strand\tmerged_exon_num\tjunction_policy\ttss_policy\ttes_policy\tsrc_tx_count_in_merged_group\tsrc_tx_id\tsrc_gene_id\ttotal_donor_diff\ttotal_acceptor_diff\texon_diff"
     )?;
 
     add_output_header(&mut bufwriter, &args)?;

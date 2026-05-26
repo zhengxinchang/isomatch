@@ -14,6 +14,7 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone)]
 pub struct QueryPTIR {
     pub chr_name: String,
     pub base: PTIR,
@@ -70,7 +71,7 @@ impl QueryPTIRManager {
         let gtf_path = gtf_path.as_ref().to_path_buf();
         let mut index_file_name = gtf_path.clone();
         index_file_name.add_extension("isomx");
-        let mut attr_file_name = index_file_name.clone();
+        let mut attr_file_name = gtf_path.clone();
         attr_file_name.add_extension("isoms");
 
         let mut index_reader = IndexReader::open(File::open(&index_file_name)?, 0)?;

@@ -36,3 +36,5 @@ CLAUDE.md
 AGENTS.md
 flamegraph.svg
 *.png
+src/**/*.md
+src/**/*.txt

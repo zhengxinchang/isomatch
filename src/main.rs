@@ -368,13 +368,12 @@ pub struct ClassifyArgs {
     #[clap(help = "Query GTF")]
     pub input: PathBuf,
 
-    #[clap(short = 'b', long = "ref-gtf", help = "Reference annotation GTF")]
+    #[clap(short = 'r', long = "ref-gtf", help = "Reference annotation GTF")]
     pub ref_gtf: PathBuf,
 
-    #[clap(short = 'c', long = "cmp-gtf", help = "Query GTF for comparison")]
-    pub cmp_gtf: PathBuf,
-
-    #[clap(short = 'r', long = "ref-fa", help = "Reference FASTA")]
+    // #[clap(short = 'c', long = "cmp-gtf", help = "Query GTF for comparison")]
+    // pub cmp_gtf: PathBuf,
+    #[clap(short = 's', long = "ref-fa", help = "Reference FASTA")]
     pub ref_fa: PathBuf,
 
     #[clap(short = 'o', long = "out", help = "Output prefix")]
