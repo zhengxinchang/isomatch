@@ -311,7 +311,7 @@ pub fn get_class_code(query_ptir: &QueryPTIR, ref_ptir: &RefPTIR) -> ClassCode {
         // NIC: query spans a complete ref intron
         for (intron_s, intron_e) in ref_junctions {
             if q_start <= *intron_s && q_end >= *intron_e {
-                return ClassCode::NIC(SubNIC::MonoExonIntronRetention);
+                return ClassCode::NIC(SubNIC::MonoExonByIntronRetention);
             }
         }
 
@@ -347,8 +347,8 @@ pub fn get_class_code(query_ptir: &QueryPTIR, ref_ptir: &RefPTIR) -> ClassCode {
 
         return match (touches_exon, touches_intron) {
             (false, true) => ClassCode::GenicIntron,
-            (true, true) => ClassCode::GenicGenomic,
-            _ => ClassCode::NNC(SubNNC::MonoExon),
+            (true, true) => ClassCode::Genic,
+            _ => ClassCode::NNC(SubNNC::AtLeastOneNovelSpliceSite),
         };
     }
 
@@ -370,7 +370,7 @@ pub fn get_class_code(query_ptir: &QueryPTIR, ref_ptir: &RefPTIR) -> ClassCode {
             (true, true) => ClassCode::FSM(SubFSM::ReferenceMatch),
             (true, false) => ClassCode::FSM(SubFSM::Alternative3End),
             (false, true) => ClassCode::FSM(SubFSM::Alternative5End),
-            (false, false) => ClassCode::FSM(SubFSM::Alternative5And3End),
+            (false, false) => ClassCode::FSM(SubFSM::Alternative3And5End),
         };
     }
 

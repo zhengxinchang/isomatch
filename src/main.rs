@@ -315,18 +315,18 @@ pub struct MergeArgs {
     )]
     pub tes_policy: MergePolicyArg,
 
-    #[clap(
-        long = "mono-policy",
-        help_heading = "Representative Selection",
-        help = "Representative mono-exon boundary policy. 
-    union = widest span; 
-    intersect = narrowest span; 
-    major = most frequent span (falls back to union on tie)
-    ",
-        value_enum,
-        default_value_t = MergePolicyArg::Major
-    )]
-    pub mono_policy: MergePolicyArg,
+    // #[clap(
+    //     long = "mono-policy",
+    //     help_heading = "Representative Selection",
+    //     help = "Representative mono-exon boundary policy. 
+    // union = widest span; 
+    // intersect = narrowest span; 
+    // major = most frequent span (falls back to union on tie)
+    // ",
+    //     value_enum,
+    //     default_value_t = MergePolicyArg::Major
+    // )]
+    // pub mono_policy: MergePolicyArg,
 
     #[clap(
         short = 'o',

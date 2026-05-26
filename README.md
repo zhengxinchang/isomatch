@@ -21,15 +21,15 @@ large-scale processing capability:
 
 # subcomands and workflow
 
-isomatch index: build index for gtf files, required by the rest of the subcommands, and can be reused for multiple runs of merge and classify.
+isomatch index: build index for GTF files together with a reference FASTA, required by the rest of the subcommands, and can be reused for multiple runs of merge and classify.
 
-isomatch merge: merge transcripts from multiple GTF files, and select representative transcripts based on third party evidence(optional)
+isomatch merge: merge transcripts from multiple indexed inputs, and select representative transcripts based on third party evidence(optional)
 
 isomatch classify: classify transcripts in a GTF file based on reference annotation, and report the classification code for each transcript.
 
 Typical workflow:
-1. create index for all input GTF files using `isomatch index`
-2. merge transcripts from multiple GTF files using `isomatch merge`, and select representative transcripts based on third party evidence(optional)
+1. create index for all input GTF files using `isomatch index --ref-fa ref.fa`
+2. merge transcripts from multiple indexed inputs using `isomatch merge`, and select representative transcripts based on third party evidence(optional)
 3. classify merged transcripts using `isomatch classify`, and report the classification code for each transcript.
 
 
@@ -38,13 +38,14 @@ Typical workflow:
 ### Merge
 ```
 # build index
-isomatch index sample1.gtf.gz
-isomatch index sample2.gtf.gz
-isomatch index sample3.gtf.gz
+isomatch index --ref-fa ref.fa sample1.gtf.gz
+isomatch index --ref-fa ref.fa sample2.gtf.gz
+isomatch index --ref-fa ref.fa sample3.gtf.gz
 
 # merge with default parameters (-o takes a prefix, not a filename)
+# merge uses the same input paths that were indexed and reads <input>.isomx
 isomatch merge -o merged  sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
-# outputs: merged.merged.gtf.gz  merged.track.tsv.gz  merged.merge_info.json
+# outputs: merged.merged.gtf.gz  merged.track.tsv.gz  merged.merged_info.json
 
 # merge with guide-based terminal selection
 isomatch merge -o merged \
@@ -79,7 +80,7 @@ Unlike simple coordinate-overlap collapse tools, isomatch:
 Multiple GTF inputs
         │
         ▼
-[1] isomatch index: each GTF → .isomx binary index
+[1] isomatch index: each GTF + reference FASTA → .isomx binary index
         │
         ▼
 [2] K-way merge + genomic coordinate overlap → Super Cluster (per-chromosome locus)
@@ -110,7 +111,7 @@ Output GTF (with ISOM_SRC / ISOM_COUNT / ISOM_REPR_POLICY annotations)
 
 ### Stage 1: Index Building (isomatch index)
 
-Each input GTF is preprocessed into a `.isomx` binary index file. Each transcript is stored with its chromosome, strand, coordinates, exon count, splice junctions, and transcript type:
+Each input GTF is preprocessed together with the reference FASTA into a `.isomx` binary index file. Each transcript is stored with its chromosome, strand, coordinates, exon count, splice junctions, and transcript type:
 
 - `ALLC`: all splice sites are canonical (GT-AG, GC-AG, AT-AC)
 - `PRTC`: partially canonical splice sites
@@ -180,7 +181,13 @@ After initial junction-based grouping, groups are further **split by TSS and TES
 
 Algorithm: transcripts within a group are sorted by TSS/TES; the first transcript sets the anchor. Each subsequent transcript is compared to the current anchor — if the distance exceeds the threshold, a new group begins:
 
-$$|\text{TSS}_{curr} - \text{TSS}_{anchor}| \leq \text{tss\_wob} \quad \text{(and/or, depending on mode)} \quad |\text{TES}_{curr} - \text{TES}_{anchor}| \leq \text{tes\_wob}$$
+$$
+\lvert \mathrm{TSS}_{\mathrm{curr}} - \mathrm{TSS}_{\mathrm{anchor}} \rvert \leq \tau_{\mathrm{TSS}}
+\quad \text{and/or, depending on mode} \quad
+\lvert \mathrm{TES}_{\mathrm{curr}} - \mathrm{TES}_{\mathrm{anchor}} \rvert \leq \tau_{\mathrm{TES}}
+$$
+
+Here, $\tau_{\mathrm{TSS}}$ and $\tau_{\mathrm{TES}}$ correspond to `--tss-wob` and `--tes-wob` (or `--tss-wob-nc` and `--tes-wob-nc` for non-canonical transcripts).
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
@@ -244,9 +251,7 @@ When a guide hit is used, the corresponding policy column records one of three v
 
 #### Mono-exon boundary selection
 
-| Parameter | Policy description | Default |
-|-----------|-------------------|---------|
-| `--mono-policy` | `major`: most frequent span; `longer`: widest span; `shorter`: narrowest span | `major` |
+Mono-exon transcripts are first grouped by reciprocal overlap using `--mono-ovlp`, then their representative boundaries are chosen with the same guide-aware `--tss-policy` / `--tes-policy` terminal selection described above.
 
 ---
 
@@ -258,7 +263,7 @@ For a run with `-o <prefix>`, three files are written:
 |------|-------------|
 | `<prefix>.merged.gtf.gz` | Merged transcripts in GTF format (gzip-compressed) |
 | `<prefix>.track.tsv.gz` | One-to-one mapping of merged → source transcripts (gzip-compressed TSV) |
-| `<prefix>.merge_info.json` | Run statistics (source file count, merged transcript counts, guide usage, etc.) |
+| `<prefix>.merged_info.json` | Run statistics (source file count, merged transcript counts, guide usage, etc.) |
 
 ---
 
@@ -270,7 +275,7 @@ Each merged transcript record in the output GTF includes the following extra att
 |-----------|-------------|
 | `ISOM_EXONS` | Number of exons |
 | `ISOM_COUNT` | Number of source transcripts merged into this record |
-| `ISOM_SRC` | `\|`-separated list of source transcripts, each formatted as `S{file_id}:{tx_id}:{start}:{end}:{tx_type}:{donor_diff}:{acceptor_diff}:{exon_diffs}` |
+| `ISOM_SRC` | `\|`-separated list of source transcripts, each formatted as `S{sample_index}:{tx_id}:{start}:{end}:{tx_type}:{donor_diff}:{acceptor_diff}:{exon_diffs}` |
 | `ISOM_REPR_POLICY` | Representative selection policies as `SJ_POLICY:LEFT_POLICY:RIGHT_POLICY`; `SJ_POLICY` is `NA` for mono-exon transcripts; `LEFT_POLICY`/`RIGHT_POLICY` are the policies used for the left and right genomic boundaries respectively |
 
 The `exon_diffs` field in `ISOM_SRC` records only exons that differ from the representative, in the format `(exon_number,left_offset,right_offset)`. Exons with no difference are omitted and shown as `no_diff`.
@@ -294,7 +299,7 @@ Policy values for all policy fields: `major`, `longer`, `shorter`, `guide_defini
 | `junction_policy` | Splice junction representative policy used; `NA` for mono-exon transcripts |
 | `tss_policy` | TSS representative policy used (strand-aware) |
 | `tes_policy` | TES representative policy used (strand-aware) |
-| `merged_src_count` | Total number of source transcripts merged into this record |
+| `src_tx_count_in_merged_group` | Total number of source transcripts merged into this record |
 | `src_tx_id` | Source transcript ID |
 | `src_gene_id` | Source gene ID |
 | `total_donor_diff` | Sum of donor-site deviations between source and representative junctions |
@@ -302,4 +307,3 @@ Policy values for all policy fields: `major`, `longer`, `shorter`, `guide_defini
 | `exon_diff` | Per-exon coordinate differences in `(exon_number,left_offset,right_offset)` format; `no_diff` if identical |
 
 Note: `junction_policy`, `tss_policy`, and `tes_policy` are the same for all rows sharing the same `merged_tx_id`. `tss_policy`/`tes_policy` are strand-aware, unlike the `LEFT_POLICY`/`RIGHT_POLICY` in `ISOM_REPR_POLICY`.
-

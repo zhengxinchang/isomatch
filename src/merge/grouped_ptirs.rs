@@ -52,7 +52,7 @@ pub struct GroupedPTIR {
     used_repr_junction_policy: MergePolicyUsed,
     used_repr_left_policy: MergePolicyUsed,
     used_repr_right_policy: MergePolicyUsed,
-    used_repr_mono_policy: MergePolicyUsed,
+    // used_repr_mono_policy: MergePolicyUsed,
     repr_loaded: bool,
 }
 
@@ -74,7 +74,7 @@ impl GroupedPTIR {
             used_repr_junction_policy: MergePolicyUsed::Major,
             used_repr_left_policy: MergePolicyUsed::Major,
             used_repr_right_policy: MergePolicyUsed::Major,
-            used_repr_mono_policy: MergePolicyUsed::Major,
+            // used_repr_mono_policy: MergePolicyUsed::Major,
             repr_loaded: false,
         }
     }
@@ -132,7 +132,7 @@ impl GroupedPTIR {
             used_repr_junction_policy: MergePolicyUsed::Major,
             used_repr_left_policy: MergePolicyUsed::Major,
             used_repr_right_policy: MergePolicyUsed::Major,
-            used_repr_mono_policy: MergePolicyUsed::Major,
+            // used_repr_mono_policy: MergePolicyUsed::Major,
             repr_loaded: false,
         }
     }
@@ -158,7 +158,7 @@ impl GroupedPTIR {
             used_repr_junction_policy: MergePolicyUsed::Major,
             used_repr_left_policy: MergePolicyUsed::Major,
             used_repr_right_policy: MergePolicyUsed::Major,
-            used_repr_mono_policy: MergePolicyUsed::Major,
+            // used_repr_mono_policy: MergePolicyUsed::Major,
             repr_loaded: false,
         }
     }
@@ -222,7 +222,7 @@ impl GroupedPTIR {
         self.used_repr_junction_policy = MergePolicyUsed::from_arg_policy(&args.splice_policy);
         self.used_repr_left_policy = MergePolicyUsed::from_arg_policy(&args.tss_policy);
         self.used_repr_right_policy = MergePolicyUsed::from_arg_policy(&args.tes_policy);
-        self.used_repr_mono_policy = MergePolicyUsed::from_arg_policy(&args.mono_policy);
+        // self.used_repr_mono_policy = MergePolicyUsed::from_arg_policy(&args.mono_policy);
 
         let Some(first_entry) = self.all_canonical_ptir_list.first() else {
             return Err(MergeError::NoJunctionFound);
@@ -324,7 +324,7 @@ impl GroupedPTIR {
         self.used_repr_junction_policy = MergePolicyUsed::from_arg_policy(&args.splice_policy);
         self.used_repr_left_policy = MergePolicyUsed::from_arg_policy(&args.tss_policy);
         self.used_repr_right_policy = MergePolicyUsed::from_arg_policy(&args.tes_policy);
-        self.used_repr_mono_policy = MergePolicyUsed::from_arg_policy(&args.mono_policy);
+        // self.used_repr_mono_policy = MergePolicyUsed::from_arg_policy(&args.mono_policy);
 
         let Some(first_entry) = self.no_all_canonical_ptir_list.first() else {
             return Err(MergeError::NoJunctionFound);
@@ -398,7 +398,7 @@ impl GroupedPTIR {
         self.used_repr_junction_policy = MergePolicyUsed::from_arg_policy(&args.splice_policy);
         self.used_repr_left_policy = MergePolicyUsed::from_arg_policy(&args.tss_policy);
         self.used_repr_right_policy = MergePolicyUsed::from_arg_policy(&args.tes_policy);
-        self.used_repr_mono_policy = MergePolicyUsed::from_arg_policy(&args.mono_policy);
+        // self.used_repr_mono_policy = MergePolicyUsed::from_arg_policy(&args.mono_policy);
 
         if self.all_canonical_ptir_list.is_empty() {
             return Err(MergeError::SelectReprFailed);

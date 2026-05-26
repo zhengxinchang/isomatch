@@ -194,7 +194,7 @@ impl GeneIndex {
         }
 
         self.starts.push(start);
-        self.ends.push(start);
+        self.ends.push(end);
     }
 }
 
@@ -276,7 +276,7 @@ impl RefPTIRManager {
 
                 let ptir_idx = ptirs.len();
 
-                let gene_id = ptir.source_geneid;
+                let gene_id = &ptir.source_geneid;
 
                 let gene_idx = global_string_id.get_or_insert_gene(&gene_id);
 
@@ -348,9 +348,16 @@ impl RefPTIRManager {
         })
     }
 
-    pub fn find_ovlp_from_mono_refs(&self, chr_name: &str, start: u32, end: u32) -> Option<Vec<&RefPTIR>> {
-        let lapper = self.intervals_map.get(chr_name)?;
-        let results: Vec<&RefPTIR> = lapper
+    pub fn find_ovlp_from_mono_refs(
+        &self,
+        chr_name: &str,
+        start: u32,
+        end: u32,
+    ) -> Option<Vec<&RefPTIR>> {
+        let chrom_id = self.stringids.chrom_id(chr_name)? as usize;
+        let chrom = self.chroms.get(chrom_id)?;
+        let results: Vec<&RefPTIR> = chrom
+            .refs_monoexon
             .find(start, end)
             .map(|iv| &self.ptirs[iv.val])
             .collect();
@@ -361,8 +368,24 @@ impl RefPTIRManager {
         }
     }
 
-    pub fn find_ovlp_from_multi_refs(&self, chr_name: &str, start: u32, end: u32) -> Option<Vec<&RefPTIR>> {
-        todo!()
+    pub fn find_ovlp_from_multi_refs(
+        &self,
+        chr_name: &str,
+        start: u32,
+        end: u32,
+    ) -> Option<Vec<&RefPTIR>> {
+        let chrom_id = self.stringids.chrom_id(chr_name)? as usize;
+        let chrom = self.chroms.get(chrom_id)?;
+        let results: Vec<&RefPTIR> = chrom
+            .refs_multiexon
+            .find(start, end)
+            .map(|iv| &self.ptirs[iv.val])
+            .collect();
+        if results.is_empty() {
+            None
+        } else {
+            Some(results)
+        }
     }
 }
 

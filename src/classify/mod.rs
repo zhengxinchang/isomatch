@@ -16,7 +16,8 @@ use crate::{
         class_code::ClassCode,
         classify_policy::{ClassifyRecord, classify, update_group3, update_group4},
         query_ptir::{QueryPTIR, QueryPTIRManager},
-        ref_ptir::{RefPTIR, RefPTIRManager},
+        ref_ptir::RefPTIR,
+        ref_ptir_manager::RefPTIRManager,
     },
     index::fasta::{FaType, FastaReader},
     traits::ArgValidate,
@@ -80,8 +81,11 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
         let Some(query_ptir) = query_ptir_manager.next_record() else {
             break;
         };
-        let ref_candidates =
-            ref_ptir_manager.find_ovlp(&query_ptir.chr_name, query_ptir.start(), query_ptir.end());
+        let ref_candidates = ref_ptir_manager.find_ovlp_from_multi_refs(
+            &query_ptir.chr_name,
+            query_ptir.start(),
+            query_ptir.end(),
+        );
 
         let best_class_record = match ref_candidates {
             None => ClassifyRecord::new_intergenic(&query_ptir),
@@ -182,7 +186,7 @@ fn priority_rank(cc: ClassCode) -> u8 {
         ClassCode::Fusion => 4,        // determine before any FSM etc
         ClassCode::MoreJunctions => 5, // pigeon extended, same priority as fusion
         ClassCode::Antisense => 6,     // associationOverlapping 第一优先
-        ClassCode::GenicGenomic => 7,  // genic in squanti3
+        ClassCode::Genic => 7,         // genic in squanti3
         ClassCode::GenicIntron => 8,   // genic but in intron
         ClassCode::Intergenic => 9,    // rest
     }
