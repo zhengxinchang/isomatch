@@ -27,6 +27,7 @@ pub mod classify_error;
 pub mod classify_policy;
 pub mod query_ptir;
 pub mod ref_ptir;
+pub mod ref_ptir_manager;
 
 impl ArgValidate for ClassifyArgs {
     fn validate(&self) {}

@@ -198,7 +198,7 @@ impl ClassifyRecord {
             self.query_length,
             self.query_exon_n,
             self.cc,
-            self.cc.sub_category(self.query_ptir.n_exons()),
+            self.cc.sub_category(),
             self.ref_gene_id,
             self.ref_gene_name,
             self.ref_tx_id,
