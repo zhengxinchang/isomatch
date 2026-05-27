@@ -585,6 +585,11 @@ impl GroupedPTIR {
         gtf_bufwriter.write_all(b"\"; ISOM_SRC \"")?;
         gtf_bufwriter.write_all(source_attr.as_bytes())?;
 
+        let (used_tss_policy, used_tes_policy) = match self.strand {
+            ISOMSTRAND::Minus => (self.used_repr_right_policy, self.used_repr_left_policy),
+            _ => (self.used_repr_left_policy, self.used_repr_right_policy),
+        };
+
         let isom_policy = format!(
             "{}:{}:{}",
             if self.n_exon == 1 {
@@ -592,8 +597,8 @@ impl GroupedPTIR {
             } else {
                 self.used_repr_junction_policy.to_string()
             },
-            self.used_repr_left_policy,
-            self.used_repr_right_policy,
+            used_tss_policy,
+            used_tes_policy,
         );
 
         gtf_bufwriter.write_all(b"\"; ISOM_REPR_POLICY \"")?;

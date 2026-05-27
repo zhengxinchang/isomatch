@@ -37,7 +37,8 @@ Typical workflow:
 
 ### Merge
 ```
-# build index
+# build index, GTF must be sorted at chromosome level.
+# use bedtools sort -i input.gtf > sorted_input.gtf to sort if needed.
 isomatch index --ref-fa ref.fa sample1.gtf.gz
 isomatch index --ref-fa ref.fa sample2.gtf.gz
 isomatch index --ref-fa ref.fa sample3.gtf.gz

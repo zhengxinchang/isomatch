@@ -10,12 +10,7 @@ use rust_lapper::{Interval, Lapper};
 
 use crate::{
     classify::{classify_error::ClassifyError, ref_ptir::RefPTIR},
-    core::{
-        ptir::PTIR,
-        splice_site_pair::SpliceSitePair,
-        string_pool::{StringPool, StringSpan},
-        tx_strand::ISOMSTRAND,
-    },
+    core::{ptir::PTIR, string_pool::StringPool, tx_strand::ISOMSTRAND},
     index::reader::IndexReader,
     traits::LogMemSize,
 };

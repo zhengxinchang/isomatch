@@ -92,7 +92,7 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
             Some(ref_candidate_vec) => {
                 classes.clear();
                 for candidate in &ref_candidate_vec {
-                    classes.push(classify(&query_ptir, candidate))
+                    classes.push(classify(&query_ptir, candidate, &ref_ptir_manager))
                 }
 
                 let best = find_best_class(&mut classes);

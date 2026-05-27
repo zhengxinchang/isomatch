@@ -5,7 +5,9 @@ use std::io::{self, Write};
 use ahash::HashSet;
 
 use crate::{
-    classify::{class_code::*, query_ptir::QueryPTIR, ref_ptir::RefPTIR},
+    classify::{
+        class_code::*, query_ptir::QueryPTIR, ref_ptir::RefPTIR, ref_ptir_manager::RefPTIRManager,
+    },
     core::{tx_strand::ISOMSTRAND, tx_type::TxType},
     index::fasta::FastaReader,
     merge::guide::GuideDb,
@@ -250,13 +252,11 @@ fn find_consecutive_subseq(query: &[(u32, u32)], reference: &[(u32, u32)]) -> Op
 pub fn classify(
     query_ptir: &QueryPTIR,
     ref_ptir: &RefPTIR,
-    // ref_tss: Option<&GuideDb>,
-    // ref_tes: Option<&GuideDb>,
-    // ref_fa: &mut FastaReader,
+    ref_ptir_manager: &RefPTIRManager,
 ) -> ClassifyRecord {
     let mut class = ClassifyRecord::new(query_ptir);
 
-    class.cc = get_class_code(query_ptir, ref_ptir);
+    class.cc = get_class_code(query_ptir, ref_ptir, &ref_ptir_manager);
 
     // Group 2
     class.ref_tx_id = ref_ptir.base.source_txid.clone();
@@ -284,7 +284,11 @@ pub fn classify(
     class
 }
 
-pub fn get_class_code(query_ptir: &QueryPTIR, ref_ptir: &RefPTIR) -> ClassCode {
+pub fn get_class_code(
+    query_ptir: &QueryPTIR,
+    ref_ptir: &RefPTIR,
+    ref_ptir_manager: &RefPTIRManager,
+) -> ClassCode {
     let q_strand = query_ptir.standard();
     let r_strand = ref_ptir.standard();
 

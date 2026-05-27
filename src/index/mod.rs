@@ -215,8 +215,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     };
 
     info!("Profiling GTF");
-    let (profiled_chrom_names, md5, gtf_file_size) = profile_gtf(&args.input)
-        .with_context(|| format!("Can not profile GTF file: {}", args.input.display()))?;
+    let (profiled_chrom_names, md5, gtf_file_size) = profile_gtf(&args.input)?;
 
     let missing_ref_seqids: Vec<String> = profiled_chrom_names
         .iter()
