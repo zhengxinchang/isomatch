@@ -38,3 +38,4 @@ flamegraph.svg
 *.png
 src/**/*.md
 src/**/*.txt
+sqanti3/

@@ -53,6 +53,26 @@ impl QueryPTIR {
     pub fn tx_type(&self) -> &TxType {
         &self.base.tx_type
     }
+
+    pub fn exons_vec(&self) -> Vec<(u32, u32)> {
+        let Some(junctions) = self.base.junction_vec.as_ref() else {
+            return vec![(self.start(), self.end())];
+        };
+
+        if junctions.is_empty() {
+            return vec![(self.start(), self.end())];
+        }
+
+        let mut boundaries = Vec::with_capacity(junctions.len() * 2 + 2);
+        boundaries.push(self.start());
+        boundaries.extend(junctions.iter().flat_map(|&(left, right)| [left, right]));
+        boundaries.push(self.end());
+
+        boundaries
+            .chunks_exact(2)
+            .map(|chunk| (chunk[0], chunk[1]))
+            .collect()
+    }
 }
 
 pub struct QueryPTIRManager {

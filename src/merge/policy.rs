@@ -413,7 +413,13 @@ pub fn noncannonical_to_canonical(
 
                     marked_ptirs.entry(nidx).and_modify(
                         |(flag, grp_local_idx, d_diff_bp, a_diff_bp)| {
-                            if (new_d_diff_bp + new_a_diff_bp) < (*d_diff_bp + *a_diff_bp) {
+                            if should_replace_noncanonical_match(
+                                *flag,
+                                new_d_diff_bp,
+                                new_a_diff_bp,
+                                *d_diff_bp,
+                                *a_diff_bp,
+                            ) {
                                 *flag = true;
                                 *grp_local_idx = grpptirs_local_idx;
                                 *d_diff_bp = new_d_diff_bp;
@@ -440,6 +446,22 @@ pub fn noncannonical_to_canonical(
 
     rest.dedup_by(|a, b| a == b);
     Ok(Some(rest))
+}
+
+fn should_replace_noncanonical_match(
+    has_current_match: bool,
+    new_d_diff_bp: u32,
+    new_a_diff_bp: u32,
+    current_d_diff_bp: u32,
+    current_a_diff_bp: u32,
+) -> bool {
+    if !has_current_match {
+        return true;
+    }
+
+    let new_total = u64::from(new_d_diff_bp) + u64::from(new_a_diff_bp);
+    let current_total = u64::from(current_d_diff_bp) + u64::from(current_a_diff_bp);
+    new_total < current_total
 }
 
 pub fn merge_rest_noncanonical(
@@ -667,12 +689,48 @@ pub fn is_splice_junctions_match(
             ISOMSTRAND::Unknown => {
                 let left_diff = curr_junc.0.abs_diff(other_junc.0);
                 let right_diff = curr_junc.1.abs_diff(other_junc.1);
-                bp_diff_a += left_diff;
-                bp_diff_d += right_diff;
+                // For unknown strand we keep a stable left/right convention:
+                // left coordinate contributes to donor_diff, right to acceptor_diff.
+                bp_diff_d += left_diff;
+                bp_diff_a += right_diff;
                 if left_diff > uwob || right_diff > uwob {
                     in_wobble = false
                 }
             }
         });
     (in_wobble, bp_diff_d, bp_diff_a)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_splice_junctions_match, should_replace_noncanonical_match};
+    use crate::core::tx_strand::ISOMSTRAND;
+
+    #[test]
+    fn first_noncanonical_match_is_accepted_without_overflow() {
+        assert!(should_replace_noncanonical_match(
+            false,
+            1,
+            2,
+            u32::MAX,
+            u32::MAX,
+        ));
+    }
+
+    #[test]
+    fn worse_noncanonical_match_is_not_selected() {
+        assert!(!should_replace_noncanonical_match(true, 5, 5, 1, 1));
+    }
+
+    #[test]
+    fn unknown_strand_wobble_uses_same_donor_acceptor_convention_as_output_stats() {
+        let curr = vec![(100, 200)];
+        let other = vec![(103, 207)];
+        let (matched, donor_diff, acceptor_diff) =
+            is_splice_junctions_match(&curr, &other, &ISOMSTRAND::Unknown, 10, 10, 10);
+
+        assert!(matched);
+        assert_eq!(donor_diff, 3);
+        assert_eq!(acceptor_diff, 7);
+    }
 }

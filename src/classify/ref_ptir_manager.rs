@@ -1,6 +1,7 @@
 use std::{
     fs::File,
     path::{Path, PathBuf},
+    thread::panicking,
 };
 
 use ahash::{HashMap, HashSet};
@@ -93,8 +94,8 @@ impl StringID {
 }
 
 struct ChromIndex {
-    starts: Vec<Pos>,
-    ends: Vec<Pos>,
+    splice_site_starts: Vec<Pos>,
+    splice_site_ends: Vec<Pos>,
 
     // 分 strand 存 known junction pair
     junctions_plus: Vec<Junction>,
@@ -123,27 +124,31 @@ impl ChromIndex {
         let mut prefix_max_starts_plus = Vec::new();
         let mut prefix_max_starts_minus = Vec::new();
 
+        let mut max_end = 0;
         for junction in junctions_plus.iter() {
             starts.insert(junction.start);
             ends.insert(junction.end);
-            prefix_max_starts_plus.push(junction.end)
+            max_end = max_end.max(junction.end);
+            prefix_max_starts_plus.push(max_end);
         }
 
+        let mut max_end = 0;
         for junction in junctions_minus.iter() {
             starts.insert(junction.start);
             ends.insert(junction.end);
-            prefix_max_starts_minus.push(junction.end);
+            max_end = max_end.max(junction.end);
+            prefix_max_starts_minus.push(max_end);
         }
 
-        let mut starts: Vec<Pos> = starts.into_iter().collect();
-        starts.sort();
+        let mut splice_site_starts: Vec<Pos> = starts.into_iter().collect();
+        splice_site_starts.sort();
 
-        let mut ends: Vec<Pos> = ends.into_iter().collect();
-        ends.sort();
+        let mut splice_site_ends: Vec<Pos> = ends.into_iter().collect();
+        splice_site_ends.sort();
 
         Self {
-            starts,
-            ends,
+            splice_site_starts,
+            splice_site_ends,
             junctions_plus,
             junctions_minus,
             prefix_max_starts_plus,
@@ -151,6 +156,69 @@ impl ChromIndex {
             refs_monoexon: Lapper::new(interval_mono_exon),
             refs_multiexon: Lapper::new(interval_multi_exon),
         }
+    }
+
+    pub fn has_junction(&self, junction: &Junction, strand: &ISOMSTRAND) -> bool {
+        match strand {
+            ISOMSTRAND::Minus => match self.junctions_minus.binary_search(junction) {
+                Ok(_) => return true,
+                Err(_) => return false,
+            },
+            ISOMSTRAND::Plus => match self.junctions_plus.binary_search(junction) {
+                Ok(_) => return true,
+                Err(_) => return false,
+            },
+            ISOMSTRAND::Unknown => {
+                panic!("This should not happen as it only acccept stranded transcript in new().");
+            }
+        }
+    }
+
+    pub fn has_splice_site(&self, start: u32, end: u32) -> (bool, bool) {
+        let has_start = self.splice_site_starts.binary_search(&start);
+        let has_end = self.splice_site_ends.binary_search(&end);
+        (has_start.is_ok(), has_end.is_ok())
+    }
+
+    pub fn with_in_junction(&self, txboundary: &Junction, strand: &ISOMSTRAND) -> bool {
+        let (junctions, prefix_max_ends) = match strand {
+            ISOMSTRAND::Plus => (&self.junctions_plus, &self.prefix_max_starts_plus),
+            ISOMSTRAND::Minus => (&self.junctions_minus, &self.prefix_max_starts_minus),
+            ISOMSTRAND::Unknown => {
+                panic!("This should not happen as it only acccept stranded transcript in new().");
+            }
+        };
+
+        let candidate_end = junctions.partition_point(|junction| junction.start <= txboundary.end);
+        if candidate_end == 0 {
+            return false;
+        }
+
+        let candidate_start =
+            prefix_max_ends[..candidate_end].partition_point(|&max_end| max_end < txboundary.start);
+
+        junctions[candidate_start..candidate_end]
+            .iter()
+            .any(|junction| junction.start <= txboundary.start && txboundary.end <= junction.end)
+    }
+
+    pub fn junction_inside_boundary(&self, txboundary: &Junction, strand: &ISOMSTRAND) -> bool {
+        let junctions = match strand {
+            ISOMSTRAND::Plus => &self.junctions_plus,
+            ISOMSTRAND::Minus => &self.junctions_minus,
+            ISOMSTRAND::Unknown => {
+                panic!("This should not happen as it only acccept stranded transcript in new().");
+            }
+        };
+
+        let candidate_start = junctions.partition_point(|junction| junction.start < txboundary.start);
+        let candidate_end = junctions.partition_point(|junction| junction.start <= txboundary.end);
+
+        junctions[candidate_start..candidate_end].iter().any(|junction| {
+            txboundary.start <= junction.start
+                && junction.start < junction.end
+                && junction.end < txboundary.end
+        })
     }
 }
 
@@ -241,7 +309,7 @@ impl RefPTIRManager {
 
                 if matches!(ptir.strand, ISOMSTRAND::Unknown) {
                     warn!(
-                        "Reference GTF contains unstranded transcript: {}",
+                        "Reference GTF contains unstranded transcript: {}, not used in classify.",
                         &ptir.source_txid
                     );
                     continue;
@@ -343,6 +411,13 @@ impl RefPTIRManager {
         })
     }
 
+    pub fn has_chr(&self, chr_name: &str) -> bool {
+        match self.stringids.chrom_id(chr_name) {
+            Some(_) => true,
+            None => false,
+        }
+    }
+
     pub fn find_ovlp_from_mono_refs(
         &self,
         chr_name: &str,
@@ -381,6 +456,82 @@ impl RefPTIRManager {
         } else {
             Some(results)
         }
+    }
+
+    pub fn junction_match(
+        &self,
+        chr_name: &str,
+        junctions: &[(u32, u32)],
+        strand: &ISOMSTRAND,
+    ) -> (bool, Vec<bool>) {
+        let chrid = self.stringids.chrom_id(chr_name).unwrap();
+
+        let mut is_all_junction_found = true;
+        let mut junction_found_vec = Vec::new();
+        for junction in junctions {
+            let j = Junction {
+                start: junction.0,
+                end: junction.1,
+            };
+            let found = self.chroms[chrid as usize].has_junction(&j, strand);
+            is_all_junction_found &= found;
+            junction_found_vec.push(found);
+        }
+
+        (is_all_junction_found, junction_found_vec)
+    }
+
+    pub fn splice_site_match(
+        &self,
+        chr_name: &str,
+        junctions: &[(u32, u32)],
+    ) -> (bool, Vec<bool>, Vec<bool>) {
+        let chrid = self.stringids.chrom_id(chr_name).unwrap();
+
+        let mut is_all_splice_sites_found = true;
+        let mut left_site_found_vec = Vec::with_capacity(junctions.len());
+        let mut right_site_found_vec = Vec::with_capacity(junctions.len());
+
+        for junction in junctions {
+            let (left_found, right_found) =
+                self.chroms[chrid as usize].has_splice_site(junction.0, junction.1);
+            is_all_splice_sites_found &= left_found && right_found;
+            left_site_found_vec.push(left_found);
+            right_site_found_vec.push(right_found);
+        }
+
+        (
+            is_all_splice_sites_found,
+            left_site_found_vec,
+            right_site_found_vec,
+        )
+    }
+
+    pub fn contained_in_known_intron(
+        &self,
+        chr_name: &str,
+        strand: &ISOMSTRAND,
+        start: u32,
+        end: u32,
+    ) -> bool {
+        let junction = Junction { start, end };
+        let chrid = self.stringids.chrom_id(chr_name).unwrap();
+        self.chroms[chrid as usize].with_in_junction(&junction, strand)
+    }
+
+    pub fn has_intron_retention_against_catalog(
+        &self,
+        chr_name: &str,
+        strand: &ISOMSTRAND,
+        exons: &[(u32, u32)],
+    ) -> bool {
+        let chrid = self.stringids.chrom_id(chr_name).unwrap();
+        let chrom = &self.chroms[chrid as usize];
+
+        exons.iter().any(|&(start, end)| {
+            let exon = Junction { start, end };
+            chrom.junction_inside_boundary(&exon, strand)
+        })
     }
 }
 
