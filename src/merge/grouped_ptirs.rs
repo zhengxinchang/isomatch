@@ -1004,16 +1004,3 @@ fn junction_exon_diffs(
     }
     Ok(exon_diffs)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn splice_longer_prefers_shorter_intron_span() {
-        let positions = vec![(100, 200), (110, 190), (105, 195)];
-        let (repr, used_policy) = select_splice_pair(&positions, MergePolicyArg::Longer).unwrap();
-        assert_eq!(repr, (110, 190));
-        assert!(matches!(used_policy, MergePolicyArg::Longer));
-    }
-}

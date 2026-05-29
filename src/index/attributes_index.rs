@@ -139,7 +139,7 @@ impl AttrIndexReader {
         // };
 
         let mut file = File::open(path).map_err(|e| IndexError::FailReadIndex {
-            reason: "Can not read AttrIndex file".to_string(),
+            reason: format!("Can not read AttrIndex file: {}", e),
         })?;
 
         // let mut header =
@@ -147,7 +147,7 @@ impl AttrIndexReader {
         let mut magic = [0u8; 5];
         file.read_exact(&mut magic)
             .map_err(|e| IndexError::FailReadIndex {
-                reason: "Can not read magic in AttrIndex file".to_string(),
+                reason: format!("Can not read magic in AttrIndex file: {}", e),
             })?;
         if magic != MAGIC {
             return Err(IndexError::FailReadIndex {
@@ -158,7 +158,7 @@ impl AttrIndexReader {
         let mut version = [0u8; 1];
         file.read_exact(&mut version)
             .map_err(|e| IndexError::FailReadIndex {
-                reason: "Can not read version in AttrIndex file".to_string(),
+                reason: format!("Can not read version in AttrIndex file: {}", e),
             })?;
         if version[0] != ISOMS_VERSION {
             error!(
@@ -171,14 +171,14 @@ impl AttrIndexReader {
         let mut buf4 = [0u8; 4];
         file.read_exact(&mut buf4)
             .map_err(|e| IndexError::FailReadIndex {
-                reason: "Can not read total tx number in AttrIndex file".to_string(),
+                reason: format!("Can not read total tx number in AttrIndex file: {}", e),
             })?;
         let total_tx_n = u32::from_le_bytes(buf4);
 
         let mut buf8 = [0u8; 8];
         file.read_exact(&mut buf8)
             .map_err(|e| IndexError::FailReadIndex {
-                reason: "Can not read span table offset in AttrIndex file".to_string(),
+                reason: format!("Can not read span table offset in AttrIndex file: {}", e),
             })?;
         let span_table_off = u64::from_le_bytes(buf8);
 

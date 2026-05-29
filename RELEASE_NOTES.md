@@ -1,4 +1,4 @@
-# V.0.2.3
+# V.0.3.0
 
 ## New Features
 - Change Mono exon transcript representative TSS/TES selection to guide mode.

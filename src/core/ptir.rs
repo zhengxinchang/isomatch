@@ -85,6 +85,10 @@ impl PTIR {
         self.junction_vec.as_deref()
     }
 
+    pub fn junction_vec_ref(&self) -> &[(u32, u32)] {
+        self.junction_vec.as_deref().unwrap_or(&[])
+    }
+
     pub fn tss(&self) -> u32 {
         match self.strand {
             ISOMSTRAND::Plus => self.start,

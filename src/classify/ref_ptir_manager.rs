@@ -1,7 +1,6 @@
 use std::{
     fs::File,
     path::{Path, PathBuf},
-    thread::panicking,
 };
 
 use ahash::{HashMap, HashSet};
@@ -18,7 +17,6 @@ use crate::{
 
 type ChromId = u32;
 type GeneId = u32;
-type TxId = u32;
 type Pos = u32;
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -74,22 +72,6 @@ impl StringID {
 
     pub fn chrom_id(&self, chrom: &str) -> Option<ChromId> {
         self.chrom_to_id.get(chrom).copied()
-    }
-
-    pub fn gene_name(&self, id: GeneId) -> Option<&str> {
-        self.id_to_gene.get(id as usize).map(|s| s.as_ref())
-    }
-
-    pub fn chrom_name(&self, id: ChromId) -> Option<&str> {
-        self.id_to_chrom.get(id as usize).map(|s| s.as_ref())
-    }
-
-    pub fn gene_count(&self) -> usize {
-        self.id_to_gene.len()
-    }
-
-    pub fn chrom_count(&self) -> usize {
-        self.id_to_chrom.len()
     }
 }
 
@@ -211,17 +193,21 @@ impl ChromIndex {
             }
         };
 
-        let candidate_start = junctions.partition_point(|junction| junction.start < txboundary.start);
+        let candidate_start =
+            junctions.partition_point(|junction| junction.start < txboundary.start);
         let candidate_end = junctions.partition_point(|junction| junction.start <= txboundary.end);
 
-        junctions[candidate_start..candidate_end].iter().any(|junction| {
-            txboundary.start <= junction.start
-                && junction.start < junction.end
-                && junction.end < txboundary.end
-        })
+        junctions[candidate_start..candidate_end]
+            .iter()
+            .any(|junction| {
+                txboundary.start <= junction.start
+                    && junction.start < junction.end
+                    && junction.end < txboundary.end
+            })
     }
 }
 
+/// Per-gene reference catalog evidence used by classification.
 struct GeneIndex {
     junctions: Vec<Junction>,
     starts: Vec<Pos>,
@@ -229,6 +215,7 @@ struct GeneIndex {
 }
 
 impl GeneIndex {
+    /// Create a gene index from the first transcript observed for that gene.
     pub fn new(junctions: Option<&[(u32, u32)]>, start: u32, end: u32) -> Self {
         let mut juncs = Vec::new();
         if let Some(junctions) = junctions {
@@ -246,6 +233,8 @@ impl GeneIndex {
             ends: vec![end],
         }
     }
+
+    /// Add another reference transcript from the same gene to the index.
     pub fn add(&mut self, junctions: Option<&[(u32, u32)]>, start: u32, end: u32) {
         if let Some(junctions) = junctions {
             for junc in junctions {
@@ -258,6 +247,40 @@ impl GeneIndex {
 
         self.starts.push(start);
         self.ends.push(end);
+    }
+
+    /// Sort and deduplicate collected gene-level catalog evidence.
+    ///
+    /// This is called after the reference GTF has been fully loaded so later
+    /// classification queries can use stable, compact lists.
+    fn finalize(&mut self) {
+        self.junctions.sort();
+        self.junctions.dedup();
+        self.starts.sort();
+        self.starts.dedup();
+        self.ends.sort();
+        self.ends.dedup();
+    }
+
+    /// Return known junction pairs for this gene as plain coordinate tuples.
+    ///
+    /// The public manager API returns tuples rather than private `Junction`
+    /// structs to keep callers decoupled from the internal storage type.
+    fn junction_pairs(&self) -> Vec<(u32, u32)> {
+        self.junctions
+            .iter()
+            .map(|junction| (junction.start, junction.end))
+            .collect()
+    }
+
+    /// All known transcript starts for this gene.
+    fn starts(&self) -> &[Pos] {
+        &self.starts
+    }
+
+    /// All known transcript ends for this gene.
+    fn ends(&self) -> &[Pos] {
+        &self.ends
     }
 }
 
@@ -297,7 +320,7 @@ impl RefPTIRManager {
             let mut interval_multi_exon: Vec<Interval<u32, usize>> = Vec::new();
             let mut junction_plus = Vec::new();
             let mut junction_minus = Vec::new();
-            let chrom_id = global_string_id.get_or_insert_chrom(chr_name);
+            global_string_id.get_or_insert_chrom(chr_name);
             while let Some(txbase) = chrom_block_builder.next_record()? {
                 let ptir = PTIR::from_tx_base(
                     txbase,
@@ -388,6 +411,7 @@ impl RefPTIRManager {
                     base: ptir,
                     attrs: span_vec,
                     gene_name,
+                    chr_name: chr_name.clone(),
                 });
             }
 
@@ -397,6 +421,13 @@ impl RefPTIRManager {
                 interval_mono_exon,
                 interval_multi_exon,
             ))
+        }
+
+        // Gene-level vectors are appended transcript-by-transcript while reading
+        // the index. Finalize once so downstream classification sees deduplicated
+        // known junction/start/end catalogs.
+        for gene in &mut geneid_indexes {
+            gene.finalize();
         }
 
         attr_string_pool.shrink_to_read_only();
@@ -456,6 +487,53 @@ impl RefPTIRManager {
         } else {
             Some(results)
         }
+    }
+
+    /// Return all reference transcripts, mono- and multi-exon, overlapping a query span.
+    ///
+    /// This is the candidate retrieval step for the SQANTI3-like
+    /// `transcriptsKnownSpliceSites()` implementation. It intentionally returns
+    /// both mono- and multi-exon references because the mono-exon branches have
+    /// special classification behavior.
+    pub fn find_overlapping_refs(&self, chr_name: &str, start: u32, end: u32) -> Vec<&RefPTIR> {
+        let Some(chrom_id) = self.stringids.chrom_id(chr_name) else {
+            return Vec::new();
+        };
+        let Some(chrom) = self.chroms.get(chrom_id as usize) else {
+            return Vec::new();
+        };
+
+        let mut results: Vec<&RefPTIR> = chrom
+            .refs_multiexon
+            .find(start, end)
+            .map(|iv| &self.ptirs[iv.val])
+            .collect();
+        results.extend(
+            chrom
+                .refs_monoexon
+                .find(start, end)
+                .map(|iv| &self.ptirs[iv.val]),
+        );
+        results
+    }
+
+    /// Return the set of known junction pairs for one reference gene.
+    ///
+    /// Used to distinguish NIC `combination_of_known_junctions` from
+    /// `combination_of_known_splicesites`.
+    pub fn gene_junctions(&self, gene_id: &str) -> Option<Vec<(u32, u32)>> {
+        let gene_idx = self.stringids.gene_id(gene_id)? as usize;
+        self.genes.get(gene_idx).map(GeneIndex::junction_pairs)
+    }
+
+    /// Return all known transcript starts and ends for a reference gene.
+    ///
+    /// Used for `diff_to_gene_TSS` and `diff_to_gene_TTS`, which scan all
+    /// isoforms of an associated gene rather than only the primary transcript.
+    pub fn gene_starts_ends(&self, gene_id: &str) -> Option<(&[u32], &[u32])> {
+        let gene_idx = self.stringids.gene_id(gene_id)? as usize;
+        let gene = self.genes.get(gene_idx)?;
+        Some((gene.starts(), gene.ends()))
     }
 
     pub fn junction_match(

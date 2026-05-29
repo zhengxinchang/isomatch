@@ -29,13 +29,15 @@ target
 .claude/
 aa*
 bb*
+
 /*.png
 /*.zst
+!img/logo.png
 /stage/
 CLAUDE.md
 AGENTS.md
 flamegraph.svg
-*.png
+# *.png
 src/**/*.md
 src/**/*.txt
 sqanti3/

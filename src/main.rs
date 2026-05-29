@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser, Subcommand};
-use log::error;
+use log::{error, warn};
 use serde::Serialize;
 pub mod utils;
 use utils::greetings2;
@@ -375,6 +375,30 @@ pub struct ClassifyArgs {
     #[clap(short = 's', long = "ref-fa", help = "Reference FASTA")]
     pub ref_fa: PathBuf,
 
+    #[clap(
+        long = "fsm-end-match-bp",
+        help = "FSM subcategory threshold for TSS/TES matching in bp; applies to FSM and ISM subcategories",
+        default_value_t = 50,
+        value_name = "BP"
+    )]
+    pub fsm_end_match_bp: i32,
+
+    #[clap(
+        long = "downstream-len",
+        help = "Downstream sequence length for SQANTI3 QC",
+        default_value_t = 20,
+        value_name = "BP"
+    )]
+    pub downstream_len: usize,
+
+    #[clap(
+        long = "motif-search-window",
+        help = "Window size for searching polyA motifs downstream of TES in bp; applies to SQANTI3-style motif classification",
+        default_value_t = 50,
+        value_name = "BP"
+    )]
+    pub motif_search_window: usize,
+
     #[clap(short = 'o', long = "out", help = "Output prefix")]
     pub out: PathBuf,
 }
@@ -410,7 +434,7 @@ fn main() {
             command: Commands::Classify(args),
         } => {
             greetings2(&args);
-
+            warn!("Classify command is on beta stage");
             if let Err(e) = run_classify(args) {
                 error!("{}", e);
                 std::process::exit(1);

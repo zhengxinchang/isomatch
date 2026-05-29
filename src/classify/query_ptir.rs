@@ -30,6 +30,11 @@ impl QueryPTIR {
         }
     }
 
+    /// Chrname of the reference transcript.
+    pub fn chr_name(&self) -> &str {
+        self.chr_name.as_str()
+    }
+
     pub fn start(&self) -> u32 {
         self.base.start
     }
@@ -38,7 +43,7 @@ impl QueryPTIR {
         self.base.end
     }
 
-    pub fn standard(&self) -> &ISOMSTRAND {
+    pub fn strand(&self) -> &ISOMSTRAND {
         &self.base.strand
     }
 
@@ -48,6 +53,10 @@ impl QueryPTIR {
 
     pub fn junction_vec(&self) -> &Option<Vec<(u32, u32)>> {
         &self.base.junction_vec
+    }
+
+    pub fn junction_vec_ref(&self) -> &[(u32, u32)] {
+        self.base.junction_vec.as_deref().unwrap_or(&[])
     }
 
     pub fn tx_type(&self) -> &TxType {
@@ -73,11 +82,18 @@ impl QueryPTIR {
             .map(|chunk| (chunk[0], chunk[1]))
             .collect()
     }
+
+    pub fn transcript_len(&self) -> u32 {
+        self.exons_vec()
+            .iter()
+            .map(|(start, end)| end - start)
+            .sum()
+    }
 }
 
 pub struct QueryPTIRManager {
-    index_file_name: PathBuf,
-    attr_file_name: PathBuf,
+    _index_file_name: PathBuf,
+    _attr_file_name: PathBuf,
     index_reader: IndexReader,
     attr_index_reader: AttrIndexReader,
     total_tx_n: usize,
@@ -109,8 +125,8 @@ impl QueryPTIRManager {
         let current_reader = index_reader.get_chromosome_reader(first_chrom)?;
 
         Ok(Self {
-            index_file_name,
-            attr_file_name,
+            _index_file_name: index_file_name,
+            _attr_file_name: attr_file_name,
             index_reader,
             attr_index_reader,
             total_tx_n,

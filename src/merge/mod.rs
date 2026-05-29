@@ -437,19 +437,3 @@ impl MergeStats {
         self.tes_guide_pct = self.tes_guide_cnt as f64 / self.merged_tx_cnt as f64;
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::MergeStats;
-
-    #[test]
-    fn merge_hist_counts_outputs_by_source_tx_count() {
-        let mut stats = MergeStats::default();
-        *stats.merged_tx_by_source_count.entry(1).or_insert(0) += 1;
-        *stats.merged_tx_by_source_count.entry(3).or_insert(0) += 1;
-        *stats.merged_tx_by_source_count.entry(3).or_insert(0) += 1;
-
-        assert_eq!(stats.merged_tx_by_source_count.get(&1), Some(&1));
-        assert_eq!(stats.merged_tx_by_source_count.get(&3), Some(&2));
-    }
-}

@@ -66,4 +66,4 @@ classify1:build
 	/usr/bin/time -v target/release/isomatch classify \
 		-s test/GRCh38.p14.allChr.fa \
 		-r test/gencode.v49.basic.annotation.sorted.gtf.gz \
-		-o test/classify.test test/merge.gtf.gz.merged.gtf.gz
+		-o test/classify.test test/isoseq_transcripts.sorted.filtered_lite.clean.gtf

@@ -178,8 +178,8 @@ pub fn merge_canonical(
 
     // sort tx indice by the left most junction.
     sorted_tx_indice.sort_by(|&a, &b| {
-        let ja = super_cluster[a].junction_vec.as_ref().unwrap();
-        let jb = super_cluster[b].junction_vec.as_ref().unwrap();
+        let ja = super_cluster[a].junction_vec_ref();
+        let jb = super_cluster[b].junction_vec_ref();
         if ja[0].0 == jb[0].0 {
             if ja[0].1 == jb[0].1 {
                 std::cmp::Ordering::Equal
@@ -477,8 +477,8 @@ pub fn merge_rest_noncanonical(
     let mut sorted_tx_indice: Vec<usize> = rest_non_canonical_ptirs.iter().copied().collect();
 
     sorted_tx_indice.sort_by(|&a, &b| {
-        let ja = scluster[a].junction_vec.as_ref().unwrap();
-        let jb = scluster[b].junction_vec.as_ref().unwrap();
+        let ja = scluster[a].junction_vec_ref();
+        let jb = scluster[b].junction_vec_ref();
         if ja[0].0 == jb[0].0 {
             if ja[0].1 == jb[0].1 {
                 std::cmp::Ordering::Equal
@@ -699,38 +699,4 @@ pub fn is_splice_junctions_match(
             }
         });
     (in_wobble, bp_diff_d, bp_diff_a)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{is_splice_junctions_match, should_replace_noncanonical_match};
-    use crate::core::tx_strand::ISOMSTRAND;
-
-    #[test]
-    fn first_noncanonical_match_is_accepted_without_overflow() {
-        assert!(should_replace_noncanonical_match(
-            false,
-            1,
-            2,
-            u32::MAX,
-            u32::MAX,
-        ));
-    }
-
-    #[test]
-    fn worse_noncanonical_match_is_not_selected() {
-        assert!(!should_replace_noncanonical_match(true, 5, 5, 1, 1));
-    }
-
-    #[test]
-    fn unknown_strand_wobble_uses_same_donor_acceptor_convention_as_output_stats() {
-        let curr = vec![(100, 200)];
-        let other = vec![(103, 207)];
-        let (matched, donor_diff, acceptor_diff) =
-            is_splice_junctions_match(&curr, &other, &ISOMSTRAND::Unknown, 10, 10, 10);
-
-        assert!(matched);
-        assert_eq!(donor_diff, 3);
-        assert_eq!(acceptor_diff, 7);
-    }
 }

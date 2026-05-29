@@ -1,11 +1,5 @@
 use std::fmt;
 
-/// Structural classification of a query transcript against a reference.
-///
-/// Variants map to SQANTI3 `structural_category` values.
-/// Approximate priority order in SQANTI3 matching:
-/// FSM > ISM > anyKnownJunction/anyKnownSpliceSite -> NIC/NNC/Fusion/MoreJunctions
-/// > Antisense > GenicIntron > Genic > Intergenic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClassCode {
     /// SQANTI3: full-splice_match
