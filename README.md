@@ -1,4 +1,4 @@
-# isomatch  <img src="./img/logo.png" align="right" alt="" width=120 />
+# isomatch  <img src="./img/logo.png" align="right" alt="" width=180 />
 
 
 
