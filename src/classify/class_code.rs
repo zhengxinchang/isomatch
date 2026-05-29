@@ -2,26 +2,26 @@ use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClassCode {
-    /// SQANTI3: full-splice_match
+    
     FSM(SubFSM),
-    /// SQANTI3: incomplete-splice_match
+
     ISM(SubISM),
-    /// SQANTI3: novel_in_catalog
+
     NIC(SubNIC),
-    /// SQANTI3: novel_not_in_catalog
+  
     NNC(SubNNC),
-    /// SQANTI3: fusion
+
     Fusion,
-    /// SQANTI3: antisense
+
     Antisense,
-    /// SQANTI3: genic_intron
+
     GenicIntron,
-    /// SQANTI3: genic
+    
     Genic,
-    /// SQANTI3: intergenic
+    
     Intergenic,
-    /// SQANTI3: moreJunctions
-    ///
+   
+
     /// Produced when a query is associated with multiple genes, but at least
     /// one query junction is shared by more than one of those reference genes,
     /// so SQANTI3 does not call it `fusion`.
@@ -61,7 +61,7 @@ pub enum SubNNC {
 }
 
 impl ClassCode {
-    /// SQANTI3 `structural_category` column value.
+
     pub fn main_category(&self) -> &'static str {
         match self {
             Self::FSM(_) => "full-splice_match",
@@ -77,10 +77,6 @@ impl ClassCode {
         }
     }
 
-    /// SQANTI3 `subcategory` column value.
-    ///
-    /// For categories whose SQANTI3 subtype is assigned from query exon count,
-    /// pass the query transcript exon count.
     pub fn sub_category(&self, exon_count: u16) -> &'static str {
         let exon_shape = if exon_count == 1 {
             "mono-exon"

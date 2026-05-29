@@ -25,28 +25,27 @@ use crate::{
     utils::rev_comp,
 };
 
-/// Early per-reference classification before gene/catalog refinement.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PreClass {
-    /// Candidate is already a full-splice match.
+   
     Fsm(SubFSM),
-    /// Candidate is already an incomplete-splice match.
+
     Ism(SubISM),
-    // /// Candidate is already a direct novel-in-catalog mono-exon/intron-retention case.
+   
     Nic(SubNIC),
-    /// Candidate shares at least one known junction pair but is not FSM/ISM.
+
     AnyKnownJunction,
-    /// Candidate shares at least one splice site but no full junction pair.
+   
     AnyKnownSpliceSite,
-    /// Candidate overlaps exonic sequence but no junction/splice-site evidence matched.
+  
     GeneOverlap,
-    /// Candidate has no useful same-strand structural relationship.
+
     None,
 }
 
 impl PreClass {
-    /// Ranking used to keep the best reference transcript within each gene.
+
     fn rank(self) -> u8 {
         match self {
             Self::Fsm(_) => 6,
@@ -60,8 +59,7 @@ impl PreClass {
     }
 }
 
-/// One query-vs-reference transcript hit with the measurements needed for ranking.
-/// One query may have multiple of this.
+
 #[derive(Debug, Clone)]
 struct CandidateHit {
     query_ptir: QueryPTIR,
@@ -84,8 +82,7 @@ struct CandidateHit {
 }
 
 impl CandidateHit {
-    /// Build a candidate hit from one reference transcript plus an already-computed pre-class.
-    ///
+
     fn from_ref(query: &QueryPTIR, reference: &RefPTIR, pre_class: PreClass) -> Self {
         // Cache exon lists once because several evidence metrics reuse them.
         let query_exons = query.exons_vec();
@@ -136,8 +133,7 @@ impl CandidateHit {
         }
     }
 
-    /// Return true when `self` should replace another hit for the same gene.
-
+ 
     fn is_better_than(&self, other: &Self, query_exon_n: u16, query_len: u32) -> bool {
         let self_rank = self.pre_class.rank();
         let other_rank = other.pre_class.rank();
@@ -170,19 +166,9 @@ impl CandidateHit {
         }
     }
 
-    /// Total absolute endpoint difference for FSM/ISM tie-breaking.
-    fn endpoint_total_diff(&self) -> i32 {
-        // if !matches!(self.pre_class, PreClass::Fsm(_) | PreClass::Ism(_)) {
-        //     warn!(
-        //         "endpoint_total_diff called on non-FSM/ISM hit: treating as 0 for tie-breaking. preclass {:?} Query: {}, Ref: {}, Query PTIR: {:#?}, Ref PTIR: {:#?}",
-        //         &self.pre_class, self.tx_id, self.gene_id, self.query_ptir, self.ref_ptir
-        //     );
-        //     return 0;
-        // }
 
-        // let diff_tss = self.diff_tss.unwrap_or(0);
-        // let diff_tes = self.diff_tes.unwrap_or(0);
-        // diff_tss.abs() + diff_tes.abs()
+    fn endpoint_total_diff(&self) -> i32 {
+
 
         match (self.diff_tss, self.diff_tes) {
             (Some(diff_tss), Some(diff_tes)) => diff_tss.abs() + diff_tes.abs(),
@@ -190,12 +176,10 @@ impl CandidateHit {
         }
     }
 
-    /// Difference in exon count between query and this reference candidate.
+
     fn exon_count_diff(&self, query_exon_n: u16) -> u16 {
         query_exon_n.abs_diff(self.ref_exons)
     }
-
-    /// Composite ranking score used after class-rank ties are handled.
 
     fn score(&self, query_exon_n: u16, query_len: u32) -> f64 {
         let query_len = query_len.max(1) as f64;
@@ -208,7 +192,7 @@ impl CandidateHit {
     }
 }
 
-/// Final per-query classification record written to the classification table.
+
 #[derive(Debug, Clone)]
 pub struct ClassifyRecord {
     query_ptir: QueryPTIR,
@@ -258,7 +242,7 @@ pub struct ClassifyRecord {
 }
 
 impl ClassifyRecord {
-    /// Build a full structural classification for one query transcript.
+    
 
     pub fn new(
         query_ptir: &QueryPTIR,
@@ -402,7 +386,7 @@ impl ClassifyRecord {
         );
     }
 
-    /// Copy a selected candidate hit into final output fields.
+ 
     fn apply_primary_hit(&mut self, hit: &CandidateHit, _query_ptir: &QueryPTIR) {
         self.cc = match hit.pre_class {
             PreClass::Fsm(sub) => ClassCode::FSM(sub),
@@ -436,7 +420,7 @@ impl ClassifyRecord {
         };
     }
 
-    /// Refine weak `anyKnown*` evidence into final NIC/NNC/fusion/moreJunctions categories.
+    
     fn refine_class_code(&mut self, query_ptir: &QueryPTIR, ref_ptir_manager: &RefPTIRManager) {
         if !matches!(self.cc, ClassCode::NNC(SubNNC::AtLeastOneNovelSpliceSite)) {
             return;
@@ -486,8 +470,7 @@ impl ClassifyRecord {
         }
     }
 
-    /// Resolve transcripts that have no same-strand reference hit.
-    /// antisense first, then genic_intron, then intergenic.
+
     fn apply_no_same_strand_hit(&mut self, query_ptir: &QueryPTIR) {
         if !self.antisense_genes.is_empty() {
             self.cc = ClassCode::Antisense;
@@ -515,7 +498,7 @@ impl ClassifyRecord {
         }
     }
 
-    /// Fill nearest gene-level TSS/TES distances for associated genes.
+  
     fn update_gene_endpoint_diffs(
         &mut self,
         query_ptir: &QueryPTIR,
@@ -548,7 +531,7 @@ impl ClassifyRecord {
         }
     }
 
-    /// Write this record as one tab-delimited classification row.
+
     pub fn write_to_file(&self, writer: &mut dyn Write) -> Result<(), io::Error> {
         let strand = |s: Option<ISOMSTRAND>| {
             s.map(char::from)
@@ -601,7 +584,6 @@ impl ClassifyRecord {
     }
 }
 
-/// Find the primary same-strand reference hit and all non-overlapping associated hits.
 
 fn find_primary_hit(
     query_ptir: &QueryPTIR,
@@ -685,7 +667,6 @@ fn find_primary_hit(
     (Some(primary), associated_hits)
 }
 
-/// Classify one query against one same-strand reference transcript.
 fn classify_against_ref(query: &QueryPTIR, reference: &RefPTIR, args: &ClassifyArgs) -> PreClass {
     let q_mono = query.n_exons() == 1;
     let r_mono = reference.n_exons() == 1;
@@ -753,7 +734,7 @@ fn fsm_subtype(diff_tss: i32, diff_tes: i32, args: &ClassifyArgs) -> SubFSM {
     }
 }
 
-/// decide the ISM subtype
+
 fn ism_subtype(query: &QueryPTIR, reference: &RefPTIR) -> SubISM {
     if query_has_intron_retention_against_ref(query, reference) {
         return SubISM::IntronRetention;
@@ -777,9 +758,7 @@ fn ism_subtype(query: &QueryPTIR, reference: &RefPTIR) -> SubISM {
     }
 }
 
-/// Return true if any query junction is used by more than one associated gene.
-/// if a junction from query exactly exists in multiple genes, then its the morejunciton
-/// otherwise its a fusion.
+
 fn has_junction_shared_by_multiple_genes(
     query_ptir: &QueryPTIR,
     genes: &[String],
@@ -818,12 +797,12 @@ fn unique_strings(values: &[String]) -> Vec<String> {
     out
 }
 
-/// Render empty output identifiers as `NA`.
+
 fn empty_as_na(value: &str) -> &str {
     if value.is_empty() { "NA" } else { value }
 }
 
-/// Add sequence-derived QC evidence from the reference FASTA.
+
 pub fn update_group3_seq_context(
     class: &mut ClassifyRecord,
     query_ptir: &QueryPTIR,
