@@ -309,3 +309,92 @@ Policy values for all policy fields: `major`, `longer`, `shorter`, `guide_defini
 | `exon_diff` | Per-exon coordinate differences in `(exon_number,left_offset,right_offset)` format; `no_diff` if identical |
 
 Note: `junction_policy`, `tss_policy`, and `tes_policy` are the same for all rows sharing the same `merged_tx_id`, and `ISOM_REPR_POLICY` now uses the same strand-aware `SJ_POLICY:TSS_POLICY:TES_POLICY` ordering.
+
+# How isomatch classify transcripts
+
+## Design Principles
+
+The core idea of isomatch classify is: **compare each query transcript against the reference annotation, choose the best transcript-level hit, then report SQANTI3-style structural categories with sequence context.**
+
+isomatch classify:
+
+1. Uses reference junctions, splice sites, exons, and gene spans as catalog evidence;
+2. Classifies multi-exon transcripts primarily by ordered splice-junction relationships;
+3. Handles mono-exon transcripts by exon overlap, containment, and intron-retention evidence;
+4. Adds strand-aware TSS/TES differences and FASTA-derived TES sequence context.
+
+---
+
+## Classify Pipeline Overview
+
+```
+Query GTF + Reference GTF + Reference FASTA
+        │
+        ▼
+[1] Load query and reference indexes (.isomx) and reference genome sequence
+        │
+        ▼
+[2] For each query transcript: collect global reference catalog evidence
+    (known junctions, known splice sites, known introns, antisense overlaps)
+        │
+        ▼
+[3] Find overlapping reference transcripts on the same strand
+        │
+        ▼
+[4] Compare query vs each reference transcript
+    ├─ exact junction chain      → FSM
+    ├─ consecutive subset chain  → ISM
+    ├─ known junction/site usage → NIC or NNC
+    └─ exon/gene overlap         → genic classes
+        │
+        ▼
+[5] Select the primary hit per gene, then the best overall hit
+        │
+        ▼
+[6] Refine multi-gene, antisense, genic-intron, and intergenic cases
+        │
+        ▼
+[7] Add FASTA sequence context around TES
+        │
+        ▼
+Output classification table
+```
+
+---
+
+## Classification Rules
+
+For multi-exon query transcripts, isomatch compares the ordered junction chain to each overlapping reference transcript:
+
+| Relationship | Main category |
+|--------------|---------------|
+| Same junction chain | `full-splice_match` |
+| Query junction chain is a consecutive subset of reference | `incomplete-splice_match` |
+| Novel combination using known junctions or splice sites from the same gene | `novel_in_catalog` |
+| At least one novel splice site | `novel_not_in_catalog` |
+| Exon overlap without splice-chain evidence | `genic` |
+
+FSM subcategories are determined by strand-aware TSS/TES differences. The match threshold is controlled by `--fsm-end-match-bp` (default 50 bp).
+
+For mono-exon query transcripts, isomatch uses exon overlap against reference transcripts:
+
+| Relationship | Main category |
+|--------------|---------------|
+| Overlaps a mono-exon reference transcript | `full-splice_match` |
+| Fully contained in a reference exon | `incomplete-splice_match` |
+| Spans a known reference intron | `novel_in_catalog` |
+| Otherwise overlaps a same-strand gene | `genic` |
+
+If no same-strand hit is found, isomatch falls back to `antisense`, `genic_intron`, or `intergenic`, based on opposite-strand overlap and known intron containment.
+
+---
+
+## Classify Output
+
+For a run with `-o <prefix>`, one gzip-compressed table is written:
+
+| File | Description |
+|------|-------------|
+| `<prefix>.classification.txt.gz` | Per-transcript classification and sequence-context metrics |
+
+Key output fields include query transcript information, structural category/subcategory, selected reference gene/transcript, TSS/TES differences, matched junction/exon counts, canonical splice status, downstream TES A content, and optional CAGE/PolyA evidence columns.
