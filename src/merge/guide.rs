@@ -2,7 +2,7 @@ use crate::core::tx_strand::ISOMSTRAND;
 use rustc_hash::FxHashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // bed format for guide tss tes
 // chromosome      start   end     ID       score   strand
@@ -103,7 +103,11 @@ impl GuideDb {
         guide_type: GuideBEDType,
         chrmap_path: &Option<P>,
     ) -> Result<Self, GuideError> {
-        let file = File::open(path).map_err(GuideError::Io)?;
+        let path = path.as_ref();
+        let file = File::open(path).map_err(|err| GuideError::Io {
+            path: path.to_path_buf(),
+            source: err,
+        })?;
         let reader = BufReader::new(file);
         // Self::from_bed_reader(reader, guide_type)
         // let mut bed_chroms = HashSet::default();
@@ -111,7 +115,10 @@ impl GuideDb {
         let mut grouped: FxHashMap<(String, ISOMSTRAND), Vec<GuideInterval>> = FxHashMap::default();
 
         for (line_no, line_result) in reader.lines().enumerate() {
-            let raw_line = line_result.map_err(GuideError::Io)?;
+            let raw_line = line_result.map_err(|err| GuideError::Io {
+                path: path.to_path_buf(),
+                source: err,
+            })?;
 
             // Always skip the first line, which is expected to be the header.
             if line_no == 0 {
@@ -206,12 +213,19 @@ impl GuideDb {
 }
 
 pub fn load_chrmap_path<P: AsRef<Path>>(path: P) -> Result<ChromMap, GuideError> {
-    let file = File::open(path).map_err(GuideError::Io)?;
+    let path = path.as_ref();
+    let file = File::open(path).map_err(|err| GuideError::Io {
+        path: path.to_path_buf(),
+        source: err,
+    })?;
     let reader = BufReader::new(file);
     let mut chrmap = FxHashMap::default();
 
     for (line_no, line_result) in reader.lines().enumerate() {
-        let raw_line = line_result.map_err(GuideError::Io)?;
+        let raw_line = line_result.map_err(|err| GuideError::Io {
+            path: path.to_path_buf(),
+            source: err,
+        })?;
 
         // Always skip the first line, which is expected to be the header.
         if line_no == 0 {
@@ -263,7 +277,7 @@ struct ParsedBedRecord {
 
 #[derive(Debug)]
 pub enum GuideError {
-    Io(io::Error),
+    Io { path: PathBuf, source: io::Error },
     InvalidBedLine { line_no: usize, reason: String },
     InvalidChrMapLine { line_no: usize, reason: String },
 }
@@ -271,7 +285,9 @@ pub enum GuideError {
 impl std::fmt::Display for GuideError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GuideError::Io(err) => write!(f, "I/O error: {err}"),
+            GuideError::Io { path, source } => {
+                write!(f, "I/O error when loading {}: {source}", path.display())
+            }
             GuideError::InvalidBedLine { line_no, reason } => {
                 write!(f, "invalid BED line {line_no}: {reason}")
             }
@@ -282,7 +298,14 @@ impl std::fmt::Display for GuideError {
     }
 }
 
-impl std::error::Error for GuideError {}
+impl std::error::Error for GuideError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            GuideError::Io { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
 
 fn parse_bed_record(line: &str, line_no: usize) -> Result<ParsedBedRecord, GuideError> {
     let fields: Vec<&str> = line.split('\t').collect();

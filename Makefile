@@ -23,12 +23,12 @@ index3: build
 merge: build
 	/usr/bin/time -v target/release/isomatch merge \
 		-o test/merge.gtf.gz --terminal-refine both \
-		--guide-tss /ssd2/projects/isomatch-dev/evidence/human.guide.tss.bed \
-		--guide-tes /ssd2/projects/isomatch-dev/evidence/human.guide.tes.bed \
-		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf \
-		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz \
-		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz  \
-		test/gencode.v49.basic.annotation.sorted.gtf.gz \
+		--guide-tss /ssd2/projects/isomatch-dev/evidence/human.grch38.tss.bed \
+		--guide-tes /ssd2/projects/isomatch-dev/evidence/human.grch38.tes.bed \
+		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf 
+# 		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz \
+# 		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz  \
+# 		test/gencode.v49.basic.annotation.sorted.gtf.gz \
 
 INPUT := test/isoseq_transcripts.sorted.filtered_lite.clean.gtf
 N := 1000
@@ -70,7 +70,6 @@ merge_no_ends_cmp_gencode: build
 
 make_tss_tes_plot_gencode:
 	python3 stage/sonia-test/plot_merge_tss_tes.py   test/gencode.merge.noends.merged.gtf.gz     --min-count 2   --top 50   -o test/test/gencode.merge.gtf.gz.merged_tss_tes
-
 
 
 merge4 : build

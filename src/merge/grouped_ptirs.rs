@@ -473,6 +473,7 @@ impl GroupedPTIR {
         super_cluster: &[PTIR],
         gtf_bufwriter: &mut dyn Write,
         track_bufwriter: &mut dyn Write,
+        input_file_names: &[Vec<u8>],
     ) -> Result<(), MergeError> {
         debug_assert!(
             self.repr_loaded,
@@ -626,7 +627,13 @@ impl GroupedPTIR {
         let tss_policy = self.used_tss_policy().to_string();
         let tes_policy = self.used_tes_policy().to_string();
         for r in &src_records {
-            writeln!(
+            let src_file_name = input_file_names.get(r.ptir.source_file_id).ok_or(
+                MergeError::InvalidSourceFileId {
+                    source_file_id: r.ptir.source_file_id,
+                    input_count: input_file_names.len(),
+                },
+            )?;
+            write!(
                 track_bufwriter,
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                 tx_id,
@@ -645,6 +652,9 @@ impl GroupedPTIR {
                 r.acceptor_diff,
                 r.exon_diff_str,
             )?;
+            track_bufwriter.write_all(b"\t")?;
+            track_bufwriter.write_all(src_file_name)?;
+            track_bufwriter.write_all(b"\n")?;
         }
 
         Ok(())

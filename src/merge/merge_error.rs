@@ -26,4 +26,12 @@ pub enum MergeError {
 
     #[error("Not same junction")]
     NoSameJunction,
+
+    #[error(
+        "Invalid source_file_id {source_file_id}; only {input_count} input file(s) were provided"
+    )]
+    InvalidSourceFileId {
+        source_file_id: usize,
+        input_count: usize,
+    },
 }

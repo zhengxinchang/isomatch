@@ -285,7 +285,14 @@ impl RefPTIRManager {
         let mut isomx_path = gtf_path.clone();
         isomx_path.add_extension("isomx");
 
-        let f = File::open(isomx_path)?;
+        let f = File::open(&isomx_path).map_err(|e| ClassifyError::FailedParseGTF {
+            reason: format!(
+                "Can not read reference GTF {}, reason: {}",
+                &isomx_path.display(),
+                e.to_string()
+            ),
+        })?;
+
         let mut index_reader = IndexReader::open(f, 0)?;
 
         let mut attr_string_pool = StringPool::new();

@@ -42,6 +42,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     // open all files (isomx) into a vec
     args.validate();
     let n_inputs = args.inputs.len();
+    let input_file_names = input_file_name_bytes(&args.inputs);
     let mut stats = MergeStats {
         source_files: n_inputs as u32,
         ..MergeStats::default()
@@ -122,7 +123,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     )));
     writeln!(
         track_bufwriter,
-        "merged_tx_id\tmerged_gene_id\tmerged_start\tmerged_end\tmerged_strand\tmerged_exon_num\tjunction_policy\ttss_policy\ttes_policy\tsrc_tx_count_in_merged_group\tsrc_tx_id\tsrc_gene_id\ttotal_donor_diff\ttotal_acceptor_diff\texon_diff"
+        "merged_tx_id\tmerged_gene_id\tmerged_start\tmerged_end\tmerged_strand\tmerged_exon_num\tjunction_policy\ttss_policy\ttes_policy\tsrc_tx_count_in_merged_group\tsrc_tx_id\tsrc_gene_id\ttotal_donor_diff\ttotal_acceptor_diff\texon_diff\tsrc_file_name"
     )?;
 
     add_output_header(&mut bufwriter, &args)?;
@@ -167,6 +168,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
                 &mut global_tx_id,
                 &mut stats,
                 &args,
+                &input_file_names,
                 bufwriter.as_mut(),
                 track_bufwriter.as_mut(),
                 &guide_tss_index,
@@ -185,6 +187,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             &mut global_tx_id,
             &mut stats,
             &args,
+            &input_file_names,
             bufwriter.as_mut(),
             track_bufwriter.as_mut(),
             &guide_tss_index,
@@ -221,6 +224,7 @@ pub fn process_super_cluster(
     global_tx_id: &mut u32,
     stats: &mut MergeStats,
     args: &MergeArgs,
+    input_file_names: &[Vec<u8>],
     bufwriter: &mut dyn Write,
     track_bufwriter: &mut dyn Write,
     guide_tss: &Option<GuideDb>,
@@ -264,7 +268,13 @@ pub fn process_super_cluster(
             *global_tx_id += 1;
             grpptir.update_ids(*global_scluster_id, *global_tx_id);
             stats.observe_merged_tx(grpptir);
-            grpptir.write_gtf_block(chrom_name, super_cluster, bufwriter, track_bufwriter)?;
+            grpptir.write_gtf_block(
+                chrom_name,
+                super_cluster,
+                bufwriter,
+                track_bufwriter,
+                input_file_names,
+            )?;
         }
     }
 
@@ -314,6 +324,28 @@ impl KwayMerger {
 
         Ok(Some(ptir))
     }
+}
+
+fn input_file_name_bytes(inputs: &[PathBuf]) -> Vec<Vec<u8>> {
+    inputs
+        .iter()
+        .map(|input| {
+            let file_name = input.file_name().unwrap_or_else(|| input.as_os_str());
+            os_str_bytes(file_name)
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+fn os_str_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    use std::os::unix::ffi::OsStrExt;
+
+    value.as_bytes().to_vec()
+}
+
+#[cfg(not(unix))]
+fn os_str_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    value.to_string_lossy().as_bytes().to_vec()
 }
 
 impl Iterator for KwayMerger {
