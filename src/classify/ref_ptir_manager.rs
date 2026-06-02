@@ -74,7 +74,6 @@ impl StringID {
         self.chrom_to_id.get(chrom).copied()
     }
 }
-
 struct ChromIndex {
     splice_site_starts: Vec<Pos>,
     splice_site_ends: Vec<Pos>,
@@ -91,6 +90,7 @@ struct ChromIndex {
     refs_monoexon: Lapper<u32, usize>,
     refs_multiexon: Lapper<u32, usize>,
 }
+
 impl ChromIndex {
     pub fn new(
         mut junctions_plus: Vec<Junction>,
@@ -207,7 +207,6 @@ impl ChromIndex {
     }
 }
 
-/// Per-gene reference catalog evidence used by classification.
 struct GeneIndex {
     junctions: Vec<Junction>,
     starts: Vec<Pos>,
@@ -215,7 +214,6 @@ struct GeneIndex {
 }
 
 impl GeneIndex {
-    /// Create a gene index from the first transcript observed for that gene.
     pub fn new(junctions: Option<&[(u32, u32)]>, start: u32, end: u32) -> Self {
         let mut juncs = Vec::new();
         if let Some(junctions) = junctions {
@@ -234,7 +232,6 @@ impl GeneIndex {
         }
     }
 
-    /// Add another reference transcript from the same gene to the index.
     pub fn add(&mut self, junctions: Option<&[(u32, u32)]>, start: u32, end: u32) {
         if let Some(junctions) = junctions {
             for junc in junctions {
@@ -249,10 +246,6 @@ impl GeneIndex {
         self.ends.push(end);
     }
 
-    /// Sort and deduplicate collected gene-level catalog evidence.
-    ///
-    /// This is called after the reference GTF has been fully loaded so later
-    /// classification queries can use stable, compact lists.
     fn finalize(&mut self) {
         self.junctions.sort();
         self.junctions.dedup();
@@ -262,10 +255,6 @@ impl GeneIndex {
         self.ends.dedup();
     }
 
-    /// Return known junction pairs for this gene as plain coordinate tuples.
-    ///
-    /// The public manager API returns tuples rather than private `Junction`
-    /// structs to keep callers decoupled from the internal storage type.
     fn junction_pairs(&self) -> Vec<(u32, u32)> {
         self.junctions
             .iter()
@@ -273,22 +262,18 @@ impl GeneIndex {
             .collect()
     }
 
-    /// All known transcript starts for this gene.
     fn starts(&self) -> &[Pos] {
         &self.starts
     }
 
-    /// All known transcript ends for this gene.
     fn ends(&self) -> &[Pos] {
         &self.ends
     }
 }
-
 pub struct RefPTIRManager {
     pub filename: PathBuf,
     pub ptirs: Vec<RefPTIR>,
     pub attr_string_pool: StringPool,
-    // intervals_map: HashMap<String, Lapper<u32, usize>>,
     chroms: Vec<ChromIndex>,
     genes: Vec<GeneIndex>,
     stringids: StringID,
@@ -489,12 +474,6 @@ impl RefPTIRManager {
         }
     }
 
-    /// Return all reference transcripts, mono- and multi-exon, overlapping a query span.
-    ///
-    /// This is the candidate retrieval step for the SQANTI3-like
-    /// `transcriptsKnownSpliceSites()` implementation. It intentionally returns
-    /// both mono- and multi-exon references because the mono-exon branches have
-    /// special classification behavior.
     pub fn find_overlapping_refs(&self, chr_name: &str, start: u32, end: u32) -> Vec<&RefPTIR> {
         let Some(chrom_id) = self.stringids.chrom_id(chr_name) else {
             return Vec::new();
@@ -517,19 +496,11 @@ impl RefPTIRManager {
         results
     }
 
-    /// Return the set of known junction pairs for one reference gene.
-    ///
-    /// Used to distinguish NIC `combination_of_known_junctions` from
-    /// `combination_of_known_splicesites`.
     pub fn gene_junctions(&self, gene_id: &str) -> Option<Vec<(u32, u32)>> {
         let gene_idx = self.stringids.gene_id(gene_id)? as usize;
         self.genes.get(gene_idx).map(GeneIndex::junction_pairs)
     }
 
-    /// Return all known transcript starts and ends for a reference gene.
-    ///
-    /// Used for `diff_to_gene_TSS` and `diff_to_gene_TTS`, which scan all
-    /// isoforms of an associated gene rather than only the primary transcript.
     pub fn gene_starts_ends(&self, gene_id: &str) -> Option<(&[u32], &[u32])> {
         let gene_idx = self.stringids.gene_id(gene_id)? as usize;
         let gene = self.genes.get(gene_idx)?;

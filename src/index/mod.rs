@@ -234,7 +234,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
             stats.note_skipped_ref_seqids(missing_ref_seqids.clone());
         } else {
             bail!(
-                "Reference FASTA is missing {} seqid(s) required by the GTF: {}. Rerun with --skip-missing-ref-seqids to warn and skip these transcripts.",
+                "Reference FASTA is missing {} seqid(s) required by the GTF: {}. Rerun with --skip-missing-ref-chr to warn and skip these transcripts.",
                 missing_ref_seqids.len(),
                 missing_ref_seqids.join(", ")
             );

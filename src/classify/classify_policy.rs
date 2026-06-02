@@ -25,27 +25,24 @@ use crate::{
     utils::rev_comp,
 };
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PreClass {
-   
     Fsm(SubFSM),
 
     Ism(SubISM),
-   
+
     Nic(SubNIC),
 
     AnyKnownJunction,
-   
+
     AnyKnownSpliceSite,
-  
+
     GeneOverlap,
 
     None,
 }
 
 impl PreClass {
-
     fn rank(self) -> u8 {
         match self {
             Self::Fsm(_) => 6,
@@ -58,7 +55,6 @@ impl PreClass {
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 struct CandidateHit {
@@ -82,7 +78,6 @@ struct CandidateHit {
 }
 
 impl CandidateHit {
-
     fn from_ref(query: &QueryPTIR, reference: &RefPTIR, pre_class: PreClass) -> Self {
         // Cache exon lists once because several evidence metrics reuse them.
         let query_exons = query.exons_vec();
@@ -133,7 +128,6 @@ impl CandidateHit {
         }
     }
 
- 
     fn is_better_than(&self, other: &Self, query_exon_n: u16, query_len: u32) -> bool {
         let self_rank = self.pre_class.rank();
         let other_rank = other.pre_class.rank();
@@ -166,16 +160,12 @@ impl CandidateHit {
         }
     }
 
-
     fn endpoint_total_diff(&self) -> i32 {
-
-
         match (self.diff_tss, self.diff_tes) {
             (Some(diff_tss), Some(diff_tes)) => diff_tss.abs() + diff_tes.abs(),
             _ => i32::MAX,
         }
     }
-
 
     fn exon_count_diff(&self, query_exon_n: u16) -> u16 {
         query_exon_n.abs_diff(self.ref_exons)
@@ -191,7 +181,6 @@ impl CandidateHit {
             - self.exon_count_diff(query_exon_n) as f64
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct ClassifyRecord {
@@ -242,8 +231,6 @@ pub struct ClassifyRecord {
 }
 
 impl ClassifyRecord {
-    
-
     pub fn new(
         query_ptir: &QueryPTIR,
         ref_ptir_manager: &RefPTIRManager,
@@ -386,7 +373,6 @@ impl ClassifyRecord {
         );
     }
 
- 
     fn apply_primary_hit(&mut self, hit: &CandidateHit, _query_ptir: &QueryPTIR) {
         self.cc = match hit.pre_class {
             PreClass::Fsm(sub) => ClassCode::FSM(sub),
@@ -420,7 +406,6 @@ impl ClassifyRecord {
         };
     }
 
-    
     fn refine_class_code(&mut self, query_ptir: &QueryPTIR, ref_ptir_manager: &RefPTIRManager) {
         if !matches!(self.cc, ClassCode::NNC(SubNNC::AtLeastOneNovelSpliceSite)) {
             return;
@@ -470,7 +455,6 @@ impl ClassifyRecord {
         }
     }
 
-
     fn apply_no_same_strand_hit(&mut self, query_ptir: &QueryPTIR) {
         if !self.antisense_genes.is_empty() {
             self.cc = ClassCode::Antisense;
@@ -498,7 +482,6 @@ impl ClassifyRecord {
         }
     }
 
-  
     fn update_gene_endpoint_diffs(
         &mut self,
         query_ptir: &QueryPTIR,
@@ -530,7 +513,6 @@ impl ClassifyRecord {
             }
         }
     }
-
 
     pub fn write_to_file(&self, writer: &mut dyn Write) -> Result<(), io::Error> {
         let strand = |s: Option<ISOMSTRAND>| {
@@ -583,7 +565,6 @@ impl ClassifyRecord {
         )
     }
 }
-
 
 fn find_primary_hit(
     query_ptir: &QueryPTIR,
@@ -734,7 +715,6 @@ fn fsm_subtype(diff_tss: i32, diff_tes: i32, args: &ClassifyArgs) -> SubFSM {
     }
 }
 
-
 fn ism_subtype(query: &QueryPTIR, reference: &RefPTIR) -> SubISM {
     if query_has_intron_retention_against_ref(query, reference) {
         return SubISM::IntronRetention;
@@ -757,7 +737,6 @@ fn ism_subtype(query: &QueryPTIR, reference: &RefPTIR) -> SubISM {
         (false, false, _) => SubISM::InternalFragment,
     }
 }
-
 
 fn has_junction_shared_by_multiple_genes(
     query_ptir: &QueryPTIR,
@@ -797,11 +776,9 @@ fn unique_strings(values: &[String]) -> Vec<String> {
     out
 }
 
-
 fn empty_as_na(value: &str) -> &str {
     if value.is_empty() { "NA" } else { value }
 }
-
 
 pub fn update_group3_seq_context(
     class: &mut ClassifyRecord,

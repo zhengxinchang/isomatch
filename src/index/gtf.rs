@@ -354,20 +354,6 @@ impl MyGTFReader {
                         return Ok(Some(tx));
                     }
                 }
-                // "transcript" => {
-                //     // return Attrs anyways no matter if it has ISOM_SRC
-                //     // another function will handle this after this get returned.
-                //     if let Some(attr_string) = line.splitn(9, '\t').nth(8) {
-                //         return Ok(Some(GTFRecord::TxAttrs(TxAttrs {
-                //             chrname: chrom.clone(),
-                //             attr_string: attr_string.trim_end().to_string(),
-                //         })));
-                //     } else {
-                //         return Err(GTFError::InvalidGTFFormat {
-                //             line_no: self.current_line_no,
-                //         });
-                //     }
-                // }
                 _ => {
                     continue;
                 }

@@ -46,10 +46,32 @@ merge2gffcompare: build
 	
 merge3: build
 	/usr/bin/time -v target/release/isomatch merge \
-		-o test/merge.gtf.gz --splice-policy major -d 3 -a 3 -s 200 -e 200 \
+		-t none \
+		-o test/drna.merge.gtf.gz --splice-policy major -d 3 -a 3 -s 200 -e 200 \
+		test/hg002_ont_drna.isoquant.gtf.gz \
+
+make_tss_tes_plot_drna:
+	python3 stage/sonia-test/plot_merge_tss_tes.py   test/drna.merge.gtf.gz.merged.gtf.gz  --min-count 2   --top 50   -o test/test/drna.merge.gtf.gz.merged_tss_tes
+	
+
+merge_no_ends_cmp: build
+	/usr/bin/time -v target/release/isomatch merge \
+		-o test/merge.noends -t none -d 3 -a 3 -s 200 -e 200 \
 		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf
-# 		test/hg002_ont_drna.isoquant.gtf.gz \
-		
+
+make_tss_tes_plot:
+	python3 stage/sonia-test/plot_merge_tss_tes.py   test/merge.noends.merged.gtf.gz     --min-count 2   --top 50   -o test/test/merge.gtf.gz.merged_tss_tes
+
+
+merge_no_ends_cmp_gencode: build
+	/usr/bin/time -v target/release/isomatch merge \
+		-o test/gencode.merge.noends -t none -d 3 -a 3 -s 200 -e 200 \
+		test/gencode.v49.basic.annotation.sorted.gtf.gz
+
+make_tss_tes_plot_gencode:
+	python3 stage/sonia-test/plot_merge_tss_tes.py   test/gencode.merge.noends.merged.gtf.gz     --min-count 2   --top 50   -o test/test/gencode.merge.gtf.gz.merged_tss_tes
+
+
 
 merge4 : build
 	/usr/bin/time -v target/release/isomatch merge \

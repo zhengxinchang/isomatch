@@ -2,13 +2,12 @@ use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClassCode {
-    
     FSM(SubFSM),
 
     ISM(SubISM),
 
     NIC(SubNIC),
-  
+
     NNC(SubNNC),
 
     Fusion,
@@ -16,11 +15,10 @@ pub enum ClassCode {
     Antisense,
 
     GenicIntron,
-    
+
     Genic,
-    
+
     Intergenic,
-   
 
     /// Produced when a query is associated with multiple genes, but at least
     /// one query junction is shared by more than one of those reference genes,
@@ -61,7 +59,6 @@ pub enum SubNNC {
 }
 
 impl ClassCode {
-
     pub fn main_category(&self) -> &'static str {
         match self {
             Self::FSM(_) => "full-splice_match",
