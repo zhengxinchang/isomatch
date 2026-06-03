@@ -4,61 +4,69 @@
 
 
 
-Isomatch: evidence-baesd transcirpts merging and classification.
+Isomatch: evidence-based transcript merging and classification.
 
-evidence based merge
+Evidence-based merge:
 
 1. not only consider intron chain, but also consider the TSS/TES
 2. configurable splice junction wobble and TSS/TES threshold for merging,
 3. select representative transcripts based on third party evidence such as refTSS and PolyAsites
 
-multi classification system anntation:
+Multi-classification annotation:
 
 1. provide SQANTI3 style classification code.
-2. for merged gtf from isomatch merge, not only report difference between reference and merged transcripts, but also report difference between the refernce transcripts and the original transcripts.
+2. for merged gtf from isomatch merge, not only report difference between reference and merged transcripts, but also report difference between the reference transcripts and the original transcripts.
 
-large-scale processing capability:
+Large-scale processing:
 1. support thousands of GTF files
 
-# subcomands and workflow
+# Subcommands and workflow
 
-isomatch index: build index for GTF files together with a reference FASTA, required by the rest of the subcommands, and can be reused for multiple runs of merge and classify.
+- `isomatch index`: build `.isomx` and `.isoms` indexes for a GTF with a reference FASTA. GTF records can be unordered; transcripts must have `transcript` and `exon` records with matching seqids.
 
-isomatch merge: merge transcripts from multiple indexed inputs, and select representative transcripts based on third party evidence(optional)
+- `isomatch merge`: merge transcripts from multiple inputs, auto-rebuilding missing/corrupted/outdated indexes when `--ref-fa` is supplied, and select representative transcripts based on optional third-party evidence.
 
-isomatch classify: classify transcripts in a GTF file based on reference annotation, and report the classification code for each transcript.
+- `isomatch classify`: classify query transcripts against a reference annotation, auto-rebuilding missing/corrupted/outdated query/reference indexes when `--ref-fa` is supplied.
 
 Typical workflow:
-1. create index for all input GTF files using `isomatch index --ref-fa ref.fa`
-2. merge transcripts from multiple indexed inputs using `isomatch merge`, and select representative transcripts based on third party evidence(optional)
-3. classify merged transcripts using `isomatch classify`, and report the classification code for each transcript.
+1. create indexes with `isomatch index --ref-fa ref.fa`, or let `merge`/`classify` auto-create them.
+2. merge transcripts with `isomatch merge --ref-fa ref.fa`, optionally using TSS/TES guide evidence.
+3. classify query or merged transcripts with `isomatch classify --ref-fa ref.fa --ref-gtf ref.gtf.gz`.
 
 
 # Examples
 
 ### Merge
 ```
-# build index, GTF must be sorted at chromosome level.
-# use bedtools sort -i input.gtf > sorted_input.gtf to sort if needed.
+# optional pre-indexing; merge can auto-index the same inputs if needed
 isomatch index --ref-fa ref.fa sample1.gtf.gz
 isomatch index --ref-fa ref.fa sample2.gtf.gz
 isomatch index --ref-fa ref.fa sample3.gtf.gz
 
 # merge with default parameters (-o takes a prefix, not a filename)
-# merge uses the same input paths that were indexed and reads <input>.isomx
-isomatch merge -o merged  sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+# merge checks <input>.isomx and <input>.isoms; missing/stale indexes are rebuilt
+isomatch merge --ref-fa ref.fa -o merged sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
 # outputs: merged.merged.gtf.gz  merged.track.tsv.gz  merged.merged_info.json
 
 # merge with guide-based terminal selection
-isomatch merge -o merged \
+isomatch merge --ref-fa ref.fa -o merged \
     --guide-tss human.guide.tss.bed --guide-tes human.guide.tes.bed \
     sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
 
 # merge with wobble splice junction matching
-isomatch merge -o merged \
+isomatch merge --ref-fa ref.fa -o merged \
     -d 3 -a 3 -u 3 \
     -D 5 -A 5 -U 5 \
     sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+```
+
+### Classify
+```
+# classify query transcripts against a reference annotation
+# classify also checks/rebuilds query and reference indexes
+isomatch classify --ref-fa ref.fa --ref-gtf reference.gtf.gz \
+    -o query_vs_ref query.gtf.gz
+# output: query_vs_ref.classification.txt.gz
 ```
 
 # How isomatch merge transcripts
@@ -82,7 +90,7 @@ Unlike simple coordinate-overlap collapse tools, isomatch:
 Multiple GTF inputs
         │
         ▼
-[1] isomatch index: each GTF + reference FASTA → .isomx binary index
+[1] isomatch index: each GTF + reference FASTA → .isomx and .isoms indexes
         │
         ▼
 [2] K-way merge + genomic coordinate overlap → Super Cluster (per-chromosome locus)
@@ -113,7 +121,7 @@ Output GTF (with ISOM_SRC / ISOM_COUNT / ISOM_REPR_POLICY annotations)
 
 ### Stage 1: Index Building (isomatch index)
 
-Each input GTF is preprocessed together with the reference FASTA into a `.isomx` binary index file. Each transcript is stored with its chromosome, strand, coordinates, exon count, splice junctions, and transcript type:
+Each input GTF is preprocessed together with the reference FASTA into `.isomx` and `.isoms` index files. GTF input may be unordered; isomatch aggregates exon records by `transcript_id` and sorts transcripts internally. Each transcript is stored with its chromosome, strand, coordinates, exon count, splice junctions, and transcript type:
 
 - `ALLC`: all splice sites are canonical (GT-AG, GC-AG, AT-AC)
 - `PRTC`: partially canonical splice sites
@@ -331,7 +339,7 @@ isomatch classify:
 Query GTF + Reference GTF + Reference FASTA
         │
         ▼
-[1] Load query and reference indexes (.isomx) and reference genome sequence
+[1] Load query indexes (.isomx/.isoms), reference index (.isomx), and reference genome sequence
         │
         ▼
 [2] For each query transcript: collect global reference catalog evidence
@@ -397,4 +405,4 @@ For a run with `-o <prefix>`, one gzip-compressed table is written:
 |------|-------------|
 | `<prefix>.classification.txt.gz` | Per-transcript classification and sequence-context metrics |
 
-Key output fields include query transcript information, structural category/subcategory, selected reference gene/transcript, TSS/TES differences, matched junction/exon counts, canonical splice status, downstream TES A content, and optional CAGE/PolyA evidence columns.
+Key output fields include query transcript information, structural category/subcategory, selected reference gene/transcript, TSS/TES differences, matched junction/exon counts, canonical splice status, and downstream TES A content.
