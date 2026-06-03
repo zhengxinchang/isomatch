@@ -7,6 +7,7 @@ use crate::merge::grouped_ptirs::GroupedPTIR;
 use crate::merge::guide::GuideDb;
 use crate::merge::policy::MergePolicyUsed;
 use crate::merge::policy::merge_cluster;
+use crate::utils::greetings2;
 use crate::utils::print_json_block;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
 use serde::Serialize;
@@ -39,6 +40,7 @@ impl ArgValidate for MergeArgs {
 }
 
 pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
+    greetings2(&args);
     // open all files (isomx) into a vec
     args.validate();
     let n_inputs = args.inputs.len();

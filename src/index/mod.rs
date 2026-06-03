@@ -11,7 +11,7 @@ use crate::{
     // gtf::{self, profile_gtf},
     index::format::ChromBlockBuilder,
     traits::ArgValidate,
-    utils::print_json_block,
+    utils::{greetings2, print_json_block},
 };
 pub use anyhow::Result as AnyResult;
 use fasta::FastaReader;
@@ -191,12 +191,18 @@ impl ArgValidate for IndexArgs {
 }
 
 pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
+    if !args.quiet {
+        greetings2(&args);
+    }
+
     args.validate();
     let mut stats = IndexStats::default();
 
-    info!("Creating isomatch index for {}", args.input.display());
+    if !args.quiet {
+        info!("Creating isomatch index for {}", args.input.display());
 
-    info!("Loading Reference and/or Sequence FASTA...");
+        info!("Loading Reference and/or Sequence FASTA...");
+    }
 
     let mut ref_far = FastaReader::open(args.ref_fa.clone(), fasta::FaType::Ref)
         .with_context(|| format!("Can not load reference sequence: {}", args.ref_fa.display()))?;
@@ -214,7 +220,9 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         None
     };
 
-    info!("Profiling GTF");
+    if !args.quiet {
+        info!("Profiling GTF");
+    }
     let (profiled_chrom_names, md5, gtf_file_size) = profile_gtf(&args.input)?;
 
     let missing_ref_seqids: Vec<String> = profiled_chrom_names
@@ -259,7 +267,9 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         default_out
     };
 
-    info!("Initializing Builder");
+    if !args.quiet {
+        info!("Initializing Builder");
+    }
     let missing_seqids_vec: Vec<String> = missing_ref_seqid_set.iter().cloned().collect();
     let mut builder = builder::IndexBuilder::new(
         std::fs::File::create(&isomx_path).expect("Can not create output file"),
@@ -272,7 +282,9 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     )
     .expect("Can not init index builder");
 
-    info!("Indexing GTF");
+    if !args.quiet {
+        info!("Indexing GTF");
+    }
     let mut gtf_reader = gtf::MyGTFReader::new(&args.input)
         .with_context(|| format!("Can not open GTF file: {}", args.input.display()))?;
 
@@ -291,15 +303,19 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
             }
             current_chrom = tx_structure.chrom.clone();
             if missing_ref_seqid_set.contains(&current_chrom) {
-                info!(
-                    "Skipping chromosome {} because it is absent from the reference FASTA",
-                    &current_chrom
-                );
+                if !args.quiet {
+                    info!(
+                        "Skipping chromosome {} because it is absent from the reference FASTA",
+                        &current_chrom
+                    );
+                }
                 chrom_block = None;
             } else {
                 chrom_id += 1;
                 chrom_block = Some(ChromBlockBuilder::init(chrom_id));
-                info!("Processing chromosome {}", &current_chrom);
+                if !args.quiet {
+                    info!("Processing chromosome {}", &current_chrom);
+                }
             }
         }
         if missing_ref_seqid_set.contains(&tx_structure.chrom) {
@@ -322,12 +338,16 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     // isom_src_cache_builder.finalize()?;
     builder.finalize()?;
     stats.finalize();
-    info!("Index written to {:?}", isomx_path);
+    if !args.quiet {
+        info!("Index written to {:?}", isomx_path);
+    }
     // second pass to build the sidecar file isoms
 
     {
         use std::io::BufRead;
-        info!("Profiling attributes sidecar file");
+        if !args.quiet {
+            info!("Profiling attributes sidecar file");
+        }
         let index_file = File::open(&isomx_path).with_context(|| {
             format!(
                 "cannot reopen index for second pass: {}",
@@ -378,19 +398,25 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         attr_builder
             .finish()
             .with_context(|| format!("cannot finalize isoms at {}", isoms_path.display()))?;
-        info!("Sidecar isoms written to {:?}", isoms_path);
+        if !args.quiet {
+            info!("Sidecar isoms written to {:?}", isoms_path);
+        }
     }
 
     let mut isomx_info_path = isomx_path.clone();
     isomx_info_path.add_extension("info.json");
     let mut isomx_info_writer = File::create(isomx_info_path)?;
-    print_json_block("Index summary", &stats);
+    if !args.quiet {
+        print_json_block("Index summary", &stats);
+    }
 
     let info_json = serde_json::to_string_pretty(&stats)?;
 
     isomx_info_writer.write(info_json.as_bytes())?;
     isomx_info_writer.flush()?;
 
-    info!("Fnished!");
+    if !args.quiet {
+        info!("Fnished!");
+    }
     Ok(())
 }

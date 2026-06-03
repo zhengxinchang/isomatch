@@ -3,9 +3,8 @@ use std::path::PathBuf;
 use clap::{ArgAction, Parser, Subcommand};
 use log::{error, warn};
 use serde::Serialize;
-pub mod utils;
-use utils::greetings2;
 pub mod core;
+pub mod utils;
 
 use crate::classify::run_classify;
 use crate::{index::run_index, merge::run_merge};
@@ -73,6 +72,14 @@ pub struct IndexArgs {
         help = "Skip transcripts on seqids absent from the reference FASTA"
     )]
     pub skip_missing_ref_chr: bool,
+
+    #[clap(
+        short= 'q',
+        long = "quiet",
+        action = ArgAction::SetTrue,
+        help = "Suppress non-warning messages; only warnings and errors are shown"
+    )]
+    pub quiet: bool,
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
@@ -86,22 +93,6 @@ pub struct MergeArgs {
     )]
     pub inputs: Vec<PathBuf>,
 
-    // #[clap(
-    //     short='l',
-    //     long="list",
-    //     help_heading = "Input",
-    //     help = "Input manifest file for multiple transcript sets to merge. override default input. Format path \t name(optional)",
-    //     required = false,
-    // )]
-
-    // pub inputs_list: Option<PathBuf>,
-    // #[clap(
-    //     short = 'r',
-    //     long = "refsites",
-    //     help_heading = "Guide Merge",
-    //     help = "Optional BED file of reference splice sites"
-    // )]
-    // pub refsites: Option<PathBuf>,
     #[clap(
         short = 'd',
         long = "wob-d",
@@ -315,18 +306,6 @@ pub struct MergeArgs {
     )]
     pub tes_policy: MergePolicyArg,
 
-    // #[clap(
-    //     long = "mono-policy",
-    //     help_heading = "Representative Selection",
-    //     help = "Representative mono-exon boundary policy.
-    // union = widest span;
-    // intersect = narrowest span;
-    // major = most frequent span (falls back to union on tie)
-    // ",
-    //     value_enum,
-    //     default_value_t = MergePolicyArg::Major
-    // )]
-    // pub mono_policy: MergePolicyArg,
     #[clap(
         short = 'o',
         long = "out",
@@ -334,30 +313,6 @@ pub struct MergeArgs {
         help = "Output prefix, merged GTF will have name  out_prefx.merged.gtf.gz "
     )]
     pub out: PathBuf,
-    // #[clap(
-    //     long = "sx-max",
-    //     help_heading = "Other",
-    //     help = "Max exon length for small-exon rescue",
-    //     default_value_t = 15
-    // )]
-    // pub sx_max: u32,
-
-    // #[clap(
-    //     long = "junc-diff",
-    //     help_heading = "Other",
-    //     help = "Max junction-count difference for collapse rescue",
-    //     default_value_t = 1
-    // )]
-    // pub junc_diff: u32,
-
-    // #[clap(
-    //     long = "shift-rescue",
-    //     help_heading = "Other",
-    //     help = "Enable local small-exon shift rescue",
-    //     action = ArgAction::Set,
-    //     default_value_t = true
-    // )]
-    // pub shift_rescue: bool,
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
@@ -411,7 +366,6 @@ fn main() {
         Cli {
             command: Commands::Index(mut args),
         } => {
-            greetings2(&args);
             if let Err(e) = run_index(&mut args) {
                 error!("{}", e);
                 std::process::exit(1);
@@ -420,7 +374,6 @@ fn main() {
         Cli {
             command: Commands::Merge(args),
         } => {
-            greetings2(&args);
             if let Err(e) = run_merge(args) {
                 error!("{}", e);
                 std::process::exit(1);
@@ -433,7 +386,6 @@ fn main() {
         Cli {
             command: Commands::Classify(args),
         } => {
-            greetings2(&args);
             warn!("Classify command is on beta stage");
             if let Err(e) = run_classify(args) {
                 error!("{}", e);

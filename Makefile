@@ -10,7 +10,7 @@ index2: build
 		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf
 
 index: build
-	/usr/bin/time -v target/release/isomatch index \
+	/usr/bin/time -v target/release/isomatch index -q \
 		--ref-fa test/GRCh38.p14.allChr.fa \
 		test/gencode.v49.basic.annotation.sorted.gtf.gz 
 

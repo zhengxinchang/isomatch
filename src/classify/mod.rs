@@ -17,6 +17,7 @@ use crate::{
     },
     index::fasta::{FaType, FastaReader},
     traits::ArgValidate,
+    utils::greetings2,
 };
 
 pub mod class_code;
@@ -32,6 +33,7 @@ impl ArgValidate for ClassifyArgs {
 }
 
 pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
+    greetings2(&args);
     args.validate();
 
     // open output files
