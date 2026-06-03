@@ -1,24 +1,6 @@
 # isomatch  <img src="./img/logo.png" align="right" alt="" width=180 />
 
-
-
-
-
-Isomatch: evidence-based transcript merging and classification.
-
-Evidence-based merge:
-
-1. not only consider intron chain, but also consider the TSS/TES
-2. configurable splice junction wobble and TSS/TES threshold for merging,
-3. select representative transcripts based on third party evidence such as refTSS and PolyAsites
-
-Multi-classification annotation:
-
-1. provide SQANTI3 style classification code.
-2. for merged gtf from isomatch merge, not only report difference between reference and merged transcripts, but also report difference between the reference transcripts and the original transcripts.
-
-Large-scale processing:
-1. support thousands of GTF files
+isomatch is a Rust-based command-line tool for transcriptome merging and annotation, designed to efficiently merge and classify transcript models from multiple sources. It provides robust handling of splice junction variability, terminal site differences, and third-party evidence to produce high-quality merged annotations and structural classifications.
 
 # Subcommands and workflow
 
