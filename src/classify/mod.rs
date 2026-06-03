@@ -5,19 +5,22 @@ use std::{
 
 use anyhow::Result as AnyResult;
 use flate2::{Compression, write::GzEncoder};
-use log::info;
+use log::{error, info};
 use num_format::{Locale, ToFormattedString};
 
 use crate::{
-    ClassifyArgs,
+    ClassifyArgs, IndexArgs,
     classify::{
         classify_policy::{ClassifyRecord, update_group3_seq_context, update_group4_3rd_party},
         query_ptir::QueryPTIRManager,
         ref_ptir_manager::RefPTIRManager,
     },
-    index::fasta::{FaType, FastaReader},
+    index::{
+        fasta::{FaType, FastaReader},
+        run_index,
+    },
     traits::ArgValidate,
-    utils::greetings2,
+    utils::{check_index_ready, greetings2},
 };
 
 pub mod class_code;
@@ -35,6 +38,26 @@ impl ArgValidate for ClassifyArgs {
 pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
     greetings2(&args);
     args.validate();
+
+    info!("Loading 1 gtf(s)");
+    // auto indexing
+    info!(
+        "Checking input GTF indexes; missing/corrupted/outdated indexes will be created automatically."
+    );
+    for gtf in [&args.input, &args.ref_gtf] {
+        if !check_index_ready(gtf) {
+            info!("Indexing {}", gtf.display());
+            let mut index_args = IndexArgs {
+                input: gtf.clone(),
+                ref_fa: args.ref_fa.clone(),
+                seqfa: None,
+                out: None,
+                skip_missing_ref_chr: args.skip_missing_ref_chr,
+                quiet: true,
+            };
+            run_index(&mut index_args)?;
+        }
+    }
 
     // open output files
     let mut class_table_table = args.out.clone();

@@ -21,4 +21,7 @@ pub enum IndexError {
 
     #[error("Failed to read index. Reason: {reason}")]
     FailReadIndex { reason: String },
+
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
 }

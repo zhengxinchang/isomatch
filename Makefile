@@ -23,12 +23,12 @@ index3: build
 merge: build
 	/usr/bin/time -v target/release/isomatch merge \
 		-o test/merge.gtf.gz --terminal-refine both \
+				-r  test/GRCh38.p14.allChr.fa \
 		--guide-tss /ssd2/projects/isomatch-dev/evidence/human.grch38.tss.bed \
 		--guide-tes /ssd2/projects/isomatch-dev/evidence/human.grch38.tes.bed \
-		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf 
-# 		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz \
-# 		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz  \
-# 		test/gencode.v49.basic.annotation.sorted.gtf.gz \
+		test/isoseq_transcripts.sorted.filtered_lite.clean.gtf \
+		test/isoseq_transcripts.sorted.filtered_lite.clean.perturbed.smoke.gtf.gz  \
+ 		test/gencode.v49.basic.annotation.sorted.gtf.gz \
 
 INPUT := test/isoseq_transcripts.sorted.filtered_lite.clean.gtf
 N := 1000
@@ -47,6 +47,8 @@ merge2gffcompare: build
 merge3: build
 	/usr/bin/time -v target/release/isomatch merge \
 		-t none \
+		-r  test/GRCh38.p14.allChr.fa \
+		--skip-missing-ref-chr \
 		-o test/drna.merge.gtf.gz --splice-policy major -d 3 -a 3 -s 200 -e 200 \
 		test/hg002_ont_drna.isoquant.gtf.gz \
 

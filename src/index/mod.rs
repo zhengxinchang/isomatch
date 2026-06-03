@@ -362,11 +362,13 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
 
         let mut isoms_path = isomx_path.clone();
         isoms_path.set_extension("isoms");
-        let mut attr_builder =
-            attributes_index::AttrIndexBuilder::init(&isoms_path, next_written_tx_idx as usize)
-                .with_context(|| {
-                    format!("cannot init AttrIndexBuilder at {}", isoms_path.display())
-                })?;
+
+        let mut attr_builder = attributes_index::AttrIndexBuilder::init(
+            &isoms_path,
+            next_written_tx_idx as usize,
+            &md5,
+        )
+        .with_context(|| format!("cannot init AttrIndexBuilder at {}", isoms_path.display()))?;
 
         let gtf_lines = crate::utils::open_file_bufread(&args.input).with_context(|| {
             format!(
@@ -416,7 +418,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     isomx_info_writer.flush()?;
 
     if !args.quiet {
-        info!("Fnished!");
+        info!("Finished!");
     }
     Ok(())
 }

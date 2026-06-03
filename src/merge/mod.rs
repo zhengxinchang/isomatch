@@ -1,15 +1,19 @@
+use crate::IndexArgs;
 use crate::constants::ISOM_GTF_SCHEMA;
 use crate::core::ptir::PTIR;
 use crate::core::tx_base::TxBase;
 use crate::core::tx_strand::ISOMSTRAND;
 use crate::index::reader::ChromBlockReader;
+use crate::index::run_index;
 use crate::merge::grouped_ptirs::GroupedPTIR;
 use crate::merge::guide::GuideDb;
 use crate::merge::policy::MergePolicyUsed;
 use crate::merge::policy::merge_cluster;
+use crate::utils::check_index_ready;
 use crate::utils::greetings2;
 use crate::utils::print_json_block;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
+use log::error;
 use serde::Serialize;
 use std::io::BufWriter;
 use std::io::Write;
@@ -45,6 +49,27 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     args.validate();
     let n_inputs = args.inputs.len();
     let input_file_names = input_file_name_bytes(&args.inputs);
+    info!("Loading {n_inputs} gtf(s)");
+    // auto indexing
+    info!(
+        "Checking input GTF indexes; missing/corrupted/outdated indexes will be created automatically."
+    );
+
+    for gtf in &args.inputs {
+        if !check_index_ready(gtf) {
+            let mut index_args = IndexArgs {
+                input: gtf.clone(),
+                ref_fa: args.ref_fa.clone(),
+                seqfa: None,
+                out: None,
+                skip_missing_ref_chr: args.skip_missing_ref_chr,
+                quiet: true,
+            };
+            run_index(&mut index_args)
+                .with_context(|| format!("Can not index GTF: {}", gtf.display()))?;
+        }
+    }
+
     let mut stats = MergeStats {
         source_files: n_inputs as u32,
         ..MergeStats::default()
@@ -56,7 +81,6 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     let mut merge_info_path = args.out.clone();
     merge_info_path.add_extension("merged_info.json");
 
-    info!("Loading {n_inputs} gtf(s)");
     let mut fhs: Vec<IndexReader> = Vec::with_capacity(n_inputs);
     for (file_id, input_path) in args.inputs.iter().enumerate() {
         let mut index_path = input_path.clone();
@@ -215,7 +239,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     merge_info_writer.write(msg.as_bytes())?;
     merge_info_writer.flush()?;
 
-    info!("Fnished!");
+    info!("Finished!");
     Ok(())
 }
 

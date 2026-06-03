@@ -21,12 +21,13 @@ pub struct RawStringSpan {
 
 const MAGIC: [u8; 5] = *b"ISOMS";
 
-// magic(5) + version(1) + total_tx_n(4) + span_table_off(8) = 18
-const HEADER_SIZE: usize = 18;
+// magic(5) + version(1) + total_tx_n(4) + span_table_off(8) + md5 16 = 34
+const HEADER_SIZE: usize = 34;
 
 pub struct AttrIndexBuilder {
     magic: [u8; 5],
     version: u8,
+    md5: [u8; 16],
     total_tx_n: usize,
     current_tx_n: usize,
     blob_offset: usize, // current write cursor; starts at HEADER_SIZE, grows with each dump_attr
@@ -35,7 +36,11 @@ pub struct AttrIndexBuilder {
 }
 
 impl AttrIndexBuilder {
-    pub fn init<P: AsRef<Path>>(path: P, total_tx_n: usize) -> Result<Self, IndexError> {
+    pub fn init<P: AsRef<Path>>(
+        path: P,
+        total_tx_n: usize,
+        md5: &[u8; 16],
+    ) -> Result<Self, IndexError> {
         let file = File::create(path).map_err(|e| IndexError::FailReadIndex {
             reason: e.to_string(),
         })?;
@@ -48,6 +53,7 @@ impl AttrIndexBuilder {
         Ok(Self {
             magic: MAGIC,
             version: ISOMS_VERSION,
+            md5: *md5,
             total_tx_n,
             current_tx_n: 0,
             blob_offset: HEADER_SIZE,
@@ -100,6 +106,7 @@ impl AttrIndexBuilder {
         self.file.seek(SeekFrom::Start(0)).map_err(e)?;
         self.file.write_all(&self.magic).map_err(e)?;
         self.file.write_all(&[self.version]).map_err(e)?;
+        self.file.write_all(&self.md5).map_err(e)?;
         self.file
             .write_all(&(self.total_tx_n as u32).to_le_bytes())
             .map_err(e)?;
@@ -119,10 +126,11 @@ impl AttrIndexBuilder {
 }
 
 pub struct AttrIndexHeader {
-    _magic: [u8; 5],
-    _version: u8,
-    total_tx_n: u32,
-    span_table_off: u64,
+    pub magic: [u8; 5],
+    pub version: u8,
+    pub md5: [u8; 16],
+    pub total_tx_n: u32,
+    pub span_table_off: u64,
 }
 
 pub struct AttrIndexReader {
@@ -133,17 +141,7 @@ pub struct AttrIndexReader {
 }
 
 impl AttrIndexReader {
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, IndexError> {
-        // let e: fn(std::io::Error) -> IndexError = |err| IndexError::FailReadIndex {
-        //     reason: err.to_string(),
-        // };
-
-        let mut file = File::open(path).map_err(|e| IndexError::FailReadIndex {
-            reason: format!("Can not read AttrIndex file: {}", e),
-        })?;
-
-        // let mut header =
-
+    fn read_header(file: &mut File) -> Result<AttrIndexHeader, IndexError> {
         let mut magic = [0u8; 5];
         file.read_exact(&mut magic)
             .map_err(|e| IndexError::FailReadIndex {
@@ -165,8 +163,16 @@ impl AttrIndexReader {
                 "The isomx version ({}) is outdated, please rebuild the index.",
                 version[0]
             );
-            std::process::exit(1);
+            return Err(IndexError::FailReadIndex {
+                reason: format!("Index version does not match, please rebuild index"),
+            });
         }
+
+        let mut md5 = [0u8; 16];
+        file.read_exact(&mut md5)
+            .map_err(|e| IndexError::FailReadIndex {
+                reason: format!("Can not read version in AttrIndex file: {}", e),
+            })?;
 
         let mut buf4 = [0u8; 4];
         file.read_exact(&mut buf4)
@@ -182,14 +188,37 @@ impl AttrIndexReader {
             })?;
         let span_table_off = u64::from_le_bytes(buf8);
 
-        let header = AttrIndexHeader {
-            _magic: magic,
-            _version: version[0],
+        Ok(AttrIndexHeader {
+            magic,
+            version: version[0],
+            md5,
             total_tx_n,
             span_table_off,
-        };
+        })
+    }
 
+    pub fn load_header<P: AsRef<Path>>(path: P) -> Result<AttrIndexHeader, IndexError> {
+        let mut file = File::open(path).map_err(|e| IndexError::FailReadIndex {
+            reason: format!("Can not read AttrIndex file: {}", e),
+        })?;
+        Self::read_header(&mut file)
+    }
+
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, IndexError> {
+        let mut file = File::open(path).map_err(|e| IndexError::FailReadIndex {
+            reason: format!("Can not read AttrIndex file: {}", e),
+        })?;
+
+        let header = Self::read_header(&mut file)?;
         Ok(Self { file, header })
+    }
+
+    pub fn md5(&self) -> [u8; 16] {
+        self.header.md5
+    }
+
+    pub fn version(&self) -> u8 {
+        self.header.version
     }
 
     /// Returns the decompressed attr bytes for `tx_idx`, or `None` if not set.

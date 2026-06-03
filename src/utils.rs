@@ -8,7 +8,11 @@ use std::path::Path;
 use std::sync::LazyLock;
 use xxhash_rust::xxh3::xxh3_128;
 
-use crate::core::tx_strand::ISOMSTRAND;
+use crate::constants;
+use crate::{
+    core::tx_strand::ISOMSTRAND,
+    index::{attributes_index::AttrIndexReader, reader::IndexReader},
+};
 
 const BUFREADER_CAPACITY: usize = 128 * 1024;
 pub fn print_json_block<T: Serialize>(title: &str, msg: &T) {
@@ -106,19 +110,6 @@ pub fn complement(b: u8) -> u8 {
     }
 }
 
-// fn rev_comp(seq: &[u8]) -> Vec<u8> {
-//     seq.iter()
-//         .rev()
-//         .map(|&b| match b {
-//             b'A' | b'a' => b'T',
-//             b'T' | b't' => b'A',
-//             b'G' | b'g' => b'C',
-//             b'C' | b'c' => b'G',
-//             other => other,
-//         })
-//         .collect()
-// }
-
 fn upper_nuc(b: u8) -> u8 {
     match b {
         b'a' => b'A',
@@ -143,4 +134,53 @@ pub fn is_gzipped(p: &Path) -> bool {
         .and_then(|s| s.to_str())
         .map(|s| s.eq_ignore_ascii_case("gz"))
         .unwrap_or(false)
+}
+
+pub fn check_index_ready<P: AsRef<Path>>(gtf_path: P) -> bool {
+    let gtf_path = gtf_path.as_ref();
+
+    let Ok(metadata) = std::fs::metadata(gtf_path) else {
+        return false;
+    };
+
+    let mut isomx_path = gtf_path.to_path_buf();
+    isomx_path.add_extension("isomx");
+    let index_header = match IndexReader::load_header(isomx_path) {
+        Ok(header) => header,
+        Err(_) => return false,
+    };
+    if index_header.version != constants::ISOMX_VERSION
+        || index_header.gtf_file_size != metadata.len()
+    {
+        return false;
+    }
+
+    let mut isoms_path = gtf_path.to_path_buf();
+    isoms_path.add_extension("isoms");
+    let attr_header = match AttrIndexReader::load_header(isoms_path) {
+        Ok(header) => header,
+        Err(_) => return false,
+    };
+    if attr_header.version != constants::ISOMS_VERSION || attr_header.md5 != index_header.md5 {
+        return false;
+    }
+
+    let mut reader = match open_file_bufread(gtf_path) {
+        Ok(reader) => reader,
+        Err(_) => return false,
+    };
+    let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = match reader.read(&mut buf) {
+            Ok(n) => n,
+            Err(_) => return false,
+        };
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+
+    index_header.md5 == hasher.digest128().to_le_bytes()
 }

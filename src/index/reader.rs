@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{self, BufReader, Cursor, ErrorKind, Read, Seek, SeekFrom},
+    path::Path,
 };
 
 use log::{error, warn};
@@ -34,7 +35,13 @@ pub struct IndexReader {
 }
 
 impl IndexReader {
-    pub fn open(file: File, file_id: usize) -> io::Result<Self> {
+    pub fn load_header<P: AsRef<Path>>(path: P) -> Result<IndexHeader, IndexError> {
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
+        Ok(IndexHeader::decode_from(&mut reader, ())?)
+    }
+
+    pub fn open(file: File, file_id: usize) -> Result<IndexReader, IndexError> {
         let mut reader = BufReader::new(file);
         let header = IndexHeader::decode_from(&mut reader, ())?;
 
@@ -43,7 +50,9 @@ impl IndexReader {
                 "The isomx version ({}) is outdated, please rebuild the index.",
                 header.version
             );
-            std::process::exit(1);
+            return Err(IndexError::FailReadIndex {
+                reason: format!("Index version does not match, please rebuild index"),
+            });
         }
 
         let mut chroms = Vec::with_capacity(header.chrom_count as usize);
@@ -66,27 +75,22 @@ impl IndexReader {
             })? as usize;
 
             if chrom_idx >= chrom_names.len() {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!(
-                        "chrom_id {} exceeds declared chrom_count {}",
-                        entry.chrom_id, header.chrom_count
-                    ),
-                ));
+                return Err(IndexError::FailReadIndex {
+                    reason: "Chromosome names does not match chromosome ids".to_string(),
+                });
             }
 
             let start = entry.chrom_name_offset as usize;
             let end = start + entry.chrom_name_len as usize;
             if end > chrom_name_table.len() {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!(
+                return Err(IndexError::FailReadIndex {
+                    reason: format!(
                         "chrom name slice [{}..{}) exceeds name table length {}",
                         start,
                         end,
                         chrom_name_table.len()
                     ),
-                ));
+                });
             }
 
             let chrom_name = std::str::from_utf8(&chrom_name_table[start..end])
@@ -97,10 +101,9 @@ impl IndexReader {
                 .insert(chrom_name.clone(), entry.chrom_id)
                 .is_some()
             {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!("duplicate chromosome name in index: {}", chrom_name),
-                ));
+                return Err(IndexError::FailReadIndex {
+                    reason: format!("duplicate chromosome name in index: {}", chrom_name),
+                });
             }
 
             chrom_names[chrom_idx] = chrom_name;
@@ -115,10 +118,9 @@ impl IndexReader {
                 let len = u16::from_le_bytes(table[pos..pos + 2].try_into().unwrap()) as usize;
                 pos += 2;
                 if pos + len > table.len() {
-                    return Err(io::Error::new(
-                        ErrorKind::InvalidData,
-                        "missing seqid table entry exceeds table bounds",
-                    ));
+                    return Err(IndexError::FailReadIndex {
+                        reason: "missing seqid table entry exceeds table bounds".to_string(),
+                    });
                 }
                 let name = std::str::from_utf8(&table[pos..pos + len])
                     .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))?
@@ -227,6 +229,14 @@ impl IndexReader {
             }
         }
         Ok(map)
+    }
+
+    pub fn version(&self) -> u8 {
+        self.header.version
+    }
+
+    pub fn md5(&self) -> [u8; 16] {
+        self.header.md5
     }
 }
 

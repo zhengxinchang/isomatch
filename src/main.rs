@@ -62,7 +62,7 @@ pub struct IndexArgs {
     #[clap(
         short = 'o',
         long = "out",
-        help = "Output index path; defaults to <input>.isomx"
+        help = "Output index path; defaults to <input>.isomx and <input>.isoms"
     )]
     pub out: Option<PathBuf>,
 
@@ -85,6 +85,22 @@ pub struct IndexArgs {
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(about = "Merge indexed transcript sets into a union GTF")]
 pub struct MergeArgs {
+    #[clap(
+        short = 'r',
+        long = "ref-fa",
+        help_heading = "Auto Indexing",
+        help = "Reference FASTA"
+    )]
+    pub ref_fa: PathBuf,
+
+    #[clap(
+        long = "skip-missing-ref-chr",
+        action = ArgAction::SetTrue,
+        help_heading = "Auto Indexing",
+        help = "Skip transcripts on seqids absent from the reference FASTA"
+    )]
+    pub skip_missing_ref_chr: bool,
+
     #[clap(
         help_heading = "Input",
         help = "Indexed transcript sets to merge",
@@ -356,6 +372,14 @@ pub struct ClassifyArgs {
 
     #[clap(short = 'o', long = "out", help = "Output prefix")]
     pub out: PathBuf,
+
+    #[clap(
+        long = "skip-missing-ref-chr",
+        action = ArgAction::SetTrue,
+        help_heading = "Auto Indexing",
+        help = "Skip transcripts on seqids absent from the reference FASTA"
+    )]
+    pub skip_missing_ref_chr: bool,
 }
 
 fn main() {

@@ -8,7 +8,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{core::tx_strand::ISOMSTRAND, utils::open_file_bufread};
 use thiserror::Error;
 
-/// Scan the GTF once to collect ordered unique chrom names and compute a
+/// Scan the GTF once to collect sorted unique chrom names and compute a
 /// content hash (xxh3-128 of the decompressed bytes) and file size.
 pub fn profile_gtf<P: AsRef<Path>>(path: P) -> Result<(Vec<String>, [u8; 16], u64), GTFError> {
     let file_size = std::fs::metadata(path.as_ref())?.len();
@@ -16,9 +16,9 @@ pub fn profile_gtf<P: AsRef<Path>>(path: P) -> Result<(Vec<String>, [u8; 16], u6
     let mut bufreader = open_file_bufread(path)?;
     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
     let mut line = String::new();
-    let mut chrom_set: FxHashSet<String> = FxHashSet::default();
-    let mut chrom_names: Vec<String> = Vec::new();
-    let mut prev_chrom = String::new();
+    let mut transcript_chroms: FxHashSet<String> = FxHashSet::default();
+    let mut exon_chroms: FxHashSet<String> = FxHashSet::default();
+    let mut has_transcript = false;
     let mut line_no = 0usize;
 
     loop {
@@ -42,7 +42,7 @@ pub fn profile_gtf<P: AsRef<Path>>(path: P) -> Result<(Vec<String>, [u8; 16], u6
         cols.next(); // skip source
         let feature = cols.next().ok_or(GTFError::InvalidGTFFormat { line_no })?;
 
-        if feature != "transcript" {
+        if feature != "transcript" && feature != "exon" {
             line.clear();
             continue;
         }
@@ -52,19 +52,38 @@ pub fn profile_gtf<P: AsRef<Path>>(path: P) -> Result<(Vec<String>, [u8; 16], u6
             .parse::<u32>()
             .map_err(|_| GTFError::InvalidGTFFormat { line_no })?;
 
-        if !prev_chrom.is_empty() && chrom_name != prev_chrom {
-            if chrom_set.contains(&chrom_name) {
-                return Err(GTFError::UnsortedGTF { line: line });
-            }
+        if feature == "transcript" {
+            has_transcript = true;
+            transcript_chroms.insert(chrom_name);
+        } else {
+            exon_chroms.insert(chrom_name);
         }
-
-        if !chrom_set.contains(&chrom_name) {
-            chrom_set.insert(chrom_name.clone());
-            chrom_names.push(chrom_name.clone());
-        }
-        prev_chrom = chrom_name;
         line.clear();
     }
+
+    if !has_transcript {
+        return Err(GTFError::MissingTranscriptRecord);
+    }
+
+    if transcript_chroms != exon_chroms {
+        let mut transcript_only: Vec<String> = transcript_chroms
+            .difference(&exon_chroms)
+            .cloned()
+            .collect();
+        let mut exon_only: Vec<String> = exon_chroms
+            .difference(&transcript_chroms)
+            .cloned()
+            .collect();
+        transcript_only.sort();
+        exon_only.sort();
+        return Err(GTFError::TranscriptExonChromMismatch {
+            transcript_only,
+            exon_only,
+        });
+    }
+
+    let mut chrom_names: Vec<String> = transcript_chroms.into_iter().collect();
+    chrom_names.sort();
 
     let hash = hasher.digest128().to_le_bytes();
     Ok((chrom_names, hash, file_size))
@@ -192,28 +211,81 @@ impl TxStructure {
 }
 
 pub struct MyGTFReader {
-    pub bufreader: Box<dyn BufRead>,
-    pub current_tx_idx: u32,
-    pub current_chrom: Option<String>,
-    pub chrom_txs: FxHashMap<String, TxStructure>,
     pub ready_txs: VecDeque<TxStructure>,
-    pub current_line_no: usize,
 }
 
 impl MyGTFReader {
     pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        let mut bufreader = open_file_bufread(path)?;
+        let mut txs = FxHashMap::default();
+        let mut line = String::new();
+
+        loop {
+            line.clear();
+            if bufreader.read_line(&mut line)? == 0 {
+                break;
+            }
+
+            if line.starts_with('#') {
+                continue;
+            }
+
+            let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&line);
+            if feat != "exon" {
+                continue;
+            }
+
+            // validate the start and end coordinates of exons.
+            // in case of invalide record has same start and end
+            if start > end {
+                warn!(
+                    "Invalid GTF record with start > end, affected line: {}",
+                    line
+                );
+                continue;
+            }
+
+            Self::add_exon_to_tx_map(&mut txs, chrom, start, end, strand, tx_id, gene_id);
+        }
+
+        let mut ready_txs: Vec<TxStructure> = txs
+            .drain()
+            .map(|(_, mut tx)| {
+                tx.sort_exons();
+                tx
+            })
+            .collect();
+
+        ready_txs.sort_by(|a, b| {
+            (
+                a.chrom.as_str(),
+                a.start,
+                a.end,
+                a.strand.clone(),
+                a.tx_id.as_str(),
+                a.gene_id.as_str(),
+            )
+                .cmp(&(
+                    b.chrom.as_str(),
+                    b.start,
+                    b.end,
+                    b.strand.clone(),
+                    b.tx_id.as_str(),
+                    b.gene_id.as_str(),
+                ))
+        });
+
+        for (idx, tx) in ready_txs.iter_mut().enumerate() {
+            tx.set_gidx(idx as u32);
+        }
+
         Ok(Self {
-            bufreader: open_file_bufread(path)?,
-            current_tx_idx: 0,
-            current_chrom: None,
-            chrom_txs: FxHashMap::default(),
-            ready_txs: VecDeque::new(),
-            current_line_no: 0,
+            ready_txs: ready_txs.into(),
         })
     }
 
-    fn add_exon_to_current_chrom(
-        &mut self,
+    fn add_exon_to_tx_map(
+        txs: &mut FxHashMap<String, TxStructure>,
         chrom: String,
         start: u32,
         end: u32,
@@ -221,7 +293,7 @@ impl MyGTFReader {
         tx_id: String,
         gene_id: String,
     ) {
-        let tx = self.chrom_txs.entry(tx_id.clone()).or_insert_with(|| {
+        let tx = txs.entry(tx_id.clone()).or_insert_with(|| {
             let mut tx = TxStructure::default();
             tx.set_start(start);
             tx.set_end(end);
@@ -249,116 +321,8 @@ impl MyGTFReader {
         tx.add_exon((start, end));
     }
 
-    fn flush_current_chrom_tx_to_ready(&mut self) {
-        if self.chrom_txs.is_empty() {
-            self.current_chrom = None;
-            return;
-        }
-
-        let mut txs: Vec<TxStructure> = self
-            .chrom_txs
-            .drain()
-            .map(|(_, mut tx)| {
-                tx.sort_exons();
-                tx
-            })
-            .collect();
-
-        txs.sort_by(|a, b| {
-            (
-                a.start,
-                a.end,
-                a.strand.clone(),
-                a.tx_id.as_str(),
-                a.gene_id.as_str(),
-            )
-                .cmp(&(
-                    b.start,
-                    b.end,
-                    b.strand.clone(),
-                    b.tx_id.as_str(),
-                    b.gene_id.as_str(),
-                ))
-        });
-
-        for mut tx in txs {
-            tx.set_gidx(self.current_tx_idx);
-            self.current_tx_idx += 1;
-            self.ready_txs.push_back(tx);
-        }
-
-        self.current_chrom = None;
-    }
-
-    /// This function is designed to return multiple types of record
-    /// they are wrapped in GTFRecord enum
-    /// currently support
-    /// 1. TxStrcture, which have all exon structure of a transcript.
-    /// TxStrcture is constructed by aggregating all exon records share same transcript_id
-    ///
-    /// 2. TxAttr, which has attrbutes derived from transcript line in GTF file
-    /// TxAttr does not know if the GTF is generated from isomatch, it will return
-    /// the entire attr line anyways.
     pub fn next(&mut self) -> Result<Option<TxStructure>, GTFError> {
-        if let Some(tx) = self.ready_txs.pop_front() {
-            return Ok(Some(tx));
-        }
-
-        let mut line = String::new();
-        loop {
-            line.clear();
-            let n = match self.bufreader.read_line(&mut line) {
-                Ok(n) => {
-                    self.current_line_no += 1;
-                    n
-                }
-                Err(e) => return Err(e.into()),
-            };
-
-            if n == 0 {
-                self.flush_current_chrom_tx_to_ready();
-                return Ok(self.ready_txs.pop_front());
-            }
-
-            if line.starts_with('#') {
-                continue;
-            }
-
-            let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&line);
-
-            match feat.as_str() {
-                "exon" => {
-                    // validate the start and end coordinates of exons.
-                    // in case of invalide record has same start and end
-                    if start > end {
-                        warn!(
-                            "Invalid GTF record with start > end, affected line: {}",
-                            line
-                        );
-                        continue;
-                    }
-
-                    if let Some(current_chrom) = &self.current_chrom {
-                        if current_chrom != &chrom {
-                            self.flush_current_chrom_tx_to_ready();
-                        }
-                    }
-
-                    if self.current_chrom.is_none() {
-                        self.current_chrom = Some(chrom.clone());
-                    }
-
-                    self.add_exon_to_current_chrom(chrom, start, end, strand, tx_id, gene_id);
-
-                    if let Some(tx) = self.ready_txs.pop_front() {
-                        return Ok(Some(tx));
-                    }
-                }
-                _ => {
-                    continue;
-                }
-            }
-        }
+        Ok(self.ready_txs.pop_front())
     }
 }
 
@@ -448,11 +412,19 @@ fn extract_attr_value(attr: &str) -> String {
 
 #[derive(Error, Debug)]
 pub enum GTFError {
-    #[error("Unsorted GTF: {line}")]
-    UnsortedGTF { line: String },
-
     #[error("Invalid GTF format")]
     InvalidGTFFormat { line_no: usize },
+
+    #[error("GTF must contain at least one transcript record")]
+    MissingTranscriptRecord,
+
+    #[error(
+        "GTF transcript/exon chromosome mismatch. Transcript-only seqids: {transcript_only:?}; exon-only seqids: {exon_only:?}"
+    )]
+    TranscriptExonChromMismatch {
+        transcript_only: Vec<String>,
+        exon_only: Vec<String>,
+    },
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
