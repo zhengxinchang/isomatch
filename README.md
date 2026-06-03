@@ -1,6 +1,29 @@
 # isomatch  <img src="./img/logo.png" align="right" alt="" width=180 />
 
-isomatch is a Rust-based command-line tool for transcriptome merging and annotation, designed to efficiently merge and classify transcript models from multiple sources. It provides robust handling of splice junction variability, terminal site differences, and third-party evidence to produce high-quality merged annotations and structural classifications.
+**Why isomatch?**
+
+Merge
+
+- Supports configurable wobble for splice sites, TSS, and TES, making it well suited for long-read RNA-seq data.
+- Considers both junction structure and TSS/TES during transcript merging, rather than relying only on intron chains.
+- Uses splice-junction sequence context (GT-AG/GC-AG/AT-AC) to prioritize transcripts during merging.
+- Supports guide-based representative TSS/TES selection, enabling integration of high-confidence resources such as refTSS and PolyASite.
+- Fully tracks source transcripts after merging.
+
+Classification
+
+- Provides comprehensive transcript classification in seconds to minutes for millions of transcripts.
+- Supports SQANTI3-compatible structural classification categories.
+
+Scalability
+
+- Fast and memory-efficient.
+- Designed for population-scale analysis across thousands of samples (~10GB memory).
+
+Easy to use
+
+- No dependencies.
+- Download and run.
 
 # Subcommands and workflow
 
