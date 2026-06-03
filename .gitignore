@@ -41,3 +41,5 @@ flamegraph.svg
 src/**/*.md
 src/**/*.txt
 sqanti3/
+
+Makefile

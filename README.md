@@ -43,6 +43,9 @@ Typical workflow:
 
 ### Merge
 ```
+
+# download the isoamtch binary from the latest release page
+
 # optional pre-indexing; merge can auto-index the same inputs if needed
 isomatch index --ref-fa ref.fa sample1.gtf.gz
 isomatch index --ref-fa ref.fa sample2.gtf.gz

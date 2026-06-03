@@ -57,6 +57,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
 
     for gtf in &args.inputs {
         if !check_index_ready(gtf) {
+            info!("Re-indexing {}", gtf.display());
             let mut index_args = IndexArgs {
                 input: gtf.clone(),
                 ref_fa: args.ref_fa.clone(),

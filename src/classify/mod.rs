@@ -11,7 +11,7 @@ use num_format::{Locale, ToFormattedString};
 use crate::{
     ClassifyArgs, IndexArgs,
     classify::{
-        classify_policy::{ClassifyRecord, update_group3_seq_context, update_group4_3rd_party},
+        classify_policy::{ClassifyRecord, update_group3_seq_context, update_group4_regions},
         query_ptir::QueryPTIRManager,
         ref_ptir_manager::RefPTIRManager,
     },
@@ -19,6 +19,7 @@ use crate::{
         fasta::{FaType, FastaReader},
         run_index,
     },
+    merge::guide::GuideDb,
     traits::ArgValidate,
     utils::{check_index_ready, greetings2},
 };
@@ -46,7 +47,7 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
     );
     for gtf in [&args.input, &args.ref_gtf] {
         if !check_index_ready(gtf) {
-            info!("Indexing {}", gtf.display());
+            info!("Re-indexing {}", gtf.display());
             let mut index_args = IndexArgs {
                 input: gtf.clone(),
                 ref_fa: args.ref_fa.clone(),
@@ -60,13 +61,13 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
     }
 
     // open output files
-    let mut class_table_table = args.out.clone();
-    class_table_table.add_extension("classification.txt.gz");
+    let mut class_table_path = args.out.clone();
+    class_table_path.add_extension("classification.txt.gz");
 
-    let mut class_table_table_writer = File::create(class_table_table)
+    let mut class_table_writer = File::create(&class_table_path)
         .map(|f| BufWriter::new(GzEncoder::new(f, Compression::default())))?;
 
-    class_table_header(&mut class_table_table_writer)?;
+    class_table_header(&mut class_table_writer)?;
 
     info!("Loading Reference GTF");
 
@@ -74,6 +75,24 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
 
     info!("Loading Reference FASTA");
     let mut fa_reader = FastaReader::open(&args.ref_fa, FaType::Ref)?;
+
+    let reftss_db = match &args.guide_tss {
+        Some(path) => Some(GuideDb::from_bed_path(
+            path,
+            crate::merge::guide::GuideBEDType::Tss,
+            &args.chrmap.as_ref(),
+        )?),
+        None => None,
+    };
+
+    let reftes_db = match &args.guide_tes {
+        Some(path) => Some(GuideDb::from_bed_path(
+            path,
+            crate::merge::guide::GuideBEDType::Tes,
+            &args.chrmap.as_ref(),
+        )?),
+        None => None,
+    };
 
     info!("Loading Query GTF");
 
@@ -107,10 +126,21 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
 
         update_group3_seq_context(&mut best_class_record, &query_ptir, &mut fa_reader, &args);
 
-        update_group4_3rd_party(&mut best_class_record, &query_ptir, None, None, &args);
+        update_group4_regions(
+            &mut best_class_record,
+            &query_ptir,
+            &reftss_db,
+            &reftes_db,
+            &args,
+        );
 
-        best_class_record.write_to_file(&mut class_table_table_writer)?;
+        best_class_record.write_to_file(&mut class_table_writer)?;
     }
+
+    info!(
+        "classification file saved to: {}",
+        class_table_path.display()
+    );
 
     info!("Finished!");
     Ok(())

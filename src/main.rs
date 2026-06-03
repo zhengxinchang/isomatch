@@ -332,22 +332,71 @@ pub struct MergeArgs {
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
-#[clap(about = "Annotate query transcripts with a reference annotation
-")]
+#[clap(about = "Classify query transcripts with a reference annotation GTF")]
 pub struct ClassifyArgs {
-    #[clap(help = "Query GTF")]
+    #[clap(help_heading = "Input", help = "Query GTF")]
     pub input: PathBuf,
 
-    #[clap(short = 'r', long = "ref-gtf", help = "Reference annotation GTF")]
+    #[clap(
+        short = 'g',
+        long = "ref-gtf",
+        help_heading = "Reference data",
+        help = "Reference annotation GTF"
+    )]
     pub ref_gtf: PathBuf,
 
-    // #[clap(short = 'c', long = "cmp-gtf", help = "Query GTF for comparison")]
-    // pub cmp_gtf: PathBuf,
-    #[clap(short = 's', long = "ref-fa", help = "Reference FASTA")]
+    #[clap(
+        short = 'r',
+        long = "ref-fa",
+        help_heading = "Reference data",
+        help = "Reference FASTA"
+    )]
     pub ref_fa: PathBuf,
 
     #[clap(
+        short = 's',
+        long = "guide-tss",
+        help_heading = "Reference data",
+        help = "Reference TSS regions in bed format"
+    )]
+    pub guide_tss: Option<PathBuf>,
+
+    #[clap(
+        long = "chrmap",
+        help_heading = "Reference data",
+        help = "Chromosome name map (UCSC -> Ensembl); use when inputs lack chr prefixes"
+    )]
+    pub chrmap: Option<PathBuf>,
+
+    #[clap(
+        short = 'e',
+        long = "guide-tes",
+        help_heading = "Reference data",
+        help = "Reference TES regions in bed format"
+    )]
+    pub guide_tes: Option<PathBuf>,
+
+    #[clap(
+        long = "guide-tss-flank",
+        help_heading = "Reference data",
+        help = "TSS evidence search flank in bp; used only with --guide-tss",
+        default_value_t = 10000,
+        value_name = "BP"
+    )]
+    pub guide_tss_flank: u32,
+
+    #[clap(
+        long = "guide-tes-flank",
+        help_heading = "Reference data",
+        help = "TES evidence search flank in bp; used only with --guide-tes",
+        default_value_t = 10000,
+        value_name = "BP"
+    )]
+    pub guide_tes_flank: u32,
+
+    #[clap(
         long = "fsm-end-match-bp",
+        help_heading = "Parameters",
         help = "FSM subcategory threshold for TSS/TES matching in bp; applies to FSM and ISM subcategories",
         default_value_t = 50,
         value_name = "BP"
@@ -356,7 +405,8 @@ pub struct ClassifyArgs {
 
     #[clap(
         long = "downstream-len",
-        help = "Downstream sequence length for SQANTI3 QC",
+        help = "Downstream sequence length for QC",
+        help_heading = "Parameters",
         default_value_t = 20,
         value_name = "BP"
     )]
@@ -364,13 +414,19 @@ pub struct ClassifyArgs {
 
     #[clap(
         long = "motif-search-window",
+        help_heading = "Parameters",
         help = "Window size for searching polyA motifs downstream of TES in bp; applies to SQANTI3-style motif classification",
         default_value_t = 50,
         value_name = "BP"
     )]
     pub motif_search_window: usize,
 
-    #[clap(short = 'o', long = "out", help = "Output prefix")]
+    #[clap(
+        short = 'o',
+        long = "out",
+        help_heading = "Output",
+        help = "Output prefix"
+    )]
     pub out: PathBuf,
 
     #[clap(
@@ -402,15 +458,10 @@ fn main() {
                 error!("{}", e);
                 std::process::exit(1);
             }
-        } // Cli {
-        //     command: Commands::Bench(args),
-        // } => {
-        //     greetings2(&args);
-        // }
+        }
         Cli {
             command: Commands::Classify(args),
         } => {
-            warn!("Classify command is on beta stage");
             if let Err(e) = run_classify(args) {
                 error!("{}", e);
                 std::process::exit(1);

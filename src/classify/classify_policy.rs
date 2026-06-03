@@ -866,12 +866,12 @@ pub fn update_group3_seq_context(
 }
 
 // third parity regions
-pub fn update_group4_3rd_party(
+pub fn update_group4_regions(
     class: &mut ClassifyRecord,
     query_ptir: &QueryPTIR,
-    ref_tss: Option<&GuideDb>,
-    ref_tes: Option<&GuideDb>,
-    _args: &ClassifyArgs,
+    ref_tss: &Option<GuideDb>,
+    ref_tes: &Option<GuideDb>,
+    args: &ClassifyArgs,
 ) {
     let chr = &query_ptir.chr_name;
     let strand = *query_ptir.strand();
@@ -882,7 +882,7 @@ pub fn update_group4_3rd_party(
         // CAGE evidence is evaluated around the query TSS.
         class.within_cage_peak = Some(!cage_db.query_overlaps(chr, strand, tss).is_empty());
         class.dist_to_cage_peak = cage_db
-            .query_overlaps_with_flank(chr, &strand, tss, 10_000)
+            .query_overlaps_with_flank(chr, &strand, tss, args.guide_tss_flank)
             .into_iter()
             .min_by_key(|iv| {
                 let mid = (iv.start as u64 + iv.end as u64) / 2;
@@ -903,7 +903,7 @@ pub fn update_group4_3rd_party(
         // PolyA peak evidence is evaluated around the query TES/TTS.
         class.within_poly_a_peak = Some(!polya_db.query_overlaps(chr, strand, tes).is_empty());
         class.dist_to_poly_a_site = polya_db
-            .query_overlaps_with_flank(chr, &strand, tes, 10_000)
+            .query_overlaps_with_flank(chr, &strand, tes, args.guide_tes_flank)
             .into_iter()
             .min_by_key(|iv| {
                 let mid = (iv.start as u64 + iv.end as u64) / 2;
