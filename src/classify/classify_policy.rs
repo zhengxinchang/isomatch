@@ -451,7 +451,11 @@ impl ClassifyRecord {
                     ClassCode::NIC(SubNIC::CombinationOfKnownSpliceSites)
                 };
             } else {
-                self.cc = ClassCode::NNC(SubNNC::AtLeastOneNovelSpliceSite);
+                self.cc = if self.has_intron_retention_against_catalog {
+                    ClassCode::NNC(SubNNC::IntronRetention)
+                } else {
+                    ClassCode::NNC(SubNNC::AtLeastOneNovelSpliceSite)
+                };
             }
         } else if genes.len() > 1 {
             // With multiple associated genes,

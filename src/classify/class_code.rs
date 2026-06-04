@@ -56,6 +56,7 @@ pub enum SubNIC {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SubNNC {
     AtLeastOneNovelSpliceSite,
+    IntronRetention,
 }
 
 impl ClassCode {
@@ -101,6 +102,7 @@ impl ClassCode {
             Self::NIC(SubNIC::MonoExonByIntronRetention) => "mono-exon_by_intron_retention",
 
             Self::NNC(SubNNC::AtLeastOneNovelSpliceSite) => "at_least_one_novel_splicesite",
+            Self::NNC(SubNNC::IntronRetention) => "intron_retention",
 
             Self::Fusion
             | Self::Antisense

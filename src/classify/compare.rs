@@ -60,7 +60,7 @@ pub fn find_consecutive_junction_chain<T: PartialEq>(
         .position(|window| window == query)
 }
 
-/// generate classify junction type 
+/// generate classify junction type
 pub fn classify_junction_chain(query: &QueryPTIR, reference: &RefPTIR) -> JunctionMatch {
     let query_exons = query.exons_vec();
     let ref_exons = reference.exons_vec();
