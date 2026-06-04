@@ -120,6 +120,9 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     let mut merge_info_path = args.out.clone();
     merge_info_path.add_extension("merged_info.json");
 
+    let mut present_absent_path = args.out.clone();
+    present_absent_path.add_extension("present_absent.tsv.gz");
+
     let mut fhs: Vec<IndexReader> = Vec::with_capacity(n_inputs);
     for (file_id, input_path) in args.inputs.iter().enumerate() {
         let mut index_path = input_path.clone();
@@ -179,6 +182,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     let f = File::create(&gtf_out_path)?;
     let mut bufwriter: Box<dyn Write> =
         Box::new(BufWriter::new(GzEncoder::new(f, Compression::default())));
+    add_output_header(&mut bufwriter, &args)?;
 
     let track_out_path = PathBuf::from(format!("{}.track.tsv.gz", args.out.display()));
     let track_f = File::create(&track_out_path)?;
@@ -191,7 +195,18 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         "merged_tx_id\tmerged_gene_id\tmerged_start\tmerged_end\tmerged_strand\tmerged_exon_num\tjunction_policy\ttss_policy\ttes_policy\tsrc_tx_count_in_merged_group\tsrc_tx_id\tsrc_gene_id\ttotal_donor_diff\ttotal_acceptor_diff\texon_diff\tsrc_file_name"
     )?;
 
-    add_output_header(&mut bufwriter, &args)?;
+    // init present_absent writer
+    let f = File::create(&present_absent_path)?;
+    let mut present_absent_writer: Box<BufWriter<GzEncoder<File>>> =
+        Box::new(BufWriter::new(GzEncoder::new(f, Compression::default())));
+    present_absent_writer.write_all(
+        b"merged_tx_id\tmerged_gene_id\tmerged_exon_num\tsrc_tx_count_in_merged_group",
+    )?;
+    for input_file_name in &input_file_names {
+        present_absent_writer.write_all(b"\t")?;
+        present_absent_writer.write_all(input_file_name)?;
+    }
+    present_absent_writer.write_all(b"\n")?;
 
     // get chromsome names and get chromblockreader from all indexxreader, for each chromsome do:
     let mut global_scluster_id = 0u32;
@@ -236,6 +251,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
                 &input_file_names,
                 bufwriter.as_mut(),
                 track_bufwriter.as_mut(),
+                present_absent_writer.as_mut(),
                 &guide_tss_index,
                 &guide_tes_index,
             )?;
@@ -255,6 +271,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             &input_file_names,
             bufwriter.as_mut(),
             track_bufwriter.as_mut(),
+            present_absent_writer.as_mut(),
             &guide_tss_index,
             &guide_tes_index,
         )?;
@@ -266,10 +283,17 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     drop(bufwriter);
     track_bufwriter.flush()?;
     drop(track_bufwriter);
+    present_absent_writer.flush()?;
+    drop(present_absent_writer);
+
     stats.finalize();
     print_json_block("Merge summary", &stats);
-    info!("Output file saved at: {}", gtf_out_path.to_string_lossy());
-    info!("Track file saved at: {}", track_out_path.to_string_lossy());
+    info!("Output file saved to: {}", gtf_out_path.to_string_lossy());
+    info!("Track file saved to: {}", track_out_path.to_string_lossy());
+    info!(
+        "Present/absent matrix saved to: {}",
+        present_absent_path.to_string_lossy()
+    );
 
     let mut merge_info_writer = File::create(&merge_info_path)?;
 
@@ -292,6 +316,7 @@ pub fn process_super_cluster(
     input_file_names: &[Vec<u8>],
     bufwriter: &mut dyn Write,
     track_bufwriter: &mut dyn Write,
+    present_absent_writer: &mut dyn Write,
     guide_tss: &Option<GuideDb>,
     guide_tes: &Option<GuideDb>,
 ) -> Result<(), MergeError> {
@@ -338,6 +363,7 @@ pub fn process_super_cluster(
                 super_cluster,
                 bufwriter,
                 track_bufwriter,
+                present_absent_writer,
                 input_file_names,
             )?;
         }
@@ -492,7 +518,7 @@ pub struct MergeStats {
     pub tes_guide_cnt: u32,
     pub tes_guide_pct: f64,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub merged_tx_by_source_cnt: BTreeMap<u32, u32>,
+    pub source_tx_cnt_per_merged_tx: BTreeMap<u32, u32>,
 }
 
 impl MergeStats {
@@ -518,7 +544,7 @@ impl MergeStats {
         }
 
         *self
-            .merged_tx_by_source_cnt
+            .source_tx_cnt_per_merged_tx
             .entry(grpptir.total_count())
             .or_insert(0) += 1;
     }

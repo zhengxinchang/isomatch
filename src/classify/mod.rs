@@ -303,12 +303,12 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
     classify_info_writer.flush()?;
 
     info!(
-        "Classification file has been saved to: {}",
+        "Classification file saved to: {}",
         class_table_path.display()
     );
-    info!("Annotated GTF has been saved to: {}", gtf_path.display());
+    info!("Annotated GTF saved to: {}", gtf_path.display());
     info!(
-        "Classify summary has been saved to: {}",
+        "Classify summary saved to: {}",
         classify_info_path.display()
     );
 

@@ -9,6 +9,7 @@ use crate::{
         policy::{GuideResolution, MergePolicyArg, MergePolicyUsed},
     },
 };
+use ahash::HashSet;
 use rustc_hash::FxHashMap;
 
 #[derive(Clone, Debug)]
@@ -473,6 +474,7 @@ impl GroupedPTIR {
         super_cluster: &[PTIR],
         gtf_bufwriter: &mut dyn Write,
         track_bufwriter: &mut dyn Write,
+        present_absent_writer: &mut dyn Write,
         input_file_names: &[Vec<u8>],
     ) -> Result<(), MergeError> {
         debug_assert!(
@@ -656,6 +658,24 @@ impl GroupedPTIR {
             track_bufwriter.write_all(src_file_name)?;
             track_bufwriter.write_all(b"\n")?;
         }
+
+        let positive_sample_idxs: HashSet<usize> =
+            src_records.iter().map(|r| r.ptir.source_file_id).collect();
+
+        write!(
+            present_absent_writer,
+            "{}\t{}\t{}\t{}",
+            tx_id, gene_id, isom_exons, total_src_count
+        )?;
+        for idx in 0..input_file_names.len() {
+            if positive_sample_idxs.contains(&idx) {
+                present_absent_writer.write_all(b"\t1")?;
+            } else {
+                present_absent_writer.write_all(b"\t0")?;
+            }
+        }
+
+        present_absent_writer.write_all(b"\n")?;
 
         Ok(())
     }

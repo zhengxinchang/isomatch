@@ -60,10 +60,15 @@ pub fn find_consecutive_junction_chain<T: PartialEq>(
         .position(|window| window == query)
 }
 
+/// generate classify junction type 
 pub fn classify_junction_chain(query: &QueryPTIR, reference: &RefPTIR) -> JunctionMatch {
     let query_exons = query.exons_vec();
     let ref_exons = reference.exons_vec();
 
+    // defensive code
+    // here the query and ref already multiple exon and same strand
+    // if query is mono exon
+    // only ExonOverlap or Nomatch is valid
     let Some(q_junctions) = query.junction_vec().as_deref() else {
         return if exon_overlap_bases(&query_exons, &ref_exons) > 0 {
             JunctionMatch::ExonOverlap
@@ -71,6 +76,11 @@ pub fn classify_junction_chain(query: &QueryPTIR, reference: &RefPTIR) -> Juncti
             JunctionMatch::NoMatch
         };
     };
+
+    // defensive code
+    // here the query and ref already multiple exon and same strand
+    // if ref is mono exon
+    // only ExonOverlap or Nomatch is valid
     let Some(r_junctions) = reference.junction_vec().as_deref() else {
         return if exon_overlap_bases(&query_exons, &ref_exons) > 0 {
             JunctionMatch::ExonOverlap

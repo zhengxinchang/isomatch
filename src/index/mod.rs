@@ -337,71 +337,66 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     // isom_src_cache_builder.finalize()?;
     builder.finalize()?;
     stats.finalize();
-    if !args.quiet {
-        info!("Index written to {:?}", isomx_path);
-    }
+
     // second pass to build the sidecar file isoms
 
-    {
-        use std::io::BufRead;
-        if !args.quiet {
-            info!("Profiling attributes sidecar file");
-        }
-        let index_file = File::open(&isomx_path).with_context(|| {
-            format!(
-                "cannot reopen index for second pass: {}",
-                isomx_path.display()
-            )
-        })?;
-        let mut index_reader = reader::IndexReader::open(index_file, 0)
-            .with_context(|| "cannot open IndexReader for second pass")?;
-        let txid_index = index_reader
-            .build_txid_index()
-            .with_context(|| "cannot build txid index")?;
-
-        let mut isoms_path = isomx_path.clone();
-        isoms_path.set_extension("isoms");
-
-        let mut attr_builder = attributes_index::AttrIndexBuilder::init(
-            &isoms_path,
-            next_written_tx_idx as usize,
-            &md5,
+    use std::io::BufRead;
+    if !args.quiet {
+        info!("Profiling attributes sidecar file");
+    }
+    let index_file = File::open(&isomx_path).with_context(|| {
+        format!(
+            "cannot reopen index for second pass: {}",
+            isomx_path.display()
         )
-        .with_context(|| format!("cannot init AttrIndexBuilder at {}", isoms_path.display()))?;
+    })?;
+    let mut index_reader = reader::IndexReader::open(index_file, 0)
+        .with_context(|| "cannot open IndexReader for second pass")?;
+    let txid_index = index_reader
+        .build_txid_index()
+        .with_context(|| "cannot build txid index")?;
 
-        let gtf_lines = crate::utils::open_file_bufread(&args.input).with_context(|| {
-            format!(
-                "cannot reopen GTF for second pass: {}",
-                args.input.display()
-            )
-        })?;
-        for line in gtf_lines.lines() {
-            let line = line.with_context(|| "error reading GTF line in second pass")?;
-            if line.starts_with('#') {
-                continue;
-            }
-            let fields: Vec<&str> = line.splitn(9, '\t').collect();
-            if fields.len() < 9 || fields[2] != "transcript" {
-                continue;
-            }
-            let attr_str = fields[8];
-            let Some(tx_id) = parse_gtf_attr_value(attr_str, "transcript_id") else {
-                continue;
-            };
-            let Some(&tx_gidx) = txid_index.get(&tx_id) else {
-                continue; // filtered out (e.g. missing ref seqid)
-            };
-            attr_builder
-                .dump_attr(attr_str.as_bytes().to_vec(), tx_gidx)
-                .with_context(|| format!("dump_attr failed for {}", tx_id))?;
+    let mut isoms_path = isomx_path.clone();
+    isoms_path.set_extension("isoms");
+
+    let mut attr_builder =
+        attributes_index::AttrIndexBuilder::init(&isoms_path, next_written_tx_idx as usize, &md5)
+            .with_context(|| format!("cannot init AttrIndexBuilder at {}", isoms_path.display()))?;
+
+    let gtf_lines = crate::utils::open_file_bufread(&args.input).with_context(|| {
+        format!(
+            "cannot reopen GTF for second pass: {}",
+            args.input.display()
+        )
+    })?;
+    for line in gtf_lines.lines() {
+        let line = line.with_context(|| "error reading GTF line in second pass")?;
+        if line.starts_with('#') {
+            continue;
         }
-
+        let fields: Vec<&str> = line.splitn(9, '\t').collect();
+        if fields.len() < 9 || fields[2] != "transcript" {
+            continue;
+        }
+        let attr_str = fields[8];
+        let Some(tx_id) = parse_gtf_attr_value(attr_str, "transcript_id") else {
+            continue;
+        };
+        let Some(&tx_gidx) = txid_index.get(&tx_id) else {
+            continue; // filtered out (e.g. missing ref seqid)
+        };
         attr_builder
-            .finish()
-            .with_context(|| format!("cannot finalize isoms at {}", isoms_path.display()))?;
-        if !args.quiet {
-            info!("Sidecar isoms written to {:?}", isoms_path);
-        }
+            .dump_attr(attr_str.as_bytes().to_vec(), tx_gidx)
+            .with_context(|| format!("dump_attr failed for {}", tx_id))?;
+    }
+
+    attr_builder
+        .finish()
+        .with_context(|| format!("cannot finalize isoms at {}", isoms_path.display()))?;
+
+    if !args.quiet {
+        info!("Index isomx saved to {:?}", isomx_path);
+        info!("Sidecar isoms saved to {:?}", isoms_path);
     }
 
     let mut isomx_info_path = isomx_path.clone();

@@ -474,6 +474,49 @@ pub struct ClassifyArgs {
     pub skip_missing_ref_chr: bool,
 }
 
+// for comparison two GTFs and report F1 etc..
+#[derive(Parser, Debug, Serialize, Clone)]
+#[clap(
+    about = "compare input GTF with base line GTF and report comparison metrics
+"
+)]
+pub struct BenchArgs {
+    #[clap(help_heading = "Input", help = "Compared GTF")]
+    pub input: PathBuf,
+
+    #[clap(
+        short = 'o',
+        long = "out",
+        help_heading = "Output",
+        help = "Output prefix"
+    )]
+    pub out: PathBuf,
+
+    #[clap(
+        short = 'b',
+        long = "base-gtf",
+        help_heading = "Baseline",
+        help = "Baseline GTF"
+    )]
+    pub ref_gtf: PathBuf,
+
+    #[clap(
+        short = 'r',
+        long = "ref-fa",
+        help_heading = "Auto Indexing",
+        help = "Reference FASTA"
+    )]
+    pub ref_fa: PathBuf,
+
+    #[clap(
+        long = "skip-missing-ref-chr",
+        action = ArgAction::SetTrue,
+        help_heading = "Auto Indexing",
+        help = "Skip transcripts on seqids absent from the reference FASTA"
+    )]
+    pub skip_missing_ref_chr: bool,
+}
+
 fn main() {
     // set env logger level to info by default, can be overridden by RUST_LOG env var
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();

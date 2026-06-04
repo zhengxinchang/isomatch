@@ -767,6 +767,8 @@ fn find_primary_hit(
     (Some(primary), associated_hits)
 }
 
+/// generate the preclass
+/// in this stpe the query and ref have same strand
 fn classify_against_ref(query: &QueryPTIR, reference: &RefPTIR, args: &ClassifyArgs) -> PreClass {
     let q_mono = query.n_exons() == 1;
     let r_mono = reference.n_exons() == 1;
@@ -807,7 +809,7 @@ fn classify_against_ref(query: &QueryPTIR, reference: &RefPTIR, args: &ClassifyA
         };
     }
 
-    // Multi-exon query versus multi-exon reference: classify by ordered junction chain.
+    // query and ref: same strand and both multiple exon
     match classify_junction_chain(query, reference) {
         JunctionMatch::Exact => {
             let (diff_tss, diff_tes) = same_strand_transcript_space_tss_tes_diffs(query, reference);
