@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result as AnyResult;
 use flate2::{Compression, write::GzEncoder};
-use log::info;
+use log::{error, info};
 use num_format::{Locale, ToFormattedString};
 use serde::Serialize;
 
@@ -23,7 +23,7 @@ use crate::{
     },
     merge::guide::GuideDb,
     traits::ArgValidate,
-    utils::{check_index_ready, greetings2, print_json_block},
+    utils::{check_index_ready, greetings2, print_json_block, require_file},
 };
 
 pub mod class_code;
@@ -129,7 +129,50 @@ impl ClassifyStats {
 }
 
 impl ArgValidate for ClassifyArgs {
-    fn validate(&self) {}
+    fn validate(&self) {
+        let mut error_msg = String::new();
+        let mut has_error = false;
+
+        require_file("Input GTF", &self.input, &mut error_msg, &mut has_error);
+        require_file(
+            "Reference GTF",
+            &self.ref_gtf,
+            &mut error_msg,
+            &mut has_error,
+        );
+        require_file(
+            "Reference FASTA",
+            &self.ref_fa,
+            &mut error_msg,
+            &mut has_error,
+        );
+
+        let mut ref_fai = self.ref_fa.clone();
+        ref_fai.add_extension("fai");
+        require_file(
+            "Reference FASTA index",
+            &ref_fai,
+            &mut error_msg,
+            &mut has_error,
+        );
+
+        if let Some(guide_tss) = &self.guide_tss {
+            require_file("TSS BED", guide_tss, &mut error_msg, &mut has_error);
+        }
+
+        if let Some(guide_tes) = &self.guide_tes {
+            require_file("TES BED", guide_tes, &mut error_msg, &mut has_error);
+        }
+
+        if let Some(chrmap) = &self.chrmap {
+            require_file("Chromosome map", chrmap, &mut error_msg, &mut has_error);
+        }
+
+        if has_error {
+            error!("Error validating arguments: {}", error_msg);
+            std::process::exit(1);
+        }
+    }
 }
 
 pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {

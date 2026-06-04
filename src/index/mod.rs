@@ -11,7 +11,7 @@ use crate::{
     // gtf::{self, profile_gtf},
     index::format::ChromBlockBuilder,
     traits::ArgValidate,
-    utils::{greetings2, print_json_block},
+    utils::{greetings2, print_json_block, require_file},
 };
 pub use anyhow::Result as AnyResult;
 use fasta::FastaReader;
@@ -132,54 +132,53 @@ impl IndexStats {
 
 impl ArgValidate for IndexArgs {
     fn validate(&self) {
-        let mut error_msg = "".to_string();
+        let mut error_msg = String::new();
         let mut has_error = false;
 
-        if !self.input.exists() {
-            error_msg.push_str(&format!(
-                "\nInput GTF file does not exist: {:?}",
-                self.input
-            ));
-            has_error = true;
-        }
-
-        if !self.ref_fa.exists() {
-            error_msg.push_str(&format!(
-                "\nReference FASTA file does not exist: {:?}",
-                self.ref_fa
-            ));
-            has_error = true;
-        }
+        require_file(
+            "Input GTF file",
+            &self.input,
+            &mut error_msg,
+            &mut has_error,
+        );
+        require_file(
+            "Reference FASTA file",
+            &self.ref_fa,
+            &mut error_msg,
+            &mut has_error,
+        );
 
         let mut fai1 = self.ref_fa.clone();
         fai1.add_extension("fai");
-        if !fai1.exists() {
+        if !require_file(
+            "Reference FASTA index file",
+            &fai1,
+            &mut error_msg,
+            &mut has_error,
+        ) && !fai1.exists()
+        {
             error_msg.push_str(&format!(
-                "\nReference FASTA index file does not exist: {:?}, use ' samtools faidx {} ' to create one.",
-                fai1,
+                ", use ' samtools faidx {} ' to create one.",
                 self.ref_fa.display()
             ));
-            has_error = true;
         }
 
         if let Some(seqfa) = &self.seqfa {
-            if !seqfa.exists() {
-                error_msg.push_str(&format!(
-                    "\nSequence FASTA file does not exist: {:?}",
-                    seqfa
-                ));
-                has_error = true;
-            }
+            require_file("Sequence FASTA file", seqfa, &mut error_msg, &mut has_error);
 
             let mut seqfai1 = seqfa.clone();
             seqfai1.add_extension("fai");
-            if !seqfai1.exists() {
+            if !require_file(
+                "Sequence FASTA index file",
+                &seqfai1,
+                &mut error_msg,
+                &mut has_error,
+            ) && !seqfai1.exists()
+            {
                 error_msg.push_str(&format!(
-                    "\nSequence FASTA index for {:?} does not exist, use ' samtools faidx {} ' to create one.",
-                    seqfai1,
+                    ", use ' samtools faidx {} ' to create one.",
                     seqfa.display()
                 ));
-                has_error = true;
             }
         }
 

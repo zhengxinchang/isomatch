@@ -26,6 +26,27 @@ pub fn greetings2<T: Serialize>(msg: &T) {
     print_json_block("Parsed arguments", msg);
 }
 
+pub fn require_file(
+    label: &str,
+    path: &Path,
+    error_msg: &mut String,
+    has_error: &mut bool,
+) -> bool {
+    if !path.exists() {
+        error_msg.push_str(&format!("\n{} does not exist: {:?}", label, path));
+        *has_error = true;
+        return false;
+    }
+
+    if !path.is_file() {
+        error_msg.push_str(&format!("\n{} is not a file: {:?}", label, path));
+        *has_error = true;
+        return false;
+    }
+
+    true
+}
+
 pub fn checksum_file(path: &Path) -> std::io::Result<([u8; 16], u64)> {
     let metadata = std::fs::metadata(path)?;
     let size = metadata.len();
