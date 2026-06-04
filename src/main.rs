@@ -70,14 +70,19 @@ pub enum Commands {
 
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
-    about = "Build an indexed transcript set from a GTF and reference FASTA.
+    about = "Build an indexed transcript set from a GTF and matched reference FASTA.
 "
 )]
 pub struct IndexArgs {
-    #[clap(help = "Input GTF")]
+    #[clap(help_heading = "Input", help = "Input GTF")]
     pub input: PathBuf,
 
-    #[clap(short = 'r', long = "ref-fa", help = "Reference FASTA")]
+    #[clap(
+        short = 'r',
+        long = "ref-fa",
+        help_heading = "Input",
+        help = "Reference FASTA"
+    )]
     pub ref_fa: PathBuf,
 
     // hide this because the tx seqs usually not have paried sequence.
@@ -88,13 +93,15 @@ pub struct IndexArgs {
     #[clap(
         short = 'o',
         long = "out",
-        help = "Output index path; defaults to <input>.isomx and <input>.isoms"
+        help_heading = "Output",
+        help = "Output indexes path; defaults to <input>.isomx and <input>.isoms"
     )]
     pub out: Option<PathBuf>,
 
     #[clap(
         long = "skip-missing-ref-chr",
         action = ArgAction::SetTrue,
+        help_heading = "Other",
         help = "Skip transcripts on seqids absent from the reference FASTA"
     )]
     pub skip_missing_ref_chr: bool,
@@ -102,6 +109,7 @@ pub struct IndexArgs {
     #[clap(
         short= 'q',
         long = "quiet",
+        help_heading = "Other",
         action = ArgAction::SetTrue,
         help = "Suppress non-warning messages; only warnings and errors are shown"
     )]
@@ -109,8 +117,25 @@ pub struct IndexArgs {
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
-#[clap(about = "Merge indexed transcript sets into a union GTF")]
+#[clap(about = "Merge indexed transcript sets into a union GTF
+")]
 pub struct MergeArgs {
+    #[clap(
+        help_heading = "Input",
+        help = "Indexed transcript sets to merge",
+        required = true,
+        num_args = 1..
+    )]
+    pub inputs: Vec<PathBuf>,
+
+    #[clap(
+        short = 'o',
+        long = "out",
+        help_heading = "Output",
+        help = "Output prefix "
+    )]
+    pub out: PathBuf,
+
     #[clap(
         short = 'r',
         long = "ref-fa",
@@ -126,14 +151,6 @@ pub struct MergeArgs {
         help = "Skip transcripts on seqids absent from the reference FASTA"
     )]
     pub skip_missing_ref_chr: bool,
-
-    #[clap(
-        help_heading = "Input",
-        help = "Indexed transcript sets to merge",
-        required = true,
-        num_args = 1..
-    )]
-    pub inputs: Vec<PathBuf>,
 
     #[clap(
         short = 'd',
@@ -347,21 +364,22 @@ pub struct MergeArgs {
         default_value_t = MergePolicyArg::Major
     )]
     pub tes_policy: MergePolicyArg,
+}
+
+#[derive(Parser, Debug, Serialize, Clone)]
+#[clap(about = "Classify query transcripts with a reference annotation GTF
+")]
+pub struct ClassifyArgs {
+    #[clap(help_heading = "Input", help = "Query GTF")]
+    pub input: PathBuf,
 
     #[clap(
         short = 'o',
         long = "out",
         help_heading = "Output",
-        help = "Output prefix, merged GTF will have name  out_prefx.merged.gtf.gz "
+        help = "Output prefix"
     )]
     pub out: PathBuf,
-}
-
-#[derive(Parser, Debug, Serialize, Clone)]
-#[clap(about = "Classify query transcripts with a reference annotation GTF")]
-pub struct ClassifyArgs {
-    #[clap(help_heading = "Input", help = "Query GTF")]
-    pub input: PathBuf,
 
     #[clap(
         short = 'g',
@@ -446,14 +464,6 @@ pub struct ClassifyArgs {
         value_name = "BP"
     )]
     pub motif_search_window: usize,
-
-    #[clap(
-        short = 'o',
-        long = "out",
-        help_heading = "Output",
-        help = "Output prefix"
-    )]
-    pub out: PathBuf,
 
     #[clap(
         long = "skip-missing-ref-chr",
