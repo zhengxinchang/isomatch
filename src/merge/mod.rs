@@ -13,7 +13,6 @@ use crate::utils::check_index_ready;
 use crate::utils::greetings2;
 use crate::utils::print_json_block;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
-use log::error;
 use serde::Serialize;
 use std::io::BufWriter;
 use std::io::Write;
@@ -57,7 +56,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
 
     for gtf in &args.inputs {
         if !check_index_ready(gtf) {
-            info!("Re-indexing {}", gtf.display());
+            info!("Indexing {}", gtf.display());
             let mut index_args = IndexArgs {
                 input: gtf.clone(),
                 ref_fa: args.ref_fa.clone(),
@@ -454,7 +453,7 @@ pub struct MergeStats {
     pub tes_guide_cnt: u32,
     pub tes_guide_pct: f64,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub merged_tx_by_source_count: BTreeMap<u32, u32>,
+    pub merged_tx_by_source_cnt: BTreeMap<u32, u32>,
 }
 
 impl MergeStats {
@@ -480,7 +479,7 @@ impl MergeStats {
         }
 
         *self
-            .merged_tx_by_source_count
+            .merged_tx_by_source_cnt
             .entry(grpptir.total_count())
             .or_insert(0) += 1;
     }
@@ -492,7 +491,11 @@ impl MergeStats {
             return;
         }
 
-        self.tss_guide_pct = self.tss_guide_cnt as f64 / self.merged_tx_cnt as f64;
-        self.tes_guide_pct = self.tes_guide_cnt as f64 / self.merged_tx_cnt as f64;
+        self.tss_guide_pct =
+            (self.tss_guide_cnt as f64 * 100.0 / self.merged_tx_cnt as f64 * 10000.0).round()
+                / 10000.0;
+        self.tes_guide_pct =
+            (self.tes_guide_cnt as f64 * 100.0 / self.merged_tx_cnt as f64 * 10000.0).round()
+                / 10000.0;
     }
 }

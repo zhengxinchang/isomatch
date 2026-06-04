@@ -130,7 +130,9 @@ impl IndexReader {
             }
             warn!("Index skipped transcripts on missing reference seqid(s):",);
             warn!("{}", missing_seqids.join(","));
-            warn!("Those transcripts will not be processed. You may consider redo index step.");
+            warn!(
+                "Those transcripts will not be processed. You may consider redo index step with proper reference genome FASTA."
+            );
         }
 
         Ok(Self {

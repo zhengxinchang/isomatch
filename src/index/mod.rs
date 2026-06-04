@@ -47,21 +47,21 @@ fn parse_gtf_attr_value(attrs: &str, key: &str) -> Option<String> {
 pub struct IndexStats {
     pub transcript_count: u64,
     pub gene_count: u64,
-    pub skipped_transcript_count: u64,
-    pub skipped_gene_count: u64,
-    pub missing_seqid_count: u64,
+    pub skipped_transcript_cnt: u64,
+    pub skipped_gene_cnt: u64,
+    pub missing_seqid_cnt: u64,
     pub missing_seqids: Vec<String>,
-    pub plus_strand_tx_count: u64,
-    pub minus_strand_tx_count: u64,
-    pub unknown_strand_tx_count: u64,
-    pub mono_exon_tx_count: u64,
-    pub multi_exon_tx_count: u64,
-    pub all_canonical_tx_count: u64,
-    pub partial_canonical_tx_count: u64,
-    pub non_canonical_tx_count: u64,
-    pub junction_count: u64,
-    pub canonical_junction_count: u64,
-    pub non_canonical_junction_count: u64,
+    pub plus_strand_tx_cnt: u64,
+    pub minus_strand_tx_cnt: u64,
+    pub unknown_strand_tx_cnt: u64,
+    pub mono_exon_tx_cnt: u64,
+    pub multi_exon_tx_cnt: u64,
+    pub all_canonical_tx_cnt: u64,
+    pub partial_canonical_tx_cnt: u64,
+    pub non_canonical_tx_cnt: u64,
+    pub junction_cnt: u64,
+    pub canonical_junction_cnt: u64,
+    pub non_canonical_junction_cnt: u64,
     pub canonical_junction_ratio: f64,
     #[serde(skip_serializing)]
     gene_ids: HashSet<String>,
@@ -81,51 +81,51 @@ impl IndexStats {
         self.gene_ids.insert(gene_id.to_string());
 
         match strand {
-            ISOMSTRAND::Minus => self.minus_strand_tx_count += 1,
-            ISOMSTRAND::Plus => self.plus_strand_tx_count += 1,
-            ISOMSTRAND::Unknown => self.unknown_strand_tx_count += 1,
+            ISOMSTRAND::Minus => self.minus_strand_tx_cnt += 1,
+            ISOMSTRAND::Plus => self.plus_strand_tx_cnt += 1,
+            ISOMSTRAND::Unknown => self.unknown_strand_tx_cnt += 1,
         }
 
         if exon_count <= 1 {
-            self.mono_exon_tx_count += 1;
+            self.mono_exon_tx_cnt += 1;
             return;
         }
 
-        self.multi_exon_tx_count += 1;
+        self.multi_exon_tx_cnt += 1;
 
         let junction_count = (exon_count - 1) as u64;
         let canonical_junction_count = canonical_junction_count as u64;
 
         if canonical_junction_count == junction_count {
-            self.all_canonical_tx_count += 1;
+            self.all_canonical_tx_cnt += 1;
         } else if canonical_junction_count == 0 {
-            self.non_canonical_tx_count += 1;
+            self.non_canonical_tx_cnt += 1;
         } else {
-            self.partial_canonical_tx_count += 1;
+            self.partial_canonical_tx_cnt += 1;
         }
 
-        self.junction_count += junction_count;
-        self.canonical_junction_count += canonical_junction_count;
-        self.non_canonical_junction_count += junction_count - canonical_junction_count;
+        self.junction_cnt += junction_count;
+        self.canonical_junction_cnt += canonical_junction_count;
+        self.non_canonical_junction_cnt += junction_count - canonical_junction_count;
     }
 
     pub fn observe_skipped_tx(&mut self, gene_id: &str) {
-        self.skipped_transcript_count += 1;
+        self.skipped_transcript_cnt += 1;
         self.skipped_gene_ids.insert(gene_id.to_string());
     }
 
     pub fn note_skipped_ref_seqids(&mut self, seqids: Vec<String>) {
-        self.missing_seqid_count = seqids.len() as u64;
+        self.missing_seqid_cnt = seqids.len() as u64;
         self.missing_seqids = seqids;
     }
 
     pub fn finalize(&mut self) {
         self.gene_count = self.gene_ids.len() as u64;
-        self.skipped_gene_count = self.skipped_gene_ids.len() as u64;
-        self.canonical_junction_ratio = if self.junction_count == 0 {
+        self.skipped_gene_cnt = self.skipped_gene_ids.len() as u64;
+        self.canonical_junction_ratio = if self.junction_cnt == 0 {
             0.0
         } else {
-            self.canonical_junction_count as f64 / self.junction_count as f64
+            self.canonical_junction_cnt as f64 / self.junction_cnt as f64
         };
     }
 }

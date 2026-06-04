@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser, Subcommand};
-use log::{error, warn};
+use log::error;
 use serde::Serialize;
 pub mod core;
 pub mod utils;
@@ -19,13 +19,39 @@ use crate::merge::policy::{MergePolicyArg, TerminalRefineMode};
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
     name = "isomatch",
-    version = "0.1.0",
+    version = env!("CARGO_PKG_VERSION"),
     author = "xinchang zheng <zhengxc93@gmail.com>",
-    about = "Isoform comparison and correction tools",
+    about = "A tool for improved transcript merging and classification",
     after_long_help = "
+
+Author: Xinchang Zheng <zhengxc93@gmail.com>
+
+Repository: https://github.com/zhengxinchang/isomatch
 
 > [Examples]
 
+Build indexes:
+
+isomatch index --ref-fa ref.fa sample1.gtf.gz
+isomatch index --ref-fa ref.fa sample2.gtf.gz
+
+Merge transcript sets:
+
+isomatch merge --ref-fa ref.fa -o merged sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+# outputs: merged.merged.gtf.gz  merged.track.tsv.gz  merged.merged_info.json
+
+Merge with guide-based terminal selection (human grch38 can be found at repo):
+
+isomatch merge --ref-fa ref.fa -o merged --guide-tss human.grch38.tss.bed --guide-tes human.grch38.tes.bed sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+
+Merge with wobble splice junction matching:
+
+isomatch merge --ref-fa ref.fa -o merged -d 3 -a 3 -u 3 -D 5 -A 5 -U 5 sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+
+Classify query transcripts against a reference annotation:
+
+isomatch classify --ref-fa ref.fa --ref-gtf reference.gtf.gz -o query_vs_ref query.gtf.gz
+# outputs: query_vs_ref.classification.txt.gz  query_vs_ref.annotated.gtf.gz  query_vs_ref.classify_info.json
 
 "
 )]
@@ -389,7 +415,7 @@ pub struct ClassifyArgs {
         long = "guide-tes-flank",
         help_heading = "Reference data",
         help = "TES evidence search flank in bp; used only with --guide-tes",
-        default_value_t = 10000,
+        default_value_t = 100,
         value_name = "BP"
     )]
     pub guide_tes_flank: u32,

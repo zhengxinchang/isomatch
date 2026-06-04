@@ -1,7 +1,6 @@
 use std::io::{self, Write};
 
 use ahash::{HashMap, HashSet};
-use log::warn;
 
 use crate::{
     ClassifyArgs,
@@ -21,7 +20,7 @@ use crate::{
     constants::MOTIFS,
     core::{tx_strand::ISOMSTRAND, tx_type::TxType},
     index::fasta::FastaReader,
-    merge::guide::GuideDb,
+    merge::guide::{GuideDb, GuideInterval},
     utils::rev_comp,
 };
 
@@ -58,7 +57,7 @@ impl PreClass {
 
 #[derive(Debug, Clone)]
 struct CandidateHit {
-    query_ptir: QueryPTIR,
+    _query_ptir: QueryPTIR,
     ref_ptir: RefPTIR,
     pre_class: PreClass,
     gene_id: String,
@@ -100,7 +99,7 @@ impl CandidateHit {
         };
 
         Self {
-            query_ptir: query.clone(),
+            _query_ptir: query.clone(),
             ref_ptir: reference.clone(),
             pre_class,
             gene_id: reference.base.source_geneid.clone(),
@@ -185,6 +184,7 @@ impl CandidateHit {
 #[derive(Debug, Clone)]
 pub struct ClassifyRecord {
     query_ptir: QueryPTIR,
+    ref_ptir: Option<RefPTIR>,
 
     query_length: u32,
     query_exon_n: u16,
@@ -254,6 +254,8 @@ impl ClassifyRecord {
         );
 
         if let Some(hit) = primary_hit {
+            record.set_ref_ptir(&hit.ref_ptir);
+
             record.same_strand_overlap_genes = associated_hits
                 .iter()
                 .map(|hit| hit.gene_id.clone())
@@ -278,9 +280,25 @@ impl ClassifyRecord {
         record
     }
 
+    pub fn set_ref_ptir(&mut self, ref_ptir: &RefPTIR) {
+        self.ref_ptir = Some(ref_ptir.clone())
+    }
+
+    pub(crate) fn observe_stats(&self, stats: &mut super::ClassifyStats) {
+        stats.observe_record(
+            self.cc.main_category(),
+            self.cc.sub_category(self.query_exon_n),
+            self.query_exon_n,
+            self.all_canonical,
+            self.within_cage_peak,
+            self.within_poly_a_peak,
+        );
+    }
+
     fn empty(query_ptir: &QueryPTIR) -> Self {
         Self {
             query_ptir: query_ptir.clone(),
+            ref_ptir: None,
             query_length: query_ptir.transcript_len(),
             query_exon_n: query_ptir.n_exons(),
             query_strand: *query_ptir.strand(),
@@ -514,7 +532,11 @@ impl ClassifyRecord {
         }
     }
 
-    pub fn write_to_file(&self, writer: &mut dyn Write) -> Result<(), io::Error> {
+    pub fn write_to_file(
+        &self,
+        table_writer: &mut dyn Write,
+        gtf_writer: &mut dyn Write,
+    ) -> Result<(), io::Error> {
         let strand = |s: Option<ISOMSTRAND>| {
             s.map(char::from)
                 .map(|c| c.to_string())
@@ -535,7 +557,7 @@ impl ClassifyRecord {
         let opt_str = |s: &Option<String>| s.as_deref().unwrap_or("NA").to_string();
 
         writeln!(
-            writer,
+            table_writer,
             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             self.query_ptir.base.source_txid,
             self.query_ptir.chr_name,
@@ -562,7 +584,104 @@ impl ClassifyRecord {
             opt_i32(self.dist_to_cage_peak),
             opt_bool(self.within_poly_a_peak),
             opt_i32(self.dist_to_poly_a_site),
-        )
+        )?;
+
+        // write teh gtf_writer, generate the transcript strcuture based on self.query_ptir
+        let raw_attrs = self.query_ptir.attr_raw_string.as_slice();
+        let mut attr_col: Vec<u8> = Vec::with_capacity(raw_attrs.len() + 256);
+
+        // check attribute column, remove the attributes starts with
+        // ISOM_REF_TX_ID, ISOM_REF_GENE_ID, ISOM_REF_GENE_NAME, ISOM_CATEGORY ISOM_SUBCATEGORY,
+        for attr in raw_attrs.split(|&base| base == b';') {
+            let mut start = 0usize;
+            let mut end = attr.len();
+            while start < end && attr[start].is_ascii_whitespace() {
+                start += 1;
+            }
+            while start < end && attr[end - 1].is_ascii_whitespace() {
+                end -= 1;
+            }
+            let attr = &attr[start..end];
+            if attr.is_empty()
+                || attr.starts_with(b"ISOM_REF_TX_ID")
+                || attr.starts_with(b"ISOM_REF_GENE_ID")
+                || attr.starts_with(b"ISOM_REF_GENE_NAME")
+                || attr.starts_with(b"ISOM_CATEGORY")
+                || attr.starts_with(b"ISOM_SUBCATEGORY")
+            {
+                continue;
+            }
+
+            if !attr_col.is_empty() {
+                attr_col.extend_from_slice(b"; ");
+            }
+            attr_col.extend_from_slice(attr);
+        }
+
+        // re add ISOM_REF_TX_ID, ISOM_REF_GENE_ID, ISOM_REF_GENE_NAME, ISOM_CATEGORY ISOM_SUBCATEGORY,
+        Self::push_gtf_attr(
+            &mut attr_col,
+            "ISOM_REF_TX_ID",
+            empty_as_na(&self.ref_tx_id),
+        );
+        Self::push_gtf_attr(
+            &mut attr_col,
+            "ISOM_REF_GENE_ID",
+            empty_as_na(&self.ref_gene_id),
+        );
+        Self::push_gtf_attr(
+            &mut attr_col,
+            "ISOM_REF_GENE_NAME",
+            empty_as_na(&self.ref_gene_name),
+        );
+        Self::push_gtf_attr(&mut attr_col, "ISOM_CATEGORY", self.cc.main_category());
+        Self::push_gtf_attr(
+            &mut attr_col,
+            "ISOM_SUBCATEGORY",
+            self.cc.sub_category(self.query_exon_n),
+        );
+
+        let strand = char::from(self.query_strand);
+
+        // write to gtf
+        write!(
+            gtf_writer,
+            "{}\tisomatch\ttranscript\t{}\t{}\t.\t{}\t.\t",
+            self.query_ptir.chr_name,
+            self.query_ptir.start(),
+            self.query_ptir.end(),
+            strand,
+        )?;
+        gtf_writer.write_all(&attr_col)?;
+        writeln!(gtf_writer, ";")?;
+
+        for (start, end) in self.query_ptir.exons_vec() {
+            write!(
+                gtf_writer,
+                "{}\tisomatch\texon\t{}\t{}\t.\t{}\t.\t",
+                self.query_ptir.chr_name, start, end, strand
+            )?;
+            gtf_writer.write_all(&attr_col)?;
+            writeln!(gtf_writer, ";")?;
+        }
+
+        Ok(())
+    }
+
+    fn push_gtf_attr(attr_col: &mut Vec<u8>, key: &str, value: &str) {
+        if !attr_col.is_empty() {
+            attr_col.extend_from_slice(b"; ");
+        }
+        attr_col.extend_from_slice(key.as_bytes());
+        attr_col.extend_from_slice(b" \"");
+        for byte in value.bytes() {
+            match byte {
+                b'\\' => attr_col.extend_from_slice(b"\\\\"),
+                b'"' => attr_col.extend_from_slice(b"\\\""),
+                _ => attr_col.push(byte),
+            }
+        }
+        attr_col.extend_from_slice(b"\"");
     }
 }
 
@@ -879,44 +998,196 @@ pub fn update_group4_regions(
     let tes = query_ptir.base.tes();
 
     if let Some(cage_db) = ref_tss {
-        // CAGE evidence is evaluated around the query TSS.
-        class.within_cage_peak = Some(!cage_db.query_overlaps(chr, strand, tss).is_empty());
-        class.dist_to_cage_peak = cage_db
-            .query_overlaps_with_flank(chr, &strand, tss, args.guide_tss_flank)
-            .into_iter()
-            .min_by_key(|iv| {
-                let mid = (iv.start as u64 + iv.end as u64) / 2;
-                (tss as i64 - mid as i64).unsigned_abs()
-            })
-            .map(|iv| {
-                let mid = ((iv.start as u64 + iv.end as u64) / 2) as i32;
-                let dist = tss as i32 - mid;
-                if strand == ISOMSTRAND::Minus {
-                    -dist
-                } else {
-                    dist
+        let query = match strand {
+            ISOMSTRAND::Minus => tss as i64,
+            ISOMSTRAND::Plus | ISOMSTRAND::Unknown => tss.saturating_sub(1) as i64,
+        };
+        let mut best: Option<(bool, i32)> = None;
+
+        for peak in cage_db.query_overlaps_with_flank(
+            chr,
+            &strand,
+            tss,
+            args.guide_tss_flank.saturating_add(1),
+        ) {
+            if !bed_overlaps_window(peak, query, args.guide_tss_flank) {
+                continue;
+            }
+            if cage_peak_is_downstream(peak, strand, tss) {
+                continue;
+            }
+
+            let within = peak.overlaps_point(tss);
+            let dist = cage_dist(peak, strand, tss);
+            match best {
+                None => best = Some((within, dist)),
+                Some((best_within, best_dist)) if !best_within => {
+                    if within || dist.abs() < best_dist.abs() {
+                        best = Some((within, dist));
+                    }
                 }
-            });
+                Some((true, best_dist)) => {
+                    if within && dist.abs() < best_dist.abs() {
+                        best = Some((within, dist));
+                    }
+                }
+                Some(_) => {}
+            }
+        }
+
+        let (within, dist) = match best {
+            Some((within, dist)) => (within, Some(dist)),
+            None => (false, None),
+        };
+        class.within_cage_peak = Some(within);
+        class.dist_to_cage_peak = dist;
     }
 
     if let Some(polya_db) = ref_tes {
-        // PolyA peak evidence is evaluated around the query TES/TTS.
-        class.within_poly_a_peak = Some(!polya_db.query_overlaps(chr, strand, tes).is_empty());
-        class.dist_to_poly_a_site = polya_db
-            .query_overlaps_with_flank(chr, &strand, tes, args.guide_tes_flank)
-            .into_iter()
-            .min_by_key(|iv| {
-                let mid = (iv.start as u64 + iv.end as u64) / 2;
-                (tes as i64 - mid as i64).unsigned_abs()
-            })
-            .map(|iv| {
-                let mid = ((iv.start as u64 + iv.end as u64) / 2) as i32;
-                let dist = tes as i32 - mid;
-                if strand == ISOMSTRAND::Minus {
-                    -dist
-                } else {
-                    dist
-                }
-            });
+        let query = polya_query(tes, strand);
+        let candidate_pos = if query <= 0 { 0 } else { query as u32 };
+        let mut within = false;
+        let mut dist: Option<i32> = None;
+
+        for peak in polya_db.query_overlaps_with_flank(
+            chr,
+            &strand,
+            candidate_pos,
+            args.guide_tes_flank.saturating_add(1),
+        ) {
+            if !bed_overlaps_window(peak, query, args.guide_tes_flank) {
+                continue;
+            }
+
+            if polya_within(peak, strand, query) {
+                within = true;
+            }
+
+            let peak_dist = polya_dist(peak, strand, query);
+            if dist.map_or(true, |current| peak_dist.abs() < current.abs()) {
+                dist = Some(peak_dist);
+            }
+        }
+
+        class.within_poly_a_peak = Some(within);
+        class.dist_to_poly_a_site = dist;
+    }
+}
+
+fn bed_overlaps_window(peak: &GuideInterval, query: i64, search_window: u32) -> bool {
+    let start0 = peak.start as i64 - 1;
+    let end1 = peak.end as i64;
+    let window = search_window as i64;
+    start0 < query + window && end1 > query - window
+}
+
+fn cage_peak_is_downstream(peak: &GuideInterval, strand: ISOMSTRAND, tss: u32) -> bool {
+    match strand {
+        ISOMSTRAND::Minus => peak.end < tss,
+        ISOMSTRAND::Plus | ISOMSTRAND::Unknown => peak.start > tss,
+    }
+}
+
+fn cage_dist(peak: &GuideInterval, strand: ISOMSTRAND, tss: u32) -> i32 {
+    let peak_tss = cage_tss(peak) as i32;
+    let dist = peak_tss - tss as i32;
+    if strand == ISOMSTRAND::Minus {
+        -dist
+    } else {
+        dist
+    }
+}
+/// calcualte the TSS sites, with expection on 1bp interval.
+fn cage_tss(peak: &GuideInterval) -> u32 {
+    if peak.len() > 1 {
+        ((peak.start as u64 - 1 + peak.end as u64) / 2 + 1) as u32
+    } else {
+        peak.start
+    }
+}
+
+fn polya_query(tes: u32, strand: ISOMSTRAND) -> i64 {
+    match strand {
+        ISOMSTRAND::Minus => tes.saturating_sub(1) as i64,
+        ISOMSTRAND::Plus | ISOMSTRAND::Unknown => tes as i64,
+    }
+}
+
+fn polya_within(peak: &GuideInterval, strand: ISOMSTRAND, query: i64) -> bool {
+    let start0 = peak.start as i64 - 1;
+    let end1 = peak.end as i64;
+    match strand {
+        ISOMSTRAND::Minus => start0 < query && query <= end1,
+        ISOMSTRAND::Plus | ISOMSTRAND::Unknown => start0 <= query && query < end1,
+    }
+}
+
+fn polya_dist(peak: &GuideInterval, strand: ISOMSTRAND, query: i64) -> i32 {
+    let start0 = peak.start as i64 - 1;
+    let end1 = peak.end as i64;
+    let dist = match strand {
+        ISOMSTRAND::Minus => query - end1,
+        ISOMSTRAND::Plus | ISOMSTRAND::Unknown => start0 - query,
+    };
+    dist as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn guide_interval(start0: u32, end1: u32) -> GuideInterval {
+        GuideInterval {
+            start: start0 + 1,
+            end: end1,
+            score: 0.0,
+        }
+    }
+
+    #[test]
+    fn cage_distance_uses_sqanti3_peak_tss_and_sign() {
+        let peak = guide_interval(100, 200);
+
+        assert_eq!(cage_tss(&peak), 151);
+        assert_eq!(cage_dist(&peak, ISOMSTRAND::Plus, 151), 0);
+        assert_eq!(cage_dist(&peak, ISOMSTRAND::Plus, 160), -9);
+        assert_eq!(cage_dist(&peak, ISOMSTRAND::Minus, 160), 9);
+    }
+
+    #[test]
+    fn cage_skips_only_downstream_peaks_in_transcript_space() {
+        let downstream_plus = guide_interval(200, 210);
+        let downstream_minus = guide_interval(90, 100);
+
+        assert!(cage_peak_is_downstream(
+            &downstream_plus,
+            ISOMSTRAND::Plus,
+            151
+        ));
+        assert!(cage_peak_is_downstream(
+            &downstream_minus,
+            ISOMSTRAND::Minus,
+            151
+        ));
+    }
+
+    #[test]
+    fn polya_distance_uses_peak_boundary_not_midpoint() {
+        let peak = guide_interval(100, 200);
+
+        assert_eq!(polya_query(180, ISOMSTRAND::Plus), 180);
+        assert_eq!(polya_dist(&peak, ISOMSTRAND::Plus, 180), -80);
+        assert_eq!(polya_query(181, ISOMSTRAND::Minus), 180);
+        assert_eq!(polya_dist(&peak, ISOMSTRAND::Minus, 180), -20);
+    }
+
+    #[test]
+    fn polya_within_matches_sqanti3_strand_aware_boundaries() {
+        let peak = guide_interval(100, 200);
+
+        assert!(polya_within(&peak, ISOMSTRAND::Plus, 100));
+        assert!(!polya_within(&peak, ISOMSTRAND::Plus, 200));
+        assert!(!polya_within(&peak, ISOMSTRAND::Minus, 100));
+        assert!(polya_within(&peak, ISOMSTRAND::Minus, 200));
     }
 }

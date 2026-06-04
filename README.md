@@ -58,7 +58,7 @@ isomatch merge --ref-fa ref.fa -o merged sample1.gtf.gz sample2.gtf.gz sample3.g
 
 # merge with guide-based terminal selection
 isomatch merge --ref-fa ref.fa -o merged \
-    --guide-tss human.guide.tss.bed --guide-tes human.guide.tes.bed \
+    --guide-tss human.grch38.tss.bed --guide-tes human.grch38.tes.bed \
     sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
 
 # merge with wobble splice junction matching
@@ -74,7 +74,7 @@ isomatch merge --ref-fa ref.fa -o merged \
 # classify also checks/rebuilds query and reference indexes
 isomatch classify --ref-fa ref.fa --ref-gtf reference.gtf.gz \
     -o query_vs_ref query.gtf.gz
-# output: query_vs_ref.classification.txt.gz
+# outputs: query_vs_ref.classification.txt.gz  query_vs_ref.annotated.gtf.gz  query_vs_ref.classify_info.json
 ```
 
 # How isomatch merge transcripts
@@ -283,6 +283,8 @@ For a run with `-o <prefix>`, three files are written:
 | `<prefix>.track.tsv.gz` | One-to-one mapping of merged → source transcripts (gzip-compressed TSV) |
 | `<prefix>.merged_info.json` | Run statistics (source file count, merged transcript counts, guide usage, etc.) |
 
+In `<prefix>.merged_info.json`, `*_pct` values are percentages on a 0-100 scale rounded to four decimal places.
+
 ---
 
 ## Output GTF Format
@@ -337,7 +339,7 @@ isomatch classify:
 1. Uses reference junctions, splice sites, exons, and gene spans as catalog evidence;
 2. Classifies multi-exon transcripts primarily by ordered splice-junction relationships;
 3. Handles mono-exon transcripts by exon overlap, containment, and intron-retention evidence;
-4. Adds strand-aware TSS/TES differences and FASTA-derived TES sequence context.
+4. Adds strand-aware TSS/TES differences, optional CAGE/polyA guide evidence, and FASTA-derived TES sequence context.
 
 ---
 
@@ -370,10 +372,10 @@ Query GTF + Reference GTF + Reference FASTA
 [6] Refine multi-gene, antisense, genic-intron, and intergenic cases
         │
         ▼
-[7] Add FASTA sequence context around TES
+[7] Add FASTA sequence context around TES and optional CAGE/polyA guide evidence
         │
         ▼
-Output classification table
+Output classification table, annotated GTF, and summary JSON
 ```
 
 ---
@@ -407,10 +409,16 @@ If no same-strand hit is found, isomatch falls back to `antisense`, `genic_intro
 
 ## Classify Output
 
-For a run with `-o <prefix>`, one gzip-compressed table is written:
+For a run with `-o <prefix>`, the following files are written:
 
 | File | Description |
 |------|-------------|
 | `<prefix>.classification.txt.gz` | Per-transcript classification and sequence-context metrics |
+| `<prefix>.annotated.gtf.gz` | Query transcript/exon GTF annotated with classification attributes |
+| `<prefix>.classify_info.json` | Run statistics (query/reference counts, category/subcategory counts, guide support, etc.) |
 
-Key output fields include query transcript information, structural category/subcategory, selected reference gene/transcript, TSS/TES differences, matched junction/exon counts, canonical splice status, and downstream TES A content.
+The annotated GTF preserves query transcript/exon structures and adds or refreshes `ISOM_REF_TX_ID`, `ISOM_REF_GENE_ID`, `ISOM_REF_GENE_NAME`, `ISOM_CATEGORY`, and `ISOM_SUBCATEGORY`.
+
+Key output fields include query transcript information, structural category/subcategory, selected reference gene/transcript, TSS/TES differences, matched junction/exon counts, canonical splice status, CAGE/polyA guide support, and downstream TES A content.
+
+In `<prefix>.classify_info.json`, `*_pct` values and `structural_category_pct` values are percentages on a 0-100 scale rounded to four decimal places.
