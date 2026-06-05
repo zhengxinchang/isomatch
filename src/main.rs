@@ -5,15 +5,17 @@ use log::error;
 use serde::Serialize;
 pub mod core;
 pub mod utils;
-
 use crate::classify::run_classify;
+use crate::tools::chop::run_chop;
 use crate::{index::run_index, merge::run_merge};
+use clap::ValueEnum;
 pub mod classify;
 pub mod constants;
 // pub mod fasta;
 // pub mod gtf;
 pub mod index;
 pub mod merge;
+pub mod tools;
 pub mod traits;
 use crate::merge::policy::{MergePolicyArg, TerminalRefineMode};
 #[derive(Parser, Debug, Serialize, Clone)]
@@ -66,6 +68,8 @@ pub enum Commands {
     Merge(MergeArgs),
     // Bench(BenchArgs),
     Classify(ClassifyArgs),
+    #[command(subcommand)]
+    Tools(ToolssArgs),
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
@@ -517,6 +521,59 @@ pub struct BenchArgs {
     pub skip_missing_ref_chr: bool,
 }
 
+#[derive(Debug, Clone, Serialize, ValueEnum)]
+pub enum ChopMode {
+    All,
+    Isomatch,
+}
+#[derive(Parser, Debug, Serialize, Clone)]
+#[clap(about = "Remove attributes from the GTF file.
+")]
+pub struct ChopArgs {
+    #[clap(help_heading = "Input", help = "Input GTF")]
+    pub input: PathBuf,
+
+    #[clap(
+        short = 'o',
+        long = "out",
+        help_heading = "Output",
+        help = "Output prefix"
+    )]
+    pub out: PathBuf,
+
+    #[clap(
+        short = 'm',
+        long = "mode",
+        help_heading = "Parameters",
+        help = "Chop mode",
+        value_enum,
+        default_value_t = ChopMode::Isomatch
+    )]
+    pub chop_mode: ChopMode,
+
+    #[clap(
+        short = 'k',
+        long = "keep",
+        help_heading = "Parameters",
+        help = "Keep attributes"
+    )]
+    pub keep_attrs: Option<String>,
+
+    #[clap(
+        short = 'c',
+        long = "keep-check-case",
+        help_heading = "Parameters",
+        help = "check letter case when match attributes",
+        action = ArgAction::SetTrue,
+    )]
+    pub keep_check_case: bool,
+}
+
+#[derive(Subcommand, Debug, Clone, Serialize)]
+pub enum ToolssArgs {
+    Chop(ChopArgs),
+}
+
 fn main() {
     // set env logger level to info by default, can be overridden by RUST_LOG env var
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -546,5 +603,15 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Cli {
+            command: Commands::Tools(args),
+        } => match args {
+            ToolssArgs::Chop(args) => {
+                if let Err(e) = run_chop(&args) {
+                    error!("{}", e);
+                    std::process::exit(1);
+                }
+            }
+        },
     }
 }
