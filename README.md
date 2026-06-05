@@ -79,31 +79,6 @@ isomatch classify --ref-fa ref.fa --ref-gtf reference.gtf.gz \
 # outputs: query_vs_ref.classification.txt.gz  query_vs_ref.annotated.gtf.gz  query_vs_ref.classify_info.json
 ```
 
-### Tools
-
-#### isomatch tools chop
-
-`chop` removes attributes from a GTF while preserving the first eight GTF columns and comments. By default, it removes `ISOM_*` attributes and keeps standard identifiers such as `gene_id` and `transcript_id`.
-
-```
-isomatch tools chop -o cleaned merged.merged.gtf.gz
-# outputs: cleaned.chopped.gtf.gz
-```
-
-| Item | Description |
-|------|-------------|
-| Input | GTF or gzip-compressed GTF |
-| Output | `<prefix>.chopped.gtf.gz` |
-
-Key parameters:
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `-o, --out` | Output prefix | required |
-| `-m, --mode` | Attribute removal mode: `isomatch` removes only `ISOM_*` attributes; `all` removes all attributes except kept ones | `isomatch` |
-| `-k, --keep` | Comma-separated extra attributes to keep | `gene_id,transcript_id` are always kept |
-| `-c, --keep-check-case` | Match attribute names case-sensitively | case-insensitive matching |
-
 # How isomatch merge transcripts
 
 ## Design Principles
@@ -120,7 +95,7 @@ Unlike intron chain collapse only tools, isomatch:
 ---
 
 <details>
-<summary>**Read details**</summary>
+<summary><strong>Read details</strong></summary>
 
 
 ## Pipeline Overview
@@ -377,7 +352,7 @@ isomatch classify:
 ---
 
 <details>
-<summary>**Read details**</summary>
+<summary><strong>Read details</strong></summary>
 
 ## Classify Pipeline Overview
 
@@ -460,3 +435,29 @@ The annotated GTF preserves query transcript/exon structures and adds or refresh
 Key output fields include query transcript information, structural category/subcategory, selected reference gene/transcript, TSS/TES differences, matched junction/exon counts, canonical splice status, CAGE/polyA guide support, and downstream TES A content.
 
 In `<prefix>.classify_info.json`, `*_pct` values and `structural_category_pct` values are percentages on a 0-100 scale rounded to four decimal places.
+
+
+# isomatch Tools
+
+## isomatch tools chop
+
+`chop` removes attributes from a GTF while preserving the first eight GTF columns and comments. By default, it removes `ISOM_*` attributes and keeps standard identifiers such as `gene_id` and `transcript_id`.
+
+```
+isomatch tools chop -o cleaned merged.merged.gtf.gz
+# outputs: cleaned.chopped.gtf.gz
+```
+
+| Item | Description |
+|------|-------------|
+| Input | GTF or gzip-compressed GTF |
+| Output | `<prefix>.chopped.gtf.gz` |
+
+Key parameters:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-o, --out` | Output prefix | required |
+| `-m, --mode` | Attribute removal mode: `isomatch` removes only `ISOM_*` attributes; `all` removes all attributes except kept ones | `isomatch` |
+| `-k, --keep` | Comma-separated extra attributes to keep | `gene_id,transcript_id` are always kept |
+| `-c, --keep-check-case` | Match attribute names case-sensitively | case-insensitive matching |
