@@ -24,6 +24,10 @@ pub enum ClassCode {
     /// one query junction is shared by more than one of those reference genes,
     /// so SQANTI3 does not call it `fusion`.
     MoreJunctions,
+
+    /// An isomatch-specific code for an invalid query transcript,
+    /// added to improve robustness.
+    BadQueryTranscript(SubBadQueryTx)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -59,6 +63,11 @@ pub enum SubNNC {
     IntronRetention,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SubBadQueryTx {
+    UnstrandedTx
+}
+
 impl ClassCode {
     pub fn main_category(&self) -> &'static str {
         match self {
@@ -72,6 +81,7 @@ impl ClassCode {
             Self::Genic => "genic",
             Self::Intergenic => "intergenic",
             Self::MoreJunctions => "moreJunctions",
+            Self::BadQueryTranscript(_) => "bad_query_transcript"
         }
     }
 
@@ -103,6 +113,8 @@ impl ClassCode {
 
             Self::NNC(SubNNC::AtLeastOneNovelSpliceSite) => "at_least_one_novel_splicesite",
             Self::NNC(SubNNC::IntronRetention) => "intron_retention",
+
+            Self::BadQueryTranscript(SubBadQueryTx::UnstrandedTx) => "unstranded_transcript",
 
             Self::Fusion
             | Self::Antisense

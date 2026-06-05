@@ -1,3 +1,4 @@
+use std::io::{Error, ErrorKind};
 use std::{collections::VecDeque, io::BufRead, path::Path};
 
 // use clap::error;
@@ -230,7 +231,7 @@ impl MyGTFReader {
                 continue;
             }
 
-            let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&line);
+            let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&line)?;
             if feat != "exon" {
                 continue;
             }
@@ -313,7 +314,7 @@ impl MyGTFReader {
 
         if tx.strand != strand {
             warn!(
-                "Transcript {} has inconsistent strand in it's exon record. chr{} {} vs {}",
+                "Transcript {} has inconsistent strand in it's exon record at chr: {}. {} vs {}",
                 tx_id, chrom, tx.strand, strand
             );
         }
@@ -330,22 +331,25 @@ impl MyGTFReader {
 /// transcript_id and gene_id. The start and end are 1-based and end is inclusive.
 pub fn process_gtf_line(
     s: &str,
-) -> (
-    String,     // chrom (col 0)
-    String,     // feature_type (col 2): "transcript" / "exon" / ...
-    u32,        // start (1-based)
-    u32,        // end   (1-based, inclusive)
-    ISOMSTRAND, // strand: 0=+, 1=-
-    String,     // transcript_id
-    String,     // gene_id
-) {
+) -> Result<
+    (
+        String,     // chrom (col 0)
+        String,     // feature_type (col 2): "transcript" / "exon" / ...
+        u32,        // start (1-based)
+        u32,        // end   (1-based, inclusive)
+        ISOMSTRAND, // strand: 0=+, 1=-
+        String,     // transcript_id
+        String,     // gene_id
+    ),
+    Error,
+> {
     let parts: Vec<&str> = s.split('\t').collect();
 
     if parts.len() < 9 {
-        panic!(
-            "Invalid GTF line: fewer than 9 columns, affected line: {}",
-            s
-        );
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("Invalid GTF line: fewer than 9 columns. Affected line: {}", s.trim_end()),
+        ));
     }
 
     // col 0: chrom
@@ -369,7 +373,23 @@ pub fn process_gtf_line(
     // col 8: attributes
     let (tx_id, gene_id) = parse_gtf_attributes(parts[8]);
 
-    (chrom, feature_type, start, end, strand, tx_id, gene_id)
+    if tx_id.is_empty() || gene_id.is_empty() {
+        let missing = match (tx_id.is_empty(), gene_id.is_empty()) {
+            (true, true) => "transcript_id and gene_id",
+            (true, false) => "transcript_id",
+            (false, true) => "gene_id",
+            (false, false) => unreachable!(),
+        };
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!(
+                "Missing required GTF attribute(s): {missing}. Affected line: {}",
+                s.trim_end()
+            ),
+        ));
+    }
+
+    Ok((chrom, feature_type, start, end, strand, tx_id, gene_id))
 }
 
 /// take the attributes column of a GTF line and extract the transcript_id and gene_id values, supporting both quoted and unquoted formats.

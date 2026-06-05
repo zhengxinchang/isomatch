@@ -1,5 +1,32 @@
 use std::fs::File;
-use std::io::{BufWriter, Seek, SeekFrom, Write};
+use std::io::{self, BufWriter, Seek, SeekFrom, Write};
+
+fn u32_from_usize(value: usize, label: &str) -> io::Result<u32> {
+    u32::try_from(value).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{label} {value} exceeded u32"),
+        )
+    })
+}
+
+fn u32_from_u64(value: u64, label: &str) -> io::Result<u32> {
+    u32::try_from(value).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{label} {value} exceeded u32"),
+        )
+    })
+}
+
+fn u16_from_usize(value: usize, label: &str) -> io::Result<u16> {
+    u16::try_from(value).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{label} {value} exceeded u16"),
+        )
+    })
+}
 
 fn compress(raw: Vec<u8>) -> std::io::Result<Vec<u8>> {
     zstd::encode_all(raw.as_slice(), 3)
@@ -14,7 +41,7 @@ fn encode_compressed<T: crate::traits::Encodable<Error = crate::core::core_error
     pool.encode_to(&mut raw)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     let compressed = compress(raw)?;
-    let len = compressed.len() as u32;
+    let len = u32_from_usize(compressed.len(), "compressed pool length")?;
     writer.write_all(&compressed)?;
     Ok(len)
 }
@@ -49,28 +76,30 @@ impl IndexBuilder {
         missing_seqids: Vec<String>,
     ) -> std::io::Result<Self> {
         let mut file = BufWriter::new(file);
-        let chrom_count = chrom_names.len() as u32;
+        let chrom_count = u32_from_usize(chrom_names.len(), "chromosome count")?;
 
         // Build the chrom name table bytes and pre-compute per-chrom offsets.
         let mut name_table: Vec<u8> = Vec::new();
         let mut chrom_name_offsets: Vec<(u32, u32)> = Vec::with_capacity(chrom_names.len());
         for name in &chrom_names {
-            let offset = name_table.len() as u32;
-            let len = name.len() as u32;
+            let offset = u32_from_usize(name_table.len(), "chrom name table offset")?;
+            let len = u32_from_usize(name.len(), "chrom name length")?;
             name_table.extend_from_slice(name.as_bytes());
             chrom_name_offsets.push((offset, len));
         }
-        let chrom_name_table_len = name_table.len() as u32;
+        let chrom_name_table_len = u32_from_usize(name_table.len(), "chrom name table length")?;
 
         // Build the missing seqid table: each entry is u16 len + utf-8 bytes.
         let mut missing_seqid_table: Vec<u8> = Vec::new();
         for name in &missing_seqids {
             let bytes = name.as_bytes();
-            missing_seqid_table.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+            let len = u16_from_usize(bytes.len(), "missing seqid length")?;
+            missing_seqid_table.extend_from_slice(&len.to_le_bytes());
             missing_seqid_table.extend_from_slice(bytes);
         }
-        let missing_seqid_count = missing_seqids.len() as u32;
-        let missing_seqid_table_len = missing_seqid_table.len() as u32;
+        let missing_seqid_count = u32_from_usize(missing_seqids.len(), "missing seqid count")?;
+        let missing_seqid_table_len =
+            u32_from_usize(missing_seqid_table.len(), "missing seqid table length")?;
 
         let header = IndexHeader::new(
             chrom_count,
@@ -146,18 +175,37 @@ impl IndexBuilder {
         // generate a chromsome directory entry
         // and insert it into entries
         // each add_chrom will generate one entry on the fly
-        self.header.total_tx_n += entry.txs.len() as u32;
+        let tx_count = u32_from_usize(entry.txs.len(), "chromosome transcript count")?;
+        self.header.total_tx_n = self
+            .header
+            .total_tx_n
+            .checked_add(tx_count)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "total transcript count exceeded u32",
+                )
+            })?;
         self.entries.push(ChromDirectoryEntry {
             chrom_id: entry.chrom_id,
             chrom_name_offset,
             chrom_name_len,
-            global_tx_count: entry.txs.len() as u32,
-            global_tx_offset: tx_offset as u32,
-            global_junction_pool_offset: junction_pool_offset as u32,
+            global_tx_count: tx_count,
+            global_tx_offset: u32_from_u64(tx_offset, "global tx offset")?,
+            global_junction_pool_offset: u32_from_u64(
+                junction_pool_offset,
+                "global junction pool offset",
+            )?,
             global_junction_count: junction_pool_len,
-            global_string_pool_offset: string_pool_offset as u32,
+            global_string_pool_offset: u32_from_u64(
+                string_pool_offset,
+                "global string pool offset",
+            )?,
             global_string_len: string_pool_len,
-            global_splice_site_pool_offset: splice_site_pool_offset as u32,
+            global_splice_site_pool_offset: u32_from_u64(
+                splice_site_pool_offset,
+                "global splice site pool offset",
+            )?,
             global_splice_site_pool_len: splice_site_pool_len,
         });
 
