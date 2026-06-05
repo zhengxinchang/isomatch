@@ -33,6 +33,8 @@ Easy to use
 
 - `isomatch classify`: classify query transcripts against a reference annotation, auto-rebuilding missing/corrupted/outdated query/reference indexes when `--ref-fa` is supplied.
 
+- `isomatch tools chop`: remove selected GTF attributes, commonly used to strip isomatch-added annotations from output GTF files.
+
 Typical workflow:
 1. create indexes with `isomatch index --ref-fa ref.fa`, or let `merge`/`classify` auto-create them.
 2. merge transcripts with `isomatch merge --ref-fa ref.fa`, optionally using TSS/TES guide evidence.
@@ -77,13 +79,38 @@ isomatch classify --ref-fa ref.fa --ref-gtf reference.gtf.gz \
 # outputs: query_vs_ref.classification.txt.gz  query_vs_ref.annotated.gtf.gz  query_vs_ref.classify_info.json
 ```
 
+# Tools
+
+## `isomatch tools chop`
+
+`chop` removes attributes from a GTF while preserving the first eight GTF columns and comments. By default, it removes `ISOM_*` attributes and keeps standard identifiers such as `gene_id` and `transcript_id`.
+
+```
+isomatch tools chop -o cleaned merged.merged.gtf.gz
+# outputs: cleaned.chopped.gtf.gz
+```
+
+| Item | Description |
+|------|-------------|
+| Input | GTF or gzip-compressed GTF |
+| Output | `<prefix>.chopped.gtf.gz` |
+
+Key parameters:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-o, --out` | Output prefix | required |
+| `-m, --mode` | Attribute removal mode: `isomatch` removes only `ISOM_*` attributes; `all` removes all attributes except kept ones | `isomatch` |
+| `-k, --keep` | Comma-separated extra attributes to keep | `gene_id,transcript_id` are always kept |
+| `-c, --keep-check-case` | Match attribute names case-sensitively | case-insensitive matching |
+
 # How isomatch merge transcripts
 
 ## Design Principles
 
 The core idea of isomatch merge is: **the intron chain defines transcript identity; TSS and TES distinguish isoforms sharing the same chain.**
 
-Unlike simple coordinate-overlap collapse tools, isomatch:
+Unlike intron chain collapse only tools, isomatch:
 
 1. Uses splice junction matching (with configurable wobble tolerance) as the primary merge criterion;
 2. Further splits transcripts with identical splice chains by TSS/TES distance thresholds;
@@ -91,6 +118,10 @@ Unlike simple coordinate-overlap collapse tools, isomatch:
 4. Supports third-party terminal evidence (e.g., refTSS, PolyA site databases) to guide representative TSS/TES selection.
 
 ---
+
+<details>
+<summary>Read details</summary>
+
 
 ## Pipeline Overview
 
@@ -273,6 +304,8 @@ Mono-exon transcripts are first grouped by reciprocal overlap using `--mono-ovlp
 
 ---
 
+</details>
+
 ## Output Files
 
 For a run with `-o <prefix>`, three files are written:
@@ -343,6 +376,9 @@ isomatch classify:
 
 ---
 
+<details>
+<summary>Read details</summary>
+
 ## Classify Pipeline Overview
 
 ```
@@ -406,6 +442,8 @@ For mono-exon query transcripts, isomatch uses exon overlap against reference tr
 If no same-strand hit is found, isomatch falls back to `antisense`, `genic_intron`, or `intergenic`, based on opposite-strand overlap and known intron containment.
 
 ---
+
+</details>
 
 ## Classify Output
 
