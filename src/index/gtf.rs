@@ -219,6 +219,7 @@ impl MyGTFReader {
     pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
         let mut bufreader = open_file_bufread(path)?;
         let mut txs = FxHashMap::default();
+        let mut tx_record_chroms: FxHashMap<String, String> = FxHashMap::default();
         let mut line = String::new();
 
         loop {
@@ -232,21 +233,61 @@ impl MyGTFReader {
             }
 
             let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&line)?;
-            if feat != "exon" {
-                continue;
-            }
+            match feat.as_str() {
+                "transcript" => {
+                    if let Some(prev_chrom) = tx_record_chroms.get(&tx_id) {
+                        if prev_chrom != &chrom {
+                            return Err(Error::new(
+                                ErrorKind::InvalidData,
+                                format!(
+                                    "Transcript {tx_id} has transcript records on multiple chromosomes: {prev_chrom} vs {chrom}"
+                                ),
+                            ));
+                        }
+                    } else {
+                        tx_record_chroms.insert(tx_id, chrom);
+                    }
+                }
+                "exon" => {
+                    // validate the start and end coordinates of exons.
+                    // in case of invalide record has same start and end
+                    if start > end {
+                        warn!(
+                            "Invalid GTF record with start > end, affected line: {}",
+                            line
+                        );
+                        continue;
+                    }
 
-            // validate the start and end coordinates of exons.
-            // in case of invalide record has same start and end
-            if start > end {
-                warn!(
-                    "Invalid GTF record with start > end, affected line: {}",
-                    line
-                );
-                continue;
-            }
+                    if let Some(record_chrom) = tx_record_chroms.get(&tx_id) {
+                        if record_chrom != &chrom {
+                            return Err(Error::new(
+                                ErrorKind::InvalidData,
+                                format!(
+                                    "Transcript {tx_id} record is on chromosome {record_chrom}, but an exon is on chromosome {chrom}"
+                                ),
+                            ));
+                        }
+                    }
 
-            Self::add_exon_to_tx_map(&mut txs, chrom, start, end, strand, tx_id, gene_id);
+                    Self::add_exon_to_tx_map(&mut txs, chrom, start, end, strand, tx_id, gene_id)?;
+                }
+                _ => continue,
+            }
+        }
+
+        for tx in txs.values() {
+            if let Some(record_chrom) = tx_record_chroms.get(&tx.tx_id) {
+                if record_chrom != &tx.chrom {
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "Transcript {} record is on chromosome {}, but its exons are on chromosome {}",
+                            tx.tx_id, record_chrom, tx.chrom
+                        ),
+                    ));
+                }
+            }
         }
 
         let mut ready_txs: Vec<TxStructure> = txs
@@ -293,7 +334,7 @@ impl MyGTFReader {
         strand: ISOMSTRAND,
         tx_id: String,
         gene_id: String,
-    ) {
+    ) -> std::io::Result<()> {
         let tx = txs.entry(tx_id.clone()).or_insert_with(|| {
             let mut tx = TxStructure::default();
             tx.set_start(start);
@@ -304,6 +345,16 @@ impl MyGTFReader {
             tx.set_gene_id(gene_id.clone());
             tx
         });
+
+        if tx.chrom != chrom {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "Transcript {tx_id} has exons on multiple chromosomes: {} vs {chrom}",
+                    tx.chrom
+                ),
+            ));
+        }
 
         if tx.gene_id != gene_id {
             warn!(
@@ -320,6 +371,7 @@ impl MyGTFReader {
         }
 
         tx.add_exon((start, end));
+        Ok(())
     }
 
     pub fn next(&mut self) -> Result<Option<TxStructure>, GTFError> {
@@ -348,7 +400,10 @@ pub fn process_gtf_line(
     if parts.len() < 9 {
         return Err(Error::new(
             ErrorKind::InvalidData,
-            format!("Invalid GTF line: fewer than 9 columns. Affected line: {}", s.trim_end()),
+            format!(
+                "Invalid GTF line: fewer than 9 columns. Affected line: {}",
+                s.trim_end()
+            ),
         ));
     }
 
@@ -448,4 +503,64 @@ pub enum GTFError {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn write_temp_gtf(contents: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        path.push(format!(
+            "isomatch-gtf-test-{}-{nanos}.gtf",
+            std::process::id()
+        ));
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn rejects_exons_for_same_transcript_on_different_chromosomes() {
+        let path = write_temp_gtf(
+            "chr5\tsrc\texon\t100\t150\t.\t+\t.\tgene_id \"gene1\"; transcript_id \"tx1\";\n\
+             chr19\tsrc\texon\t200\t250\t.\t+\t.\tgene_id \"gene1\"; transcript_id \"tx1\";\n",
+        );
+
+        let err = match MyGTFReader::new(&path) {
+            Ok(_) => panic!("expected cross-chromosome exons to be rejected"),
+            Err(err) => err,
+        };
+        std::fs::remove_file(&path).ok();
+
+        assert!(
+            err.to_string().contains("exons on multiple chromosomes"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn rejects_transcript_record_chromosome_mismatch_after_exons() {
+        let path = write_temp_gtf(
+            "chr5\tsrc\texon\t100\t150\t.\t+\t.\tgene_id \"gene1\"; transcript_id \"tx1\";\n\
+             chr19\tsrc\ttranscript\t100\t150\t.\t+\t.\tgene_id \"gene1\"; transcript_id \"tx1\";\n",
+        );
+
+        let err = match MyGTFReader::new(&path) {
+            Ok(_) => panic!("expected transcript/exon chromosome mismatch to be rejected"),
+            Err(err) => err,
+        };
+        std::fs::remove_file(&path).ok();
+
+        assert!(
+            err.to_string()
+                .contains("record is on chromosome chr19, but its exons are on chromosome chr5"),
+            "{err}"
+        );
+    }
 }
