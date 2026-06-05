@@ -79,9 +79,9 @@ isomatch classify --ref-fa ref.fa --ref-gtf reference.gtf.gz \
 # outputs: query_vs_ref.classification.txt.gz  query_vs_ref.annotated.gtf.gz  query_vs_ref.classify_info.json
 ```
 
-# Tools
+### Tools
 
-## `isomatch tools chop`
+#### isomatch tools chop
 
 `chop` removes attributes from a GTF while preserving the first eight GTF columns and comments. By default, it removes `ISOM_*` attributes and keeps standard identifiers such as `gene_id` and `transcript_id`.
 
@@ -120,7 +120,7 @@ Unlike intron chain collapse only tools, isomatch:
 ---
 
 <details>
-<summary>Read details</summary>
+<summary>**Read details**</summary>
 
 
 ## Pipeline Overview
@@ -377,7 +377,7 @@ isomatch classify:
 ---
 
 <details>
-<summary>Read details</summary>
+<summary>**Read details**</summary>
 
 ## Classify Pipeline Overview
 
