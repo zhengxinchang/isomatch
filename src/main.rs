@@ -7,6 +7,7 @@ pub mod core;
 pub mod utils;
 use crate::classify::run_classify;
 use crate::tools::chop::run_chop;
+use crate::tools::valtable::run_valtable;
 use crate::{index::run_index, merge::run_merge};
 use clap::ValueEnum;
 pub mod classify;
@@ -526,6 +527,7 @@ pub enum ChopMode {
     All,
     Isomatch,
 }
+
 #[derive(Parser, Debug, Serialize, Clone)]
 #[clap(about = "Remove attributes from the GTF file.
 ")]
@@ -569,9 +571,54 @@ pub struct ChopArgs {
     pub keep_check_case: bool,
 }
 
+#[derive(Parser, Debug, Serialize, Clone)]
+#[clap(
+    about = "Build table matrix from source gtf attributes for merged transcripts
+"
+)]
+pub struct ValTableArgs {
+    #[clap(
+        short = 'm',
+        long = "merged-gtf",
+        help_heading = "Input",
+        help = "Merged gtf from isomatch"
+    )]
+    pub query_gtf: PathBuf,
+
+    #[clap(help_heading = "Input", help = "Source GTFs")]
+    pub inputs: PathBuf,
+
+    #[clap(
+        short = 'o',
+        long = "out",
+        help_heading = "Output",
+        help = "Output prefix"
+    )]
+    pub out: PathBuf,
+
+    #[clap(
+        short = 'a',
+        long = "attr",
+        help_heading = "Parameters",
+        help = "attribute to be extracted, case sensitive.",
+    )]
+    pub attr_val: String,
+
+
+    #[clap(
+        short = 'd',
+        long = "default-val",
+        help_heading = "Parameters",
+        help = "default value for m",
+        default_value = "0.0"
+    )]
+    pub default_val: Option<String>,
+}
+
 #[derive(Subcommand, Debug, Clone, Serialize)]
 pub enum ToolssArgs {
     Chop(ChopArgs),
+    Valtable(ValTableArgs),
 }
 
 fn main() {
@@ -583,7 +630,7 @@ fn main() {
             command: Commands::Index(mut args),
         } => {
             if let Err(e) = run_index(&mut args) {
-                error!("{}", e);
+                error!("{:#}", e);
                 std::process::exit(1);
             }
         }
@@ -591,7 +638,7 @@ fn main() {
             command: Commands::Merge(args),
         } => {
             if let Err(e) = run_merge(args) {
-                error!("{}", e);
+                error!("{:#}", e);
                 std::process::exit(1);
             }
         }
@@ -599,7 +646,7 @@ fn main() {
             command: Commands::Classify(args),
         } => {
             if let Err(e) = run_classify(args) {
-                error!("{}", e);
+                error!("{:#}", e);
                 std::process::exit(1);
             }
         }
@@ -608,7 +655,13 @@ fn main() {
         } => match args {
             ToolssArgs::Chop(args) => {
                 if let Err(e) = run_chop(&args) {
-                    error!("{}", e);
+                    error!("{:#}", e);
+                    std::process::exit(1);
+                }
+            }
+            ToolssArgs::Valtable(args) => {
+                if let Err(e) = run_valtable(&args) {
+                    error!("{:#}", e);
                     std::process::exit(1);
                 }
             }

@@ -482,14 +482,12 @@ impl ClassifyRecord {
     }
 
     fn apply_no_same_strand_hit(&mut self, query_ptir: &QueryPTIR) {
-        
         if matches!(query_ptir.strand(), ISOMSTRAND::Unknown) {
             self.cc = ClassCode::BadQueryTranscript(SubBadQueryTx::UnstrandedTx);
             self.ref_gene_id = "novel".to_string();
             self.ref_gene_name = "novel".to_string();
             self.ref_tx_id = "novel".to_string();
-        }
-        else if !self.antisense_genes.is_empty() {
+        } else if !self.antisense_genes.is_empty() {
             self.cc = ClassCode::Antisense;
             self.same_strand_overlap_genes = unique_strings(&self.antisense_genes)
                 .into_iter()

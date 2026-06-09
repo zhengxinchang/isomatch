@@ -41,6 +41,13 @@ Typical workflow:
 3. classify query or merged transcripts with `isomatch classify --ref-fa ref.fa --ref-gtf ref.gtf.gz`.
 
 
+# Installation
+
+1. Download the latest release binary from the [GitHub releases page](https://github.com/zhengxinchang/isomatch/releases)
+2. Unpack the archive
+3. Grant executable permission if needed: Linux: `chmod +x isomatch`, MacOS: `xattr -d com.apple.quarantine isomatch`
+4. Run `./isomatch --help` to see usage instructions
+
 # Examples
 
 ### Merge

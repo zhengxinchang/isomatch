@@ -27,7 +27,7 @@ pub enum ClassCode {
 
     /// An isomatch-specific code for an invalid query transcript,
     /// added to improve robustness.
-    BadQueryTranscript(SubBadQueryTx)
+    BadQueryTranscript(SubBadQueryTx),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -65,7 +65,7 @@ pub enum SubNNC {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SubBadQueryTx {
-    UnstrandedTx
+    UnstrandedTx,
 }
 
 impl ClassCode {
@@ -81,7 +81,7 @@ impl ClassCode {
             Self::Genic => "genic",
             Self::Intergenic => "intergenic",
             Self::MoreJunctions => "moreJunctions",
-            Self::BadQueryTranscript(_) => "bad_query_transcript"
+            Self::BadQueryTranscript(_) => "bad_query_transcript",
         }
     }
 
