@@ -13,4 +13,13 @@ pub enum ToolError {
 
     #[error(transparent)]
     ParseIntError(#[from] std::num::ParseIntError),
+
+    #[error("Can not parse isomatch merged GTF:{reason}")]
+    ReadMergedGTFFailed { reason: String },
+
+    #[error("Invalid path, can not extract file name: {path}")]
+    InvalidPath { path: String },
+
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
 }

@@ -585,8 +585,8 @@ pub struct ValTableArgs {
     )]
     pub query_gtf: PathBuf,
 
-    #[clap(help_heading = "Input", help = "Source GTFs")]
-    pub inputs: PathBuf,
+    #[clap(help_heading = "Input", help = "Source GTFs", required = true, num_args = 1..)]
+    pub inputs: Vec<PathBuf>,
 
     #[clap(
         short = 'o',
@@ -600,10 +600,9 @@ pub struct ValTableArgs {
         short = 'a',
         long = "attr",
         help_heading = "Parameters",
-        help = "attribute to be extracted, case sensitive.",
+        help = "attribute to be extracted, case sensitive."
     )]
     pub attr_val: String,
-
 
     #[clap(
         short = 'd',

@@ -35,6 +35,8 @@ Easy to use
 
 - `isomatch tools chop`: remove selected GTF attributes, commonly used to strip isomatch-added annotations from output GTF files.
 
+- `isomatch tools valtable`: extract a per-transcript attribute （e.g., TPM）value from source GTFs and assemble it into a matrix aligned to the merged GTF transcript order.
+
 Typical workflow:
 1. create indexes with `isomatch index --ref-fa ref.fa`, or let `merge`/`classify` auto-create them.
 2. merge transcripts with `isomatch merge --ref-fa ref.fa`, optionally using TSS/TES guide evidence.
@@ -468,3 +470,37 @@ Key parameters:
 | `-m, --mode` | Attribute removal mode: `isomatch` removes only `ISOM_*` attributes; `all` removes all attributes except kept ones | `isomatch` |
 | `-k, --keep` | Comma-separated extra attributes to keep | `gene_id,transcript_id` are always kept |
 | `-c, --keep-check-case` | Match attribute names case-sensitively | case-insensitive matching |
+
+## isomatch tools valtable
+
+`valtable` reads a merged GTF produced by `isomatch merge`, looks up the source transcripts recorded in each `ISOM_SRC` attribute, extracts a specified GTF attribute value from the original source GTFs, and writes a matrix with one row per merged transcript and one column per source file.
+
+```
+isomatch tools valtable \
+    -m merged.merged.gtf.gz \
+    -o expr \
+    -a TPM \
+    sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+# outputs: expr.valtable.tsv.gz  expr.valtable_stats.json
+```
+
+Each source GTF is matched to its corresponding sample in the merged GTF by filename. Source files whose filenames do not appear in the merged GTF `##ISOM <SAMPLE>` headers are skipped with a warning. Transcripts in the source GTF that are not recorded in the merged GTF are counted in the stats but do not affect the output.
+
+| Item | Description |
+|------|-------------|
+| Input | Merged GTF (gzip or plain) + one or more source GTFs (gzip or plain) |
+| Output | `<prefix>.valtable.tsv.gz`, `<prefix>.valtable_stats.json` |
+
+Key parameters:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-m, --merged-gtf` | Merged GTF produced by `isomatch merge` | required |
+| `-o, --out` | Output prefix | required |
+| `-a, --attr` | GTF attribute name to extract from source transcripts (case-sensitive) | required |
+| `-d, --default-val` | Value used when a transcript has no entry in a source file | `0.0` |
+| (positional) | One or more source GTF files | required |
+
+`<prefix>.valtable.tsv.gz` is a tab-separated matrix: the first column is `transcript_id` (merged transcript IDs in their original order), and each subsequent column is named after the source GTF filename.
+
+`<prefix>.valtable_stats.json` records the number of merged transcripts, the list of source samples found in the merged GTF header, and per-file extraction counts (`extracted`, `attr_missing`, `src_tx_not_in_merged`).
