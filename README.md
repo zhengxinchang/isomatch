@@ -41,6 +41,10 @@ Typical workflow:
 1. create indexes with `isomatch index --ref-fa ref.fa`, or let `merge`/`classify` auto-create them.
 2. merge transcripts with `isomatch merge --ref-fa ref.fa`, optionally using TSS/TES guide evidence.
 3. classify query or merged transcripts with `isomatch classify --ref-fa ref.fa --ref-gtf ref.gtf.gz`.
+4. use `isomatch tools` to manipulate GTF outputs, e.g., 
+
+    1. `isomatch tools chop` to remove isomatch-added attributes, 
+    2. `isomatch tools valtable` to extract expression values from source GTFs.
 
 
 # Installation
