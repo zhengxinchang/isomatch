@@ -46,6 +46,7 @@ Typical workflow:
     1. `isomatch tools chop` to remove isomatch-added attributes, 
     2. `isomatch tools valtable` to extract expression values from source GTFs.
 
+Note: All subcommands output json file with run statistics, which are easy to parse for downstream analysis and reporting. 
 
 # Installation
 
