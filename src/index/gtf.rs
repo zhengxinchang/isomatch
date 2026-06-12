@@ -9,106 +9,11 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{core::tx_strand::ISOMSTRAND, utils::open_file_bufread};
 use thiserror::Error;
 
-/// Scan the GTF once to collect sorted unique chrom names and compute a
-/// content hash (xxh3-128 of the decompressed bytes) and file size.
-pub fn profile_gtf<P: AsRef<Path>>(path: P) -> Result<(Vec<String>, [u8; 16], u64), GTFError> {
-    let file_size = std::fs::metadata(path.as_ref())?.len();
-
-    let mut bufreader = open_file_bufread(path)?;
-    let mut hasher = xxhash_rust::xxh3::Xxh3::new();
-    let mut line = String::new();
-    let mut transcript_chroms: FxHashSet<String> = FxHashSet::default();
-    let mut exon_chroms: FxHashSet<String> = FxHashSet::default();
-    let mut has_transcript = false;
-    let mut line_no = 0usize;
-
-    loop {
-        let n = bufreader.read_line(&mut line)?;
-        if n == 0 {
-            break;
-        }
-        line_no += 1;
-        hasher.update(line.as_bytes());
-
-        if line.starts_with('#') {
-            line.clear();
-            continue;
-        }
-
-        let mut cols = line.split('\t');
-        let chrom_name = cols
-            .nth(0)
-            .ok_or(GTFError::InvalidGTFFormat { line_no })?
-            .to_string();
-        cols.next(); // skip source
-        let feature = cols.next().ok_or(GTFError::InvalidGTFFormat { line_no })?;
-
-        if feature != "transcript" && feature != "exon" {
-            line.clear();
-            continue;
-        }
-
-        cols.next()
-            .ok_or(GTFError::InvalidGTFFormat { line_no })?
-            .parse::<u32>()
-            .map_err(|_| GTFError::InvalidGTFFormat { line_no })?;
-
-        if feature == "transcript" {
-            has_transcript = true;
-            transcript_chroms.insert(chrom_name);
-        } else {
-            exon_chroms.insert(chrom_name);
-        }
-        line.clear();
-    }
-
-    if !has_transcript {
-        return Err(GTFError::MissingTranscriptRecord);
-    }
-
-    if transcript_chroms != exon_chroms {
-        let mut transcript_only: Vec<String> = transcript_chroms
-            .difference(&exon_chroms)
-            .cloned()
-            .collect();
-        let mut exon_only: Vec<String> = exon_chroms
-            .difference(&transcript_chroms)
-            .cloned()
-            .collect();
-        transcript_only.sort();
-        exon_only.sort();
-        return Err(GTFError::TranscriptExonChromMismatch {
-            transcript_only,
-            exon_only,
-        });
-    }
-
-    let mut chrom_names: Vec<String> = transcript_chroms.into_iter().collect();
-    chrom_names.sort();
-
-    let hash = hasher.digest128().to_le_bytes();
-    Ok((chrom_names, hash, file_size))
-}
-
-pub enum GTFRecord {
-    TxAttrs(TxAttrs),
-    TxStructure(TxStructure),
-}
-
 #[derive(Debug, Clone)]
-pub struct TxAttrs {
-    chrname: String,
-    attr_string: String,
-}
-
-impl TxAttrs {
-    pub fn attr_string(&self) -> &str {
-        &self.attr_string
-    }
-
-    pub fn chrname(&self) -> &str {
-        &self.chrname
-    }
+pub struct GtfProfile {
+    pub chrom_names: Vec<String>,
+    pub md5: [u8; 16],
+    pub file_size: u64,
 }
 
 /// GTF tx record
@@ -213,13 +118,20 @@ impl TxStructure {
 
 pub struct MyGTFReader {
     pub ready_txs: VecDeque<TxStructure>,
+    profile: GtfProfile,
 }
 
 impl MyGTFReader {
-    pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, GTFError> {
+        let path = path.as_ref();
+        let file_size = std::fs::metadata(path)?.len();
         let mut bufreader = open_file_bufread(path)?;
         let mut txs = FxHashMap::default();
         let mut tx_record_chroms: FxHashMap<String, String> = FxHashMap::default();
+        let mut transcript_chroms: FxHashSet<String> = FxHashSet::default();
+        let mut exon_chroms: FxHashSet<String> = FxHashSet::default();
+        let mut has_transcript = false;
+        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
         let mut line = String::new();
         let mut line_no = 0usize;
 
@@ -229,6 +141,7 @@ impl MyGTFReader {
                 break;
             }
             line_no += 1;
+            hasher.update(line.as_bytes());
 
             if line.starts_with('#') {
                 continue;
@@ -236,7 +149,10 @@ impl MyGTFReader {
 
             let (chrom, feat, start, end, strand, tx_id, gene_id) = process_gtf_line(&line)
                 .map_err(|err| {
-                    Error::new(err.kind(), format!("Invalid GTF at line {line_no}: {err}"))
+                    GTFError::Io(Error::new(
+                        err.kind(),
+                        format!("Invalid GTF at line {line_no}: {err}"),
+                    ))
                 })?;
 
             if feat.as_str() != "transcript" && feat.as_str() != "exon" {
@@ -250,31 +166,34 @@ impl MyGTFReader {
                     (false, true) => "gene_id",
                     (false, false) => unreachable!(),
                 };
-                return Err(Error::new(
+                return Err(GTFError::Io(Error::new(
                     ErrorKind::InvalidData,
                     format!(
                         "Missing required GTF attribute(s): {missing}. Affected line: {}",
                         line.trim_end()
                     ),
-                ));
+                )));
             }
 
             match feat.as_str() {
                 "transcript" => {
+                    has_transcript = true;
+                    transcript_chroms.insert(chrom.clone());
                     if let Some(prev_chrom) = tx_record_chroms.get(&tx_id) {
                         if prev_chrom != &chrom {
-                            return Err(Error::new(
+                            return Err(GTFError::Io(Error::new(
                                 ErrorKind::InvalidData,
                                 format!(
                                     "Transcript {tx_id} has transcript records on multiple chromosomes: {prev_chrom} vs {chrom}"
                                 ),
-                            ));
+                            )));
                         }
                     } else {
                         tx_record_chroms.insert(tx_id, chrom);
                     }
                 }
                 "exon" => {
+                    exon_chroms.insert(chrom.clone());
                     // validate the start and end coordinates of exons.
                     // in case of invalide record has same start and end
                     if start > end {
@@ -287,12 +206,12 @@ impl MyGTFReader {
 
                     if let Some(record_chrom) = tx_record_chroms.get(&tx_id) {
                         if record_chrom != &chrom {
-                            return Err(Error::new(
+                            return Err(GTFError::Io(Error::new(
                                 ErrorKind::InvalidData,
                                 format!(
                                     "Transcript {tx_id} record is on chromosome {record_chrom}, but an exon is on chromosome {chrom}"
                                 ),
-                            ));
+                            )));
                         }
                     }
 
@@ -305,16 +224,45 @@ impl MyGTFReader {
         for tx in txs.values() {
             if let Some(record_chrom) = tx_record_chroms.get(&tx.tx_id) {
                 if record_chrom != &tx.chrom {
-                    return Err(Error::new(
+                    return Err(GTFError::Io(Error::new(
                         ErrorKind::InvalidData,
                         format!(
                             "Transcript {} record is on chromosome {}, but its exons are on chromosome {}",
                             tx.tx_id, record_chrom, tx.chrom
                         ),
-                    ));
+                    )));
                 }
             }
         }
+
+        if !has_transcript {
+            return Err(GTFError::MissingTranscriptRecord);
+        }
+
+        if transcript_chroms != exon_chroms {
+            let mut transcript_only: Vec<String> = transcript_chroms
+                .difference(&exon_chroms)
+                .cloned()
+                .collect();
+            let mut exon_only: Vec<String> = exon_chroms
+                .difference(&transcript_chroms)
+                .cloned()
+                .collect();
+            transcript_only.sort();
+            exon_only.sort();
+            return Err(GTFError::TranscriptExonChromMismatch {
+                transcript_only,
+                exon_only,
+            });
+        }
+
+        let mut chrom_names: Vec<String> = transcript_chroms.into_iter().collect();
+        chrom_names.sort();
+        let profile = GtfProfile {
+            chrom_names,
+            md5: hasher.digest128().to_le_bytes(),
+            file_size,
+        };
 
         let mut ready_txs: Vec<TxStructure> = txs
             .drain()
@@ -349,7 +297,12 @@ impl MyGTFReader {
 
         Ok(Self {
             ready_txs: ready_txs.into(),
+            profile,
         })
+    }
+
+    pub fn profile(&self) -> &GtfProfile {
+        &self.profile
     }
 
     fn add_exon_to_tx_map(
@@ -405,8 +358,7 @@ impl MyGTFReader {
     }
 }
 
-/// process one line of GTF file, return chrom, feature type, start, end, strand,
-/// transcript_id and gene_id. The start and end are 1-based and end is inclusive.
+
 pub fn process_gtf_line(
     s: &str,
 ) -> Result<
@@ -438,9 +390,19 @@ pub fn process_gtf_line(
     // col 2: feature type
     let feature_type = parts[2].to_string();
     // col 3: start, 1-based
-    let start = parts[3].parse::<u32>().expect("invalid start coordinate");
+    let start = parts[3].parse::<u32>().map_err(|_| {
+        Error::new(
+            ErrorKind::InvalidData,
+            format!("Invalid start coordinate. Affected line: {}", s.trim_end()),
+        )
+    })?;
     // col 4: end, 1-based inclusive
-    let end = parts[4].parse::<u32>().expect("invalid end coordinate");
+    let end = parts[4].parse::<u32>().map_err(|_| {
+        Error::new(
+            ErrorKind::InvalidData,
+            format!("Invalid end coordinate. Affected line: {}", s.trim_end()),
+        )
+    })?;
     // col 6: strand
     let strand = match parts[6] {
         "-" => ISOMSTRAND::Minus,
@@ -457,30 +419,35 @@ pub fn process_gtf_line(
     Ok((chrom, feature_type, start, end, strand, tx_id, gene_id))
 }
 
-/// take the attributes column of a GTF line and extract the transcript_id and gene_id values, supporting both quoted and unquoted formats.
-fn parse_gtf_attributes(attrs: &str) -> (String, String) {
-    let mut tx_id = String::new();
-    let mut gene_id = String::new();
+/// Take the attributes column of a GTF line and extract one value, supporting
+/// both quoted and unquoted formats.
+pub(crate) fn parse_gtf_attr_value(attrs: &str, key: &str) -> Option<String> {
+    let mut saw_empty_match = false;
 
     for attr in attrs.split(';') {
         let attr = attr.trim();
-        if attr.is_empty() {
+        if attr.is_empty() || !attr.starts_with(key) {
             continue;
         }
-        if attr.starts_with("transcript_id") {
-            tx_id = extract_attr_value(attr);
-        } else if attr.starts_with("gene_id") {
-            gene_id = extract_attr_value(attr);
+
+        let value = extract_attr_value(attr);
+        if !value.is_empty() {
+            return Some(value);
         }
-        if !tx_id.is_empty() && !gene_id.is_empty() {
-            break; // 两个都找到了，提前退出
-        }
+        saw_empty_match = true;
     }
 
-    (tx_id, gene_id)
+    saw_empty_match.then(String::new)
 }
 
-/// extract the value part of a GTF attribute, supporting both quoted and unquoted formats.
+fn parse_gtf_attributes(attrs: &str) -> (String, String) {
+    (
+        parse_gtf_attr_value(attrs, "transcript_id").unwrap_or_default(),
+        parse_gtf_attr_value(attrs, "gene_id").unwrap_or_default(),
+    )
+}
+
+
 fn extract_attr_value(attr: &str) -> String {
     // quoted: gene_id "ENSG00000000003";
     if let Some(q_start) = attr.find('"') {

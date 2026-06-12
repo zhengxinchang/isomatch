@@ -41,9 +41,6 @@ use crate::core::tx_base::TxBase;
 use crate::index::format::{ChromBlockBuilder, ChromDirectoryEntry, IndexHeader};
 use crate::traits::{DiskSize, Encodable};
 
-/// 1. new() write 4k header place holder,  + N×34B  Directory + Chrom Name Table + Missing SeqID Table
-/// 2. add_chrom() write per-chrom data. drop immediately after it is done.
-/// 3. finalize() seek back header place holder, fill up with Header and Directory
 pub struct IndexBuilder {
     header: IndexHeader,
     entries: Vec<ChromDirectoryEntry>,
@@ -55,8 +52,6 @@ pub struct IndexBuilder {
 }
 
 impl IndexBuilder {
-    /// `chrom_names` must be in the same order as chroms will appear in the GTF
-    /// (i.e. the order returned by `profile_gtf`).
     pub fn new(
         file: File,
         chrom_names: Vec<String>,
@@ -163,8 +158,6 @@ impl IndexBuilder {
         })
     }
 
-    /// Write one chrom block to disk and record its directory entry.
-    /// The `ChromBlockBuilder` is consumed and its memory freed after this call.
     pub fn add_chrom(&mut self, mut entry: ChromBlockBuilder) -> std::io::Result<()> {
         entry.finalize();
 
@@ -180,26 +173,23 @@ impl IndexBuilder {
         }
         self.current_offset += tx_bytes as u64;
 
-        // write junction pool (zstd-compressed) next to tx_bytes
         let junction_pool_offset = tx_offset + tx_bytes as u64;
         let junction_pool_len = encode_compressed(&entry.junction_pool, &mut self.file)?;
         self.current_offset += u64_from_usize(junction_pool_len, "junction pool length")?;
 
-        // then string pool (zstd-compressed)
+    
         let string_pool_offset =
             junction_pool_offset + u64_from_usize(junction_pool_len, "junction pool length")?;
         let string_pool_len = encode_compressed(&entry.string_pool, &mut self.file)?;
         self.current_offset += u64_from_usize(string_pool_len, "string pool length")?;
 
-        // then splice site pool (zstd-compressed)
+
         let splice_site_pool_offset =
             string_pool_offset + u64_from_usize(string_pool_len, "string pool length")?;
         let splice_site_pool_len = encode_compressed(&entry.splice_site_pool, &mut self.file)?;
         self.current_offset += u64_from_usize(splice_site_pool_len, "splice site pool length")?;
 
-        // generate a chromsome directory entry
-        // and insert it into entries
-        // each add_chrom will generate one entry on the fly
+
         let tx_count = u64::try_from(entry.txs.len()).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidData,

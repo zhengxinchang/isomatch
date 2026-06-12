@@ -8,14 +8,12 @@ use crate::{
     IndexArgs,
     core::tx_strand::ISOMSTRAND,
     // fasta::{self, FastaReader},
-    // gtf::{self, profile_gtf},
     index::format::ChromBlockBuilder,
     traits::ArgValidate,
     utils::{greetings2, print_json_block, require_file},
 };
 pub use anyhow::Result as AnyResult;
 use fasta::FastaReader;
-use gtf::profile_gtf;
 pub mod attributes_index;
 pub mod builder;
 pub mod fasta;
@@ -23,25 +21,6 @@ pub mod format;
 pub mod gtf;
 pub mod index_error;
 pub mod reader;
-
-fn parse_gtf_attr_value(attrs: &str, key: &str) -> Option<String> {
-    attrs.split(';').find_map(|attr| {
-        let attr = attr.trim();
-        if !attr.starts_with(key) {
-            return None;
-        }
-
-        if let Some(q_start) = attr.find('"') {
-            let rest = &attr[q_start + 1..];
-            let q_len = rest.find('"')?;
-            return Some(rest[..q_len].to_string());
-        }
-
-        attr.split_ascii_whitespace()
-            .nth(1)
-            .map(ToString::to_string)
-    })
-}
 
 #[derive(Debug, Default, Serialize)]
 pub struct IndexStats {
@@ -222,9 +201,12 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     if !args.quiet {
         info!("Profiling GTF");
     }
-    let (profiled_chrom_names, md5, gtf_file_size) = profile_gtf(&args.input)?;
+    let mut gtf_reader = gtf::MyGTFReader::new(&args.input)
+        .with_context(|| format!("Can not open GTF file: {}", args.input.display()))?;
+    let profile = gtf_reader.profile().clone();
 
-    let missing_ref_seqids: Vec<String> = profiled_chrom_names
+    let missing_ref_seqids: Vec<String> = profile
+        .chrom_names
         .iter()
         .filter(|chrom| !ref_far.contains(chrom))
         .cloned()
@@ -249,7 +231,8 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     }
 
     let missing_ref_seqid_set: HashSet<String> = missing_ref_seqids.into_iter().collect();
-    let chrom_names: Vec<String> = profiled_chrom_names
+    let chrom_names: Vec<String> = profile
+        .chrom_names
         .into_iter()
         .filter(|chrom| !missing_ref_seqid_set.contains(chrom))
         .collect();
@@ -270,23 +253,22 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         info!("Initializing Builder");
     }
     let missing_seqids_vec: Vec<String> = missing_ref_seqid_set.iter().cloned().collect();
+    let isomx_file = File::create(&isomx_path)
+        .with_context(|| format!("Can not create output file: {}", isomx_path.display()))?;
     let mut builder = builder::IndexBuilder::new(
-        std::fs::File::create(&isomx_path).expect("Can not create output file"),
+        isomx_file,
         chrom_names,
-        gtf_file_size,
-        md5,
+        profile.file_size,
+        profile.md5,
         true,
         args.seqfa.is_some(),
         missing_seqids_vec,
     )
-    .expect("Can not init index builder");
+    .with_context(|| format!("Can not init index builder at {}", isomx_path.display()))?;
 
     if !args.quiet {
         info!("Indexing GTF");
     }
-    let mut gtf_reader = gtf::MyGTFReader::new(&args.input)
-        .with_context(|| format!("Can not open GTF file: {}", args.input.display()))?;
-
     let mut current_chrom = String::new();
     let mut chrom_id = 0u16;
     let mut chrom_block: Option<ChromBlockBuilder> = None;
@@ -325,12 +307,12 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         tx_structure.set_gidx(next_written_tx_idx);
         chrom_block
             .as_mut()
-            .expect("Can not access chromblock")
+            .context("Can not access chromblock")?
             .add_tx(tx_structure, &mut ref_far, &mut seq_far, &mut stats)?;
 
         next_written_tx_idx = next_written_tx_idx
             .checked_add(1)
-            .expect("written transcript index exceeded u64");
+            .context("written transcript index exceeded u64")?;
     }
 
     if let Some(cb) = chrom_block.take() {
@@ -362,7 +344,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     isoms_path.set_extension("isoms");
 
     let mut attr_builder =
-        attributes_index::AttrIndexBuilder::init(&isoms_path, next_written_tx_idx, &md5)
+        attributes_index::AttrIndexBuilder::init(&isoms_path, next_written_tx_idx, &profile.md5)
             .with_context(|| format!("cannot init AttrIndexBuilder at {}", isoms_path.display()))?;
 
     let gtf_lines = crate::utils::open_file_bufread(&args.input).with_context(|| {
@@ -381,7 +363,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
             continue;
         }
         let attr_str = fields[8];
-        let Some(tx_id) = parse_gtf_attr_value(attr_str, "transcript_id") else {
+        let Some(tx_id) = gtf::parse_gtf_attr_value(attr_str, "transcript_id") else {
             continue;
         };
         let Some(&tx_gidx) = txid_index.get(&tx_id) else {
