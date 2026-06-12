@@ -8,9 +8,9 @@ use crate::{
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct StringSpan {
     /// Byte offset within the string-data section of the index file.
-    pub offset: u32,
+    pub offset: u64,
     /// Length in bytes of the UTF-8 encoded string.
-    pub byte_len: u32,
+    pub byte_len: u64,
 }
 
 impl StringSpan {
@@ -36,15 +36,16 @@ impl StringPool {
     }
 
     pub fn add(&mut self, s: &str) -> Result<StringSpan, TxBaseError> {
-        if self.index.len() >= u32::MAX as usize {
+        if self.index.len() >= u64::MAX as usize {
             return Err(TxBaseError::StringPoolTooLarge);
         }
         if self.index.contains_key(s) {
             return Ok(*self.index.get(s).unwrap());
         } else {
             // No this string found in the pool, add it to the pool
-            let offset = self.strings.len() as u32;
-            let byte_len = s.len() as u32;
+            let offset =
+                u64::try_from(self.strings.len()).map_err(|_| TxBaseError::StringPoolTooLarge)?;
+            let byte_len = u64::try_from(s.len()).map_err(|_| TxBaseError::StringPoolTooLarge)?;
             self.strings.extend_from_slice(s.as_bytes());
             let span = StringSpan { offset, byte_len };
             self.index.insert(s.to_string(), span);

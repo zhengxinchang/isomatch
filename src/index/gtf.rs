@@ -114,7 +114,7 @@ impl TxAttrs {
 /// GTF tx record
 #[derive(Debug, Clone)]
 pub struct TxStructure {
-    pub gidx: u32,
+    pub gidx: u64,
     pub chrom: String,
     pub start: u32,
     pub end: u32,
@@ -140,7 +140,7 @@ impl TxStructure {
         }
     }
 
-    pub fn set_gidx(&mut self, idx: u32) {
+    pub fn set_gidx(&mut self, idx: u64) {
         self.gidx = idx;
         // self.is_empty = false;
     }
@@ -344,7 +344,7 @@ impl MyGTFReader {
         });
 
         for (idx, tx) in ready_txs.iter_mut().enumerate() {
-            tx.set_gidx(idx as u32);
+            tx.set_gidx(idx as u64);
         }
 
         Ok(Self {

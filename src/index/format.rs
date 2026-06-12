@@ -81,7 +81,7 @@ impl Flags {
 
 pub struct IndexHeader {
     pub magic: [u8; 4],
-    pub version: u8,
+    pub version: u32,
     pub flags: Flags,
     pub chrom_count: u32,
     // gtf
@@ -91,12 +91,12 @@ pub struct IndexHeader {
     /// Byte length of the chrom name table that immediately follows the directory.
     pub chrom_name_table_len: u32,
     /// Total number of transcripts written into this index.
-    pub total_tx_n: u32,
+    pub total_tx_n: u64,
     /// Number of seqids in the GTF that were absent from the reference FASTA.
     pub missing_seqid_count: u32,
     /// Byte length of the missing seqid table that follows the chrom name table.
     pub missing_seqid_table_len: u32,
-    pub reserved_to_4k: [u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4 - 4], // 4031 bytes
+    pub reserved_to_4k: [u8; 4096 - 4 - 4 - 8 - 4 - 8 - 8 - 16 - 4 - 8 - 4 - 4], // 4024 bytes
 }
 
 impl IndexHeader {
@@ -126,7 +126,7 @@ impl IndexHeader {
             total_tx_n: 0,
             missing_seqid_count,
             missing_seqid_table_len,
-            reserved_to_4k: [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4 - 4],
+            reserved_to_4k: [0u8; 4096 - 4 - 4 - 8 - 4 - 8 - 8 - 16 - 4 - 8 - 4 - 4],
         }
     }
 }
@@ -141,7 +141,7 @@ impl Encodable for IndexHeader {
     fn encode_to<W: Write>(&self, writer: &mut W) -> Result<usize, Self::Error> {
         let mut buf = Vec::new();
         buf.extend_from_slice(&self.magic);
-        buf.push(self.version);
+        buf.extend_from_slice(&self.version.to_le_bytes());
         buf.extend_from_slice(&self.flags.bits.to_le_bytes());
         buf.extend_from_slice(&self.chrom_count.to_le_bytes());
         buf.extend_from_slice(&self.gtf_file_size.to_le_bytes());
@@ -171,9 +171,9 @@ impl Decodable for IndexHeader {
             ));
         }
 
-        let mut version_buf = [0u8; 1];
+        let mut version_buf = [0u8; 4];
         reader.read_exact(&mut version_buf)?;
-        let version = version_buf[0];
+        let version = u32::from_le_bytes(version_buf);
         if version != ISOMX_VERSION {
             return Err(Error::new(
                 ErrorKind::InvalidData,
@@ -208,9 +208,9 @@ impl Decodable for IndexHeader {
         reader.read_exact(&mut chrom_name_table_len_buf)?;
         let chrom_name_table_len = u32::from_le_bytes(chrom_name_table_len_buf);
 
-        let mut total_tx_n_buf = [0u8; 4];
+        let mut total_tx_n_buf = [0u8; 8];
         reader.read_exact(&mut total_tx_n_buf)?;
-        let total_tx_n = u32::from_le_bytes(total_tx_n_buf);
+        let total_tx_n = u64::from_le_bytes(total_tx_n_buf);
 
         let mut missing_seqid_count_buf = [0u8; 4];
         reader.read_exact(&mut missing_seqid_count_buf)?;
@@ -221,7 +221,7 @@ impl Decodable for IndexHeader {
         let missing_seqid_table_len = u32::from_le_bytes(missing_seqid_table_len_buf);
 
         // consume remaining reserved bytes to stay at 4 KB boundary
-        let mut reserved_to_4k = [0u8; 4096 - 4 - 1 - 8 - 4 - 8 - 8 - 16 - 4 - 4 - 4 - 4]; // 4031 bytes
+        let mut reserved_to_4k = [0u8; 4096 - 4 - 4 - 8 - 4 - 8 - 8 - 16 - 4 - 8 - 4 - 4]; // 4024 bytes
         reader.read_exact(&mut reserved_to_4k)?;
 
         if index_size < Self::DISK_SIZE as u64 {
@@ -270,18 +270,18 @@ pub struct ChromDirectoryEntry {
     pub chrom_id: u16,
     pub chrom_name_offset: u32,
     pub chrom_name_len: u32,
-    pub global_tx_offset: u32,
-    pub global_tx_count: u32,
-    pub global_junction_pool_offset: u32,
-    pub global_junction_count: u32,
-    pub global_string_pool_offset: u32,
-    pub global_string_len: u32,
-    pub global_splice_site_pool_offset: u32,
-    pub global_splice_site_pool_len: u32,
+    pub global_tx_offset: u64,
+    pub global_tx_count: u64,
+    pub global_junction_pool_offset: u64,
+    pub global_junction_count: u64,
+    pub global_string_pool_offset: u64,
+    pub global_string_len: u64,
+    pub global_splice_site_pool_offset: u64,
+    pub global_splice_site_pool_len: u64,
 }
 
 impl DiskSize for ChromDirectoryEntry {
-    const DISK_SIZE: usize = 42;
+    const DISK_SIZE: usize = 74;
 }
 
 impl Encodable for ChromDirectoryEntry {
@@ -291,8 +291,8 @@ impl Encodable for ChromDirectoryEntry {
         writer.write_all(&self.chrom_id.to_le_bytes())?;
         writer.write_all(&self.chrom_name_offset.to_le_bytes())?;
         writer.write_all(&self.chrom_name_len.to_le_bytes())?;
-        writer.write_all(&self.global_tx_count.to_le_bytes())?;
         writer.write_all(&self.global_tx_offset.to_le_bytes())?;
+        writer.write_all(&self.global_tx_count.to_le_bytes())?;
         writer.write_all(&self.global_junction_pool_offset.to_le_bytes())?;
         writer.write_all(&self.global_junction_count.to_le_bytes())?;
         writer.write_all(&self.global_string_pool_offset.to_le_bytes())?;
@@ -315,14 +315,14 @@ impl Decodable for ChromDirectoryEntry {
             chrom_id: u16::from_le_bytes(buf[0..2].try_into().unwrap()),
             chrom_name_offset: u32::from_le_bytes(buf[2..6].try_into().unwrap()),
             chrom_name_len: u32::from_le_bytes(buf[6..10].try_into().unwrap()),
-            global_tx_count: u32::from_le_bytes(buf[10..14].try_into().unwrap()),
-            global_tx_offset: u32::from_le_bytes(buf[14..18].try_into().unwrap()),
-            global_junction_pool_offset: u32::from_le_bytes(buf[18..22].try_into().unwrap()),
-            global_junction_count: u32::from_le_bytes(buf[22..26].try_into().unwrap()),
-            global_string_pool_offset: u32::from_le_bytes(buf[26..30].try_into().unwrap()),
-            global_string_len: u32::from_le_bytes(buf[30..34].try_into().unwrap()),
-            global_splice_site_pool_offset: u32::from_le_bytes(buf[34..38].try_into().unwrap()),
-            global_splice_site_pool_len: u32::from_le_bytes(buf[38..42].try_into().unwrap()),
+            global_tx_offset: u64::from_le_bytes(buf[10..18].try_into().unwrap()),
+            global_tx_count: u64::from_le_bytes(buf[18..26].try_into().unwrap()),
+            global_junction_pool_offset: u64::from_le_bytes(buf[26..34].try_into().unwrap()),
+            global_junction_count: u64::from_le_bytes(buf[34..42].try_into().unwrap()),
+            global_string_pool_offset: u64::from_le_bytes(buf[42..50].try_into().unwrap()),
+            global_string_len: u64::from_le_bytes(buf[50..58].try_into().unwrap()),
+            global_splice_site_pool_offset: u64::from_le_bytes(buf[58..66].try_into().unwrap()),
+            global_splice_site_pool_len: u64::from_le_bytes(buf[66..74].try_into().unwrap()),
         })
     }
 }

@@ -9,26 +9,26 @@ use log::error;
 use crate::{constants::ISOMS_VERSION, index::index_error::IndexError};
 
 /// Sidecar file layout (.isomattr):
-///   [Header:     20 bytes  — magic(7) + version(1) + total_tx_n(4) + span_table_off(8)]
+///   [Header:     41 bytes - magic(5) + version(4) + md5(16) + total_tx_n(8) + span_table_off(8)]
 ///   [Blob:       variable  — per-tx zstd-compressed attr bytes, written in tx_gidx order]
-///   [Span table: N × 8B   — RawStringSpan entries indexed by tx_gidx]
+///   [Span table: N x 12B  - RawStringSpan entries indexed by tx_gidx]
 
 #[derive(Clone, Copy, Default)]
 pub struct RawStringSpan {
-    pub offset: u32, // absolute byte offset of the compressed blob in the file
+    pub offset: u64, // absolute byte offset of the compressed blob in the file
     pub length: u32, // byte length of the compressed blob
 }
 
 const MAGIC: [u8; 5] = *b"ISOMS";
 
-// magic(5) + version(1) + total_tx_n(4) + span_table_off(8) + md5 16 = 34
-const HEADER_SIZE: usize = 34;
+// magic(5) + version(4) + md5(16) + total_tx_n(8) + span_table_off(8) = 41
+const HEADER_SIZE: usize = 41;
 
 pub struct AttrIndexBuilder {
     magic: [u8; 5],
-    version: u8,
+    version: u32,
     md5: [u8; 16],
-    total_tx_n: usize,
+    total_tx_n: u64,
     current_tx_n: usize,
     blob_offset: usize, // current write cursor; starts at HEADER_SIZE, grows with each dump_attr
     tx_idx_to_raw_attr_span: Vec<RawStringSpan>,
@@ -38,7 +38,7 @@ pub struct AttrIndexBuilder {
 impl AttrIndexBuilder {
     pub fn init<P: AsRef<Path>>(
         path: P,
-        total_tx_n: usize,
+        total_tx_n: u64,
         md5: &[u8; 16],
     ) -> Result<Self, IndexError> {
         let file = File::create(path).map_err(|e| IndexError::FailReadIndex {
@@ -57,16 +57,25 @@ impl AttrIndexBuilder {
             total_tx_n,
             current_tx_n: 0,
             blob_offset: HEADER_SIZE,
-            tx_idx_to_raw_attr_span: vec![RawStringSpan::default(); total_tx_n],
+            tx_idx_to_raw_attr_span: vec![
+                RawStringSpan::default();
+                usize::try_from(total_tx_n).map_err(|_| {
+                    IndexError::FailReadIndex {
+                        reason: format!("total_tx_n {} exceeded usize", total_tx_n),
+                    }
+                })?
+            ],
             file,
         })
     }
 
     /// Compress `data` with zstd and append to the blob section.
     /// Records the (offset, length) span for `tx_gidx` in the span table.
-    pub fn dump_attr(&mut self, data: Vec<u8>, tx_gidx: u32) -> Result<usize, IndexError> {
-        let idx = tx_gidx as usize;
-        if idx >= self.total_tx_n {
+    pub fn dump_attr(&mut self, data: Vec<u8>, tx_gidx: u64) -> Result<usize, IndexError> {
+        let idx = usize::try_from(tx_gidx).map_err(|_| IndexError::FailReadIndex {
+            reason: format!("tx_gidx {} exceeded usize", tx_gidx),
+        })?;
+        if tx_gidx >= self.total_tx_n {
             return Err(IndexError::FailReadIndex {
                 reason: format!(
                     "tx_gidx {} out of range (total {})",
@@ -78,10 +87,12 @@ impl AttrIndexBuilder {
             zstd::encode_all(data.as_slice(), 3).map_err(|e| IndexError::FailReadIndex {
                 reason: e.to_string(),
             })?;
-        let offset = u32::try_from(self.blob_offset).map_err(|_| IndexError::FailReadIndex {
-            reason: format!("blob offset {} exceeded u32", self.blob_offset),
+        let offset = u64::try_from(self.blob_offset).map_err(|_| IndexError::FailReadIndex {
+            reason: format!("blob offset {} exceeded u64", self.blob_offset),
         })?;
-        let length = compressed.len() as u32;
+        let length = u32::try_from(compressed.len()).map_err(|_| IndexError::FailReadIndex {
+            reason: format!("compressed attr length {} exceeded u32", compressed.len()),
+        })?;
         self.file
             .write_all(&compressed)
             .map_err(|e| IndexError::FailReadIndex {
@@ -105,10 +116,12 @@ impl AttrIndexBuilder {
         // Overwrite the placeholder header at position 0.
         self.file.seek(SeekFrom::Start(0)).map_err(e)?;
         self.file.write_all(&self.magic).map_err(e)?;
-        self.file.write_all(&[self.version]).map_err(e)?;
+        self.file
+            .write_all(&self.version.to_le_bytes())
+            .map_err(e)?;
         self.file.write_all(&self.md5).map_err(e)?;
         self.file
-            .write_all(&(self.total_tx_n as u32).to_le_bytes())
+            .write_all(&self.total_tx_n.to_le_bytes())
             .map_err(e)?;
         self.file
             .write_all(&span_table_off.to_le_bytes())
@@ -127,9 +140,9 @@ impl AttrIndexBuilder {
 
 pub struct AttrIndexHeader {
     pub magic: [u8; 5],
-    pub version: u8,
+    pub version: u32,
     pub md5: [u8; 16],
-    pub total_tx_n: u32,
+    pub total_tx_n: u64,
     pub span_table_off: u64,
 }
 
@@ -153,15 +166,16 @@ impl AttrIndexReader {
             });
         }
 
-        let mut version = [0u8; 1];
+        let mut version = [0u8; 4];
         file.read_exact(&mut version)
             .map_err(|e| IndexError::FailReadIndex {
                 reason: format!("Can not read version in AttrIndex file: {}", e),
             })?;
-        if version[0] != ISOMS_VERSION {
+        let version = u32::from_le_bytes(version);
+        if version != ISOMS_VERSION {
             error!(
                 "The isomx version ({}) is outdated, please rebuild the index.",
-                version[0]
+                version
             );
             return Err(IndexError::FailReadIndex {
                 reason: format!("Index version does not match, please rebuild index"),
@@ -174,12 +188,12 @@ impl AttrIndexReader {
                 reason: format!("Can not read version in AttrIndex file: {}", e),
             })?;
 
-        let mut buf4 = [0u8; 4];
-        file.read_exact(&mut buf4)
+        let mut buf8 = [0u8; 8];
+        file.read_exact(&mut buf8)
             .map_err(|e| IndexError::FailReadIndex {
                 reason: format!("Can not read total tx number in AttrIndex file: {}", e),
             })?;
-        let total_tx_n = u32::from_le_bytes(buf4);
+        let total_tx_n = u64::from_le_bytes(buf8);
 
         let mut buf8 = [0u8; 8];
         file.read_exact(&mut buf8)
@@ -190,7 +204,7 @@ impl AttrIndexReader {
 
         Ok(AttrIndexHeader {
             magic,
-            version: version[0],
+            version,
             md5,
             total_tx_n,
             span_table_off,
@@ -217,12 +231,12 @@ impl AttrIndexReader {
         self.header.md5
     }
 
-    pub fn version(&self) -> u8 {
+    pub fn version(&self) -> u32 {
         self.header.version
     }
 
     /// Returns the decompressed attr bytes for `tx_idx`, or `None` if not set.
-    pub fn get_attr(&mut self, tx_idx: u32) -> Result<Option<Vec<u8>>, IndexError> {
+    pub fn get_attr(&mut self, tx_idx: u64) -> Result<Option<Vec<u8>>, IndexError> {
         if tx_idx >= self.header.total_tx_n {
             return Ok(None);
         }
@@ -231,11 +245,12 @@ impl AttrIndexReader {
         };
 
         // Read the RawStringSpan for this tx_idx from the span table.
-        let span_entry_off = self.header.span_table_off + tx_idx as u64 * 8;
+        let span_entry_off = self.header.span_table_off + tx_idx * 12;
         self.file.seek(SeekFrom::Start(span_entry_off)).map_err(e)?;
+        let mut buf8 = [0u8; 8];
+        self.file.read_exact(&mut buf8).map_err(e)?;
+        let offset = u64::from_le_bytes(buf8);
         let mut buf4 = [0u8; 4];
-        self.file.read_exact(&mut buf4).map_err(e)?;
-        let offset = u32::from_le_bytes(buf4);
         self.file.read_exact(&mut buf4).map_err(e)?;
         let length = u32::from_le_bytes(buf4);
 
@@ -244,8 +259,9 @@ impl AttrIndexReader {
         }
 
         // Read and decompress the blob.
-        self.file.seek(SeekFrom::Start(offset as u64)).map_err(e)?;
-        let mut compressed = vec![0u8; length as usize];
+        self.file.seek(SeekFrom::Start(offset)).map_err(e)?;
+        let compressed_len = length as usize;
+        let mut compressed = vec![0u8; compressed_len];
         self.file.read_exact(&mut compressed).map_err(e)?;
         let data =
             zstd::decode_all(compressed.as_slice()).map_err(|err| IndexError::FailReadIndex {

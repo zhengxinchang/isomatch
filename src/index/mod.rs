@@ -290,7 +290,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     let mut current_chrom = String::new();
     let mut chrom_id = 0u16;
     let mut chrom_block: Option<ChromBlockBuilder> = None;
-    let mut next_written_tx_idx = 0u32;
+    let mut next_written_tx_idx = 0u64;
     loop {
         let Some(mut tx_structure) = gtf_reader.next()? else {
             break;
@@ -328,7 +328,9 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
             .expect("Can not access chromblock")
             .add_tx(tx_structure, &mut ref_far, &mut seq_far, &mut stats)?;
 
-        next_written_tx_idx += 1;
+        next_written_tx_idx = next_written_tx_idx
+            .checked_add(1)
+            .expect("written transcript index exceeded u64");
     }
 
     if let Some(cb) = chrom_block.take() {
@@ -360,7 +362,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     isoms_path.set_extension("isoms");
 
     let mut attr_builder =
-        attributes_index::AttrIndexBuilder::init(&isoms_path, next_written_tx_idx as usize, &md5)
+        attributes_index::AttrIndexBuilder::init(&isoms_path, next_written_tx_idx, &md5)
             .with_context(|| format!("cannot init AttrIndexBuilder at {}", isoms_path.display()))?;
 
     let gtf_lines = crate::utils::open_file_bufread(&args.input).with_context(|| {

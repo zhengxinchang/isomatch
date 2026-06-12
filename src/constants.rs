@@ -1,6 +1,6 @@
 pub const ISOM_GTF_SCHEMA: &str = "1";
-pub const ISOMX_VERSION: u8 = 2;
-pub const ISOMS_VERSION: u8 = 1;
+pub const ISOMX_VERSION: u32 = 4;
+pub const ISOMS_VERSION: u32 = 3;
 
 pub const MOTIFS: &[&[u8]] = &[
     b"AATAAA", b"ATTAAA", b"AGTAAA", b"TATAAA", b"CATAAA", b"GATAAA", b"AATATA", b"AATACA",

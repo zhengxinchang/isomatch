@@ -9,7 +9,7 @@ use crate::core::tx_base_flag::TxBaseFlags;
 use crate::core::tx_strand::ISOMSTRAND;
 use crate::core::{core_error::TxBaseError, tx_boundary::TxBoundary};
 pub trait TxBaseTrait {
-    fn tx_idx(&self) -> u32;
+    fn tx_idx(&self) -> u64;
     fn tx_boundary(&self) -> TxBoundary {
         TxBoundary::new(self.start(), self.end(), self.strand())
     }
@@ -39,7 +39,7 @@ pub trait TxBaseTrait {
 /// for persistance on disk.
 #[derive(Debug, Clone, Copy, Hash)]
 pub struct TxBase {
-    pub tx_idx: u32,
+    pub tx_idx: u64,
     pub boundary: TxBoundary,
     pub chrom_id: u16,
     pub start: u32,
@@ -61,7 +61,7 @@ pub struct TxBase {
 
 impl TxBase {
     pub fn new(
-        gid: u32,
+        gid: u64,
         chrom_id: u16,
         start: u32,
         end: u32,

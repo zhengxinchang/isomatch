@@ -174,8 +174,8 @@ impl IndexReader {
             entry.global_tx_count,
             entry.global_junction_pool_offset as u64,
             entry.global_junction_count as usize,
-            entry.global_string_pool_offset as u64,
-            entry.global_string_len as usize,
+            entry.global_string_pool_offset,
+            entry.global_string_len,
             entry.global_splice_site_pool_offset as u64,
             entry.global_splice_site_pool_len as usize,
             self.file.try_clone()?,
@@ -204,7 +204,7 @@ impl IndexReader {
 
     /// Scan all chromosomes and build a transcript_id → tx_idx lookup map.
     /// O(n) one-time cost
-    pub fn build_txid_index(&mut self) -> Result<HashMap<String, u32>, IndexError> {
+    pub fn build_txid_index(&mut self) -> Result<HashMap<String, u64>, IndexError> {
         let mut map = HashMap::new();
         for chrom_name in self.chrom_names.clone() {
             let mut cr =
@@ -233,7 +233,7 @@ impl IndexReader {
         Ok(map)
     }
 
-    pub fn version(&self) -> u8 {
+    pub fn version(&self) -> u32 {
         self.header.version
     }
 
@@ -246,19 +246,19 @@ pub struct ChromBlockReader {
     pub file_id: usize,
     pub chrom_id: u16,
     pub chrom_name: String,
-    pub tx_count: u32,
+    pub tx_count: u64,
     pub junction_pool_offset: u64,
     pub junction_pool_len: usize,
     pub junction_pool: JunctionPool,
     pub string_pool_offset: u64,
-    pub string_pool_len: usize,
+    pub string_pool_len: u64,
     pub string_pool: StringPool,
     pub splice_site_pool_offset: u64,
     pub splice_site_pool_len: usize,
     pub splice_site_pool: SpliceSitePool,
     file: File,
     tx_base_offset: u64,
-    next_tx_idx: u32,
+    next_tx_idx: u64,
 }
 
 impl ChromBlockReader {
@@ -266,16 +266,16 @@ impl ChromBlockReader {
         file_id: usize,
         chrom_id: u16,
         chrom_name: String,
-        tx_count: u32,
+        tx_count: u64,
         junction_pool_offset: u64,
         junction_pool_len: usize,
         string_pool_offset: u64,
-        string_pool_len: usize,
+        string_pool_len: u64,
         splice_site_pool_offset: u64,
         splice_site_pool_len: usize,
         mut file: File,
         tx_base_offset: u64,
-        next_tx_idx: u32,
+        next_tx_idx: u64,
     ) -> io::Result<ChromBlockReader> {
         let junction_pool = ChromBlockReader::load_junction_pool(
             &mut file,
@@ -333,7 +333,13 @@ impl ChromBlockReader {
         self.next_tx_idx = 0;
     }
 
-    fn decompress(file: &mut File, offset: u64, compressed_len: usize) -> io::Result<Vec<u8>> {
+    fn decompress(file: &mut File, offset: u64, compressed_len: u64) -> io::Result<Vec<u8>> {
+        let compressed_len = usize::try_from(compressed_len).map_err(|_| {
+            io::Error::new(
+                ErrorKind::InvalidData,
+                format!("compressed pool length {compressed_len} exceeded usize"),
+            )
+        })?;
         let mut compressed = vec![0u8; compressed_len];
         file.seek(SeekFrom::Start(offset))?;
         file.read_exact(&mut compressed)?;
@@ -346,7 +352,7 @@ impl ChromBlockReader {
         junction_pool_offset: u64,
         junction_pool_len: usize,
     ) -> io::Result<JunctionPool> {
-        let decompressed = Self::decompress(file, junction_pool_offset, junction_pool_len)?;
+        let decompressed = Self::decompress(file, junction_pool_offset, junction_pool_len as u64)?;
         let len = decompressed.len();
         JunctionPool::load_range(&mut Cursor::new(decompressed), 0, len, 0)
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
@@ -355,7 +361,7 @@ impl ChromBlockReader {
     pub fn load_string_pool(
         file: &mut File,
         string_pool_offset: u64,
-        string_pool_len: usize,
+        string_pool_len: u64,
     ) -> io::Result<StringPool> {
         let decompressed = Self::decompress(file, string_pool_offset, string_pool_len)?;
         let len = decompressed.len();
@@ -368,7 +374,8 @@ impl ChromBlockReader {
         splice_site_pool_offset: u64,
         splice_site_pool_len: usize,
     ) -> io::Result<SpliceSitePool> {
-        let decompressed = Self::decompress(file, splice_site_pool_offset, splice_site_pool_len)?;
+        let decompressed =
+            Self::decompress(file, splice_site_pool_offset, splice_site_pool_len as u64)?;
         let len = decompressed.len();
         SpliceSitePool::load_range(&mut Cursor::new(decompressed), 0, len, ())
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))

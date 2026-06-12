@@ -113,7 +113,12 @@ impl QueryPTIRManager {
         let mut index_reader = IndexReader::open(File::open(&index_file_name)?, 0)?;
         let attr_index_reader = AttrIndexReader::open(&attr_file_name)?;
 
-        let total_tx_n = index_reader.header.total_tx_n as usize;
+        let total_tx_n = usize::try_from(index_reader.header.total_tx_n).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "index total_tx_n exceeded usize",
+            )
+        })?;
         let index_chrnames = index_reader.chrom_names.clone();
 
         let first_chrom = index_chrnames.first().ok_or_else(|| {

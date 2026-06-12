@@ -1,24 +1,6 @@
 use std::fs::File;
 use std::io::{self, BufWriter, Seek, SeekFrom, Write};
 
-fn u32_from_usize(value: usize, label: &str) -> io::Result<u32> {
-    u32::try_from(value).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("{label} {value} exceeded u32"),
-        )
-    })
-}
-
-fn u32_from_u64(value: u64, label: &str) -> io::Result<u32> {
-    u32::try_from(value).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("{label} {value} exceeded u32"),
-        )
-    })
-}
-
 fn u16_from_usize(value: usize, label: &str) -> io::Result<u16> {
     u16::try_from(value).map_err(|_| {
         io::Error::new(
@@ -33,15 +15,24 @@ fn compress(raw: Vec<u8>) -> std::io::Result<Vec<u8>> {
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
 }
 
+fn u64_from_usize(value: usize, label: &str) -> io::Result<u64> {
+    u64::try_from(value).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{label} {value} exceeded u64"),
+        )
+    })
+}
+
 fn encode_compressed<T: crate::traits::Encodable<Error = crate::core::core_error::TxBaseError>>(
     pool: &T,
     writer: &mut impl Write,
-) -> std::io::Result<u32> {
+) -> std::io::Result<usize> {
     let mut raw = Vec::new();
     pool.encode_to(&mut raw)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     let compressed = compress(raw)?;
-    let len = u32_from_usize(compressed.len(), "compressed pool length")?;
+    let len = compressed.len();
     writer.write_all(&compressed)?;
     Ok(len)
 }
@@ -76,18 +67,38 @@ impl IndexBuilder {
         missing_seqids: Vec<String>,
     ) -> std::io::Result<Self> {
         let mut file = BufWriter::new(file);
-        let chrom_count = u32_from_usize(chrom_names.len(), "chromosome count")?;
+        let chrom_count = u32::try_from(chrom_names.len()).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("chromosome count {} exceeded u32", chrom_names.len()),
+            )
+        })?;
 
         // Build the chrom name table bytes and pre-compute per-chrom offsets.
         let mut name_table: Vec<u8> = Vec::new();
         let mut chrom_name_offsets: Vec<(u32, u32)> = Vec::with_capacity(chrom_names.len());
         for name in &chrom_names {
-            let offset = u32_from_usize(name_table.len(), "chrom name table offset")?;
-            let len = u32_from_usize(name.len(), "chrom name length")?;
+            let offset = u32::try_from(name_table.len()).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("chrom name table offset {} exceeded u32", name_table.len()),
+                )
+            })?;
+            let len = u32::try_from(name.len()).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("chrom name length {} exceeded u32", name.len()),
+                )
+            })?;
             name_table.extend_from_slice(name.as_bytes());
             chrom_name_offsets.push((offset, len));
         }
-        let chrom_name_table_len = u32_from_usize(name_table.len(), "chrom name table length")?;
+        let chrom_name_table_len = u32::try_from(name_table.len()).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("chrom name table length {} exceeded u32", name_table.len()),
+            )
+        })?;
 
         // Build the missing seqid table: each entry is u16 len + utf-8 bytes.
         let mut missing_seqid_table: Vec<u8> = Vec::new();
@@ -97,9 +108,21 @@ impl IndexBuilder {
             missing_seqid_table.extend_from_slice(&len.to_le_bytes());
             missing_seqid_table.extend_from_slice(bytes);
         }
-        let missing_seqid_count = u32_from_usize(missing_seqids.len(), "missing seqid count")?;
-        let missing_seqid_table_len =
-            u32_from_usize(missing_seqid_table.len(), "missing seqid table length")?;
+        let missing_seqid_count = u32::try_from(missing_seqids.len()).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("missing seqid count {} exceeded u32", missing_seqids.len()),
+            )
+        })?;
+        let missing_seqid_table_len = u32::try_from(missing_seqid_table.len()).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "missing seqid table length {} exceeded u32",
+                    missing_seqid_table.len()
+                ),
+            )
+        })?;
 
         let header = IndexHeader::new(
             chrom_count,
@@ -160,22 +183,32 @@ impl IndexBuilder {
         // write junction pool (zstd-compressed) next to tx_bytes
         let junction_pool_offset = tx_offset + tx_bytes as u64;
         let junction_pool_len = encode_compressed(&entry.junction_pool, &mut self.file)?;
-        self.current_offset += junction_pool_len as u64;
+        self.current_offset += u64_from_usize(junction_pool_len, "junction pool length")?;
 
         // then string pool (zstd-compressed)
-        let string_pool_offset = junction_pool_offset + junction_pool_len as u64;
+        let string_pool_offset =
+            junction_pool_offset + u64_from_usize(junction_pool_len, "junction pool length")?;
         let string_pool_len = encode_compressed(&entry.string_pool, &mut self.file)?;
-        self.current_offset += string_pool_len as u64;
+        self.current_offset += u64_from_usize(string_pool_len, "string pool length")?;
 
         // then splice site pool (zstd-compressed)
-        let splice_site_pool_offset = string_pool_offset + string_pool_len as u64;
+        let splice_site_pool_offset =
+            string_pool_offset + u64_from_usize(string_pool_len, "string pool length")?;
         let splice_site_pool_len = encode_compressed(&entry.splice_site_pool, &mut self.file)?;
-        self.current_offset += splice_site_pool_len as u64;
+        self.current_offset += u64_from_usize(splice_site_pool_len, "splice site pool length")?;
 
         // generate a chromsome directory entry
         // and insert it into entries
         // each add_chrom will generate one entry on the fly
-        let tx_count = u32_from_usize(entry.txs.len(), "chromosome transcript count")?;
+        let tx_count = u64::try_from(entry.txs.len()).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "chromosome transcript count {} exceeded u64",
+                    entry.txs.len()
+                ),
+            )
+        })?;
         self.header.total_tx_n = self
             .header
             .total_tx_n
@@ -183,7 +216,7 @@ impl IndexBuilder {
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "total transcript count exceeded u32",
+                    "total transcript count exceeded u64",
                 )
             })?;
         self.entries.push(ChromDirectoryEntry {
@@ -191,22 +224,16 @@ impl IndexBuilder {
             chrom_name_offset,
             chrom_name_len,
             global_tx_count: tx_count,
-            global_tx_offset: u32_from_u64(tx_offset, "global tx offset")?,
-            global_junction_pool_offset: u32_from_u64(
-                junction_pool_offset,
-                "global junction pool offset",
+            global_tx_offset: tx_offset,
+            global_junction_pool_offset: junction_pool_offset,
+            global_junction_count: u64_from_usize(junction_pool_len, "junction pool length")?,
+            global_string_pool_offset: string_pool_offset,
+            global_string_len: u64_from_usize(string_pool_len, "string pool length")?,
+            global_splice_site_pool_offset: splice_site_pool_offset,
+            global_splice_site_pool_len: u64_from_usize(
+                splice_site_pool_len,
+                "splice site pool length",
             )?,
-            global_junction_count: junction_pool_len,
-            global_string_pool_offset: u32_from_u64(
-                string_pool_offset,
-                "global string pool offset",
-            )?,
-            global_string_len: string_pool_len,
-            global_splice_site_pool_offset: u32_from_u64(
-                splice_site_pool_offset,
-                "global splice site pool offset",
-            )?,
-            global_splice_site_pool_len: splice_site_pool_len,
         });
 
         Ok(())

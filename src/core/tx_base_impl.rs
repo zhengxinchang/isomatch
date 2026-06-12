@@ -16,7 +16,7 @@ pub struct TxBaseLoadArgs {
 
 impl TxBaseTrait for TxBase {
     // 标注一下这个不应该被使用
-    fn tx_idx(&self) -> u32 {
+    fn tx_idx(&self) -> u64 {
         self.tx_idx
     }
     fn tx_boundary(&self) -> TxBoundary {
@@ -125,7 +125,7 @@ impl TxBaseTrait for TxBase {
 
 impl DiskSize for TxBase {
     // Current layout drops on-disk chrom_id and the unused gtf_offset/gtf_len fields.
-    const DISK_SIZE: usize = 76;
+    const DISK_SIZE: usize = 96;
 }
 
 impl Encodable for TxBase {
@@ -201,21 +201,21 @@ impl PartialLoad for TxBase {
             .read_exact(&mut buf)
             .map_err(|e| TxBaseError::Io(e.to_string()))?;
 
-        let tx_id = u32::from_le_bytes(buf[0..4].try_into().unwrap());
-        let start = u32::from_le_bytes(buf[4..8].try_into().unwrap());
-        let end = u32::from_le_bytes(buf[8..12].try_into().unwrap());
-        let flags = TxBaseFlags(u16::from_le_bytes(buf[12..14].try_into().unwrap()));
-        let seq_hash = u128::from_le_bytes(buf[14..30].try_into().unwrap());
-        let ref_hash = u128::from_le_bytes(buf[30..46].try_into().unwrap());
-        let n_exons = u16::from_le_bytes(buf[46..48].try_into().unwrap());
-        let junctions_offset = u32::from_le_bytes(buf[48..52].try_into().unwrap());
-        let junctions_count = u16::from_le_bytes(buf[52..54].try_into().unwrap());
-        let splice_sites_offset = u32::from_le_bytes(buf[54..58].try_into().unwrap());
-        let splice_sites_count = u16::from_le_bytes(buf[58..60].try_into().unwrap());
-        let transcript_span_offset = u32::from_le_bytes(buf[60..64].try_into().unwrap());
-        let transcript_span_byte_len = u32::from_le_bytes(buf[64..68].try_into().unwrap());
-        let gene_span_offset = u32::from_le_bytes(buf[68..72].try_into().unwrap());
-        let gene_span_byte_len = u32::from_le_bytes(buf[72..76].try_into().unwrap());
+        let tx_id = u64::from_le_bytes(buf[0..8].try_into().unwrap());
+        let start = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+        let end = u32::from_le_bytes(buf[12..16].try_into().unwrap());
+        let flags = TxBaseFlags(u16::from_le_bytes(buf[16..18].try_into().unwrap()));
+        let seq_hash = u128::from_le_bytes(buf[18..34].try_into().unwrap());
+        let ref_hash = u128::from_le_bytes(buf[34..50].try_into().unwrap());
+        let n_exons = u16::from_le_bytes(buf[50..52].try_into().unwrap());
+        let junctions_offset = u32::from_le_bytes(buf[52..56].try_into().unwrap());
+        let junctions_count = u16::from_le_bytes(buf[56..58].try_into().unwrap());
+        let splice_sites_offset = u32::from_le_bytes(buf[58..62].try_into().unwrap());
+        let splice_sites_count = u16::from_le_bytes(buf[62..64].try_into().unwrap());
+        let transcript_span_offset = u64::from_le_bytes(buf[64..72].try_into().unwrap());
+        let transcript_span_byte_len = u64::from_le_bytes(buf[72..80].try_into().unwrap());
+        let gene_span_offset = u64::from_le_bytes(buf[80..88].try_into().unwrap());
+        let gene_span_byte_len = u64::from_le_bytes(buf[88..96].try_into().unwrap());
 
         Ok(Self {
             tx_idx: tx_id,

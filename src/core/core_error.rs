@@ -35,12 +35,12 @@ pub enum TxBaseError {
     },
 
     #[error("invalid intern id {id} not found in string pool")]
-    InvalidInternId { id: u32 },
+    InvalidInternId { id: u64 },
 
     #[error("invalid splice site: {site}")]
     InvalidSpliceSite { site: String },
 
-    #[error("string pool exceeded u32::MAX entries")]
+    #[error("string pool exceeded u32-addressable size")]
     StringPoolTooLarge,
 
     #[error("IO error: {0}")]
