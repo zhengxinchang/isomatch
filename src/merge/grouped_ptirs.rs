@@ -581,7 +581,7 @@ impl GroupedPTIR {
                 }
             })
             .collect();
-        
+
         if !args.chop {
             let source_attr = src_records
                 .iter()
