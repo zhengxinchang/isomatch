@@ -527,7 +527,7 @@ Key parameters:
 isomatch tools revert \
     -o reverted_gtfs \
     merged.merged.gtf.gz
-# outputs: reverted_gtfs/sample1.gtf.gz  reverted_gtfs/sample2.gtf.gz ...
+# outputs: reverted_gtfs/sample1.gtf.gz  reverted_gtfs/sample2.gtf.gz ...  reverted_gtfs/revert_stats.json
 ```
 
 By default, reverted records use the merged `gene_id` (`ISOMG_*`). Provide the merge track file to restore source `gene_id` values from the `src_gene_id` column.
@@ -542,7 +542,7 @@ isomatch tools revert \
 | Item | Description |
 |------|-------------|
 | Input | Merged GTF produced by `isomatch merge` (gzip or plain) |
-| Output | One GTF per sample in the output directory, named from `##ISOM <SAMPLE>` filenames |
+| Output | One GTF per sample in the output directory, plus `revert_stats.json` |
 
 Key parameters:
 
@@ -551,3 +551,5 @@ Key parameters:
 | `-o, --out` | Output directory | required |
 | `-t, --track-file` | Track TSV from `isomatch merge`, used to restore source `gene_id` values | use merged `gene_id` |
 | `--gz` | Output gzip-compressed GTFs even when source filenames are not gzipped | follow source filename suffix |
+
+`revert_stats.json` records the number of merged transcripts read, source transcript/exon records written, output GTFs created, and per-file output counts.
