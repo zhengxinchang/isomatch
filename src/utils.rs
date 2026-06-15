@@ -1,11 +1,13 @@
 use ahash::RandomState;
 use flate2::bufread::MultiGzDecoder;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufRead, BufReader, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+use thiserror::Error;
 use xxhash_rust::xxh3::xxh3_128;
 
 use crate::constants;
@@ -15,6 +17,24 @@ use crate::{
 };
 
 const BUFREADER_CAPACITY: usize = 128 * 1024;
+
+#[derive(Error, Debug)]
+pub enum UtilsError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    #[error("Missing {key} in ISOM sample header: {line}")]
+    MissingSampleHeaderValue { key: String, line: String },
+
+    #[error("Invalid ISOM sample id {id}: {reason}")]
+    InvalidSampleId { id: String, reason: String },
+}
+
+#[derive(Clone, Debug)]
+pub struct IsomSample {
+    pub file_name: String,
+}
+
 pub fn print_json_block<T: Serialize>(title: &str, msg: &T) {
     match serde_json::to_string_pretty(&msg) {
         Ok(json) => eprintln!("{}:\n{}", title, json),
@@ -155,6 +175,81 @@ pub fn is_gzipped(p: &Path) -> bool {
         .and_then(|s| s.to_str())
         .map(|s| s.eq_ignore_ascii_case("gz"))
         .unwrap_or(false)
+}
+
+pub fn is_isomatch_merged_gtf<P: AsRef<Path>>(path: P) -> Result<bool, UtilsError> {
+    let mut reader = open_file_bufread(path)?;
+    let mut line = String::new();
+    while reader.read_line(&mut line)? != 0 {
+        if !line.starts_with('#') {
+            break;
+        }
+        if line.starts_with("##ISOM <VERSION>")
+            && line.contains(&format!("schema=\"{}\"", constants::ISOM_GTF_SCHEMA))
+        {
+            return Ok(true);
+        }
+        line.clear();
+    }
+    Ok(false)
+}
+
+pub fn read_samples<P: AsRef<Path>>(path: P) -> Result<HashMap<u32, IsomSample>, UtilsError> {
+    let mut samples = HashMap::new();
+    let mut reader = open_file_bufread(path)?;
+    let mut line = String::new();
+
+    while reader.read_line(&mut line)? != 0 {
+        if !line.starts_with('#') {
+            break;
+        }
+
+        if line.starts_with("##ISOM <SAMPLE>") {
+            let id = parse_header_value(&line, "id").ok_or_else(|| {
+                UtilsError::MissingSampleHeaderValue {
+                    key: "id".to_string(),
+                    line: line.trim_end().to_string(),
+                }
+            })?;
+            let input = parse_header_value(&line, "input").ok_or_else(|| {
+                UtilsError::MissingSampleHeaderValue {
+                    key: "input".to_string(),
+                    line: line.trim_end().to_string(),
+                }
+            })?;
+            let file_id = parse_sample_id(&id)?;
+            let file_name = PathBuf::from(&input)
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or(input);
+            samples.insert(file_id, IsomSample { file_name });
+        }
+
+        line.clear();
+    }
+
+    Ok(samples)
+}
+
+fn parse_sample_id(id: &str) -> Result<u32, UtilsError> {
+    match id.trim_start_matches('S').parse::<u32>() {
+        Ok(0) => Err(UtilsError::InvalidSampleId {
+            id: id.to_string(),
+            reason: "sample id 0 is invalid".to_string(),
+        }),
+        Ok(file_id) => Ok(file_id),
+        Err(err) => Err(UtilsError::InvalidSampleId {
+            id: id.to_string(),
+            reason: err.to_string(),
+        }),
+    }
+}
+
+fn parse_header_value(line: &str, key: &str) -> Option<String> {
+    let needle = format!("{key}=\"");
+    let start = line.find(&needle)? + needle.len();
+    let end = line[start..].find('"')? + start;
+    Some(line[start..end].replace("\\\"", "\"").replace("\\\\", "\\"))
 }
 
 pub fn check_index_ready<P: AsRef<Path>>(gtf_path: P) -> bool {

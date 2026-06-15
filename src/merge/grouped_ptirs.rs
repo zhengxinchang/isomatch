@@ -476,6 +476,7 @@ impl GroupedPTIR {
         track_bufwriter: &mut dyn Write,
         present_absent_writer: &mut dyn Write,
         input_file_names: &[Vec<u8>],
+        args: &MergeArgs,
     ) -> Result<(), MergeError> {
         debug_assert!(
             self.repr_loaded,
@@ -494,6 +495,32 @@ impl GroupedPTIR {
             .chain(self.no_all_canonical_ptir_list.iter())
             .map(|entry| &super_cluster[entry.super_idx])
             .collect::<Vec<_>>();
+
+        let strand = char::from(self.strand);
+
+        write!(gtf_bufwriter, "{chrom_name}\tisomatch\ttranscript\t")?;
+        write!(
+            gtf_bufwriter,
+            "{}\t{}\t.\t{}\t.\t",
+            self.repr_left, self.repr_right, strand
+        )?;
+        gtf_bufwriter.write_all(b"gene_id \"")?;
+        gtf_bufwriter.write_all(gene_id.as_bytes())?;
+        gtf_bufwriter.write_all(b"\"; transcript_id \"")?;
+        gtf_bufwriter.write_all(tx_id.as_bytes())?;
+
+        let isom_exons = self.n_exon.to_string();
+        gtf_bufwriter.write_all(b"\"; ISOM_EXONS \"")?;
+        gtf_bufwriter.write_all(isom_exons.as_bytes())?;
+
+        gtf_bufwriter.write_all(b"\"; ISOM_COUNT \"")?;
+        write!(
+            gtf_bufwriter,
+            "{}",
+            self.all_canonical_ptir_counts + self.no_all_canonical_ptir_counts
+        )?;
+
+        // ISOM_SRC
 
         let mut source_txs = tx_type_members;
         source_txs.sort_by(|left, right| {
@@ -554,39 +581,17 @@ impl GroupedPTIR {
                 }
             })
             .collect();
+        
+        if !args.chop {
+            let source_attr = src_records
+                .iter()
+                .map(|r| r.gtf_str.as_str())
+                .collect::<Vec<_>>()
+                .join("|");
 
-        let source_attr = src_records
-            .iter()
-            .map(|r| r.gtf_str.as_str())
-            .collect::<Vec<_>>()
-            .join("|");
-
-        let strand = char::from(self.strand);
-
-        write!(gtf_bufwriter, "{chrom_name}\tisomatch\ttranscript\t")?;
-        write!(
-            gtf_bufwriter,
-            "{}\t{}\t.\t{}\t.\t",
-            self.repr_left, self.repr_right, strand
-        )?;
-        gtf_bufwriter.write_all(b"gene_id \"")?;
-        gtf_bufwriter.write_all(gene_id.as_bytes())?;
-        gtf_bufwriter.write_all(b"\"; transcript_id \"")?;
-        gtf_bufwriter.write_all(tx_id.as_bytes())?;
-
-        let isom_exons = self.n_exon.to_string();
-        gtf_bufwriter.write_all(b"\"; ISOM_EXONS \"")?;
-        gtf_bufwriter.write_all(isom_exons.as_bytes())?;
-
-        gtf_bufwriter.write_all(b"\"; ISOM_COUNT \"")?;
-        write!(
-            gtf_bufwriter,
-            "{}",
-            self.all_canonical_ptir_counts + self.no_all_canonical_ptir_counts
-        )?;
-
-        gtf_bufwriter.write_all(b"\"; ISOM_SRC \"")?;
-        gtf_bufwriter.write_all(source_attr.as_bytes())?;
+            gtf_bufwriter.write_all(b"\"; ISOM_SRC \"")?;
+            gtf_bufwriter.write_all(source_attr.as_bytes())?;
+        }
 
         let (used_tss_policy, used_tes_policy) = match self.strand {
             ISOMSTRAND::Minus => (self.used_repr_right_policy, self.used_repr_left_policy),
@@ -1028,9 +1033,21 @@ fn junction_exon_diffs(
     for (exon_idx, (curr_junc, repr_junc)) in curr.iter().zip(repr.iter()).enumerate() {
         let left_diff = repr_junc.0 as i32 - curr_junc.0 as i32;
         let right_diff = repr_junc.1 as i32 - curr_junc.1 as i32;
-        if left_diff > 0 || right_diff > 0 {
+        if left_diff != 0 || right_diff != 0 {
             exon_diffs.push((exon_idx + 1, left_diff, right_diff))
         }
     }
     Ok(exon_diffs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn junction_exon_diffs_keeps_negative_offsets() {
+        let diffs = junction_exon_diffs(&[(105, 210)], &[(100, 200)]).unwrap();
+
+        assert_eq!(diffs, vec![(1, -5, -10)]);
+    }
 }

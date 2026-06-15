@@ -505,7 +505,7 @@ impl MyGTFReader {
             return Err(GTFError::MissingTranscriptRecord);
         }
 
-        //  make sure that exons and transcripts are on the same set of chrs. 
+        //  make sure that exons and transcripts are on the same set of chrs.
         if transcript_chroms != exon_chroms {
             let mut transcript_only: Vec<String> = transcript_chroms
                 .difference(&exon_chroms)
@@ -523,7 +523,7 @@ impl MyGTFReader {
             });
         }
 
-        // recode the chrnames to id projection 
+        // recode the chrnames to id projection
         let mut chrom_names: Vec<String> = transcript_chroms.into_iter().collect();
         chrom_names.sort();
         let chrom_name_to_id: FxHashMap<String, ChromID> = chrom_names
@@ -537,7 +537,6 @@ impl MyGTFReader {
             md5: hasher.digest128().to_le_bytes(),
             file_size,
         };
-
 
         let mut tx_counts_by_chrom_id = vec![0u64; profile.chrom_names.len() + 1];
         for (bucket_path, sorted_path) in bucket_paths.iter().zip(sorted_paths.iter()) {
@@ -600,7 +599,7 @@ impl MyGTFReader {
             .map(|(_, count)| count)
             .sum()
     }
-    
+
     /// k-way merge based on all sorted buckets
     pub fn next(&mut self) -> Result<Option<TxStructure>, GTFError> {
         let Some(Reverse(item)) = self.heap.pop() else {
@@ -691,7 +690,7 @@ fn observe_tmp_tx(
 ) -> Result<(), GTFError> {
     let tx_id = bytes_to_string(record.tx_id)?;
     let chrom_id = chrom_id_for_bytes(profile, record.chrom)?;
-    
+
     let acc = txs.entry(tx_id.clone()).or_default();
 
     // check if the acc's chr is same as this record

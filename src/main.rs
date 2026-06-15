@@ -7,6 +7,7 @@ pub mod core;
 pub mod utils;
 use crate::classify::run_classify;
 use crate::tools::chop::run_chop;
+use crate::tools::revert::run_revert;
 use crate::tools::valtable::run_valtable;
 use crate::{index::run_index, merge::run_merge};
 use clap::ValueEnum;
@@ -139,6 +140,15 @@ pub struct MergeArgs {
         help = "Output prefix "
     )]
     pub out: PathBuf,
+
+    #[clap(
+
+        long = "chop",
+        help_heading = "Output",
+        action = ArgAction::SetTrue,
+        help = "Omit the ISOM_SRC attribute from the output GTF. This reduces file size but disables revert support."
+    )]
+    pub chop: bool,
 
     #[clap(
         short = 'r',
@@ -528,6 +538,38 @@ pub struct ChopArgs {
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
+#[clap(about = "Revert isomatch merged GTF to source GTFs.
+")]
+pub struct RevertArgs {
+    #[clap(help_heading = "Input", help = "Input GTF")]
+    pub input: PathBuf,
+
+    #[clap(
+        short = 't',
+        long = "track-file",
+        help_heading = "Parameters",
+        help = "Track.tsv.gz file for merged GTF"
+    )]
+    pub track_file: Option<PathBuf>,
+
+    #[clap(
+        long = "gz",
+        help_heading = "Parameters",
+        action = ArgAction::SetTrue,
+        help = "Output gzip-compressed GTFs even when the original filenames are not gzipped"
+    )]
+    pub gzipped: bool,
+
+    #[clap(
+        short = 'o',
+        long = "out",
+        help_heading = "Output",
+        help = "Output directory"
+    )]
+    pub out: PathBuf,
+}
+
+#[derive(Parser, Debug, Serialize, Clone)]
 #[clap(
     about = "Build table matrix from source gtf attributes for merged transcripts
 "
@@ -574,6 +616,7 @@ pub struct ValTableArgs {
 pub enum ToolssArgs {
     Chop(ChopArgs),
     Valtable(ValTableArgs),
+    Revert(RevertArgs),
 }
 
 fn main() {
@@ -616,6 +659,12 @@ fn main() {
             }
             ToolssArgs::Valtable(args) => {
                 if let Err(e) = run_valtable(&args) {
+                    error!("{:#}", e);
+                    std::process::exit(1);
+                }
+            }
+            ToolssArgs::Revert(args) => {
+                if let Err(e) = run_revert(&args) {
                     error!("{:#}", e);
                     std::process::exit(1);
                 }

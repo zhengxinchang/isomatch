@@ -365,6 +365,7 @@ pub fn process_super_cluster(
                 track_bufwriter,
                 present_absent_writer,
                 input_file_names,
+                args,
             )?;
         }
     }

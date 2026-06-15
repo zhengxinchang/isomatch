@@ -37,6 +37,8 @@ Easy to use
 
 - `isomatch tools valtable`: extract a per-transcript attribute （e.g., TPM）value from source GTFs and assemble it into a matrix aligned to the merged GTF transcript order.
 
+- `isomatch tools revert`: reconstruct per-sample source-like GTFs from an isomatch merged GTF.
+
 Typical workflow:
 1. create indexes with `isomatch index --ref-fa ref.fa`, or let `merge`/`classify` auto-create them.
 2. merge transcripts with `isomatch merge --ref-fa ref.fa`, optionally using TSS/TES guide evidence.
@@ -44,7 +46,8 @@ Typical workflow:
 4. use `isomatch tools` to manipulate GTF outputs, e.g., 
 
     1. `isomatch tools chop` to remove isomatch-added attributes, 
-    2. `isomatch tools valtable` to extract expression values from source GTFs.
+    2. `isomatch tools valtable` to extract expression values from source GTFs,
+    3. `isomatch tools revert` to split a merged GTF back into per-sample GTFs.
 
 Note: All subcommands output json file with run statistics, which are easy to parse for downstream analysis and reporting. 
 
@@ -81,6 +84,10 @@ isomatch merge --ref-fa ref.fa -o merged \
 isomatch merge --ref-fa ref.fa -o merged \
     -d 3 -a 3 -u 3 \
     -D 5 -A 5 -U 5 \
+    sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
+
+# merge with smaller GTF output; disables tools revert
+isomatch merge --ref-fa ref.fa -o merged --chop \
     sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
 ```
 
@@ -305,6 +312,8 @@ For a run with `-o <prefix>`, three files are written:
 | `<prefix>.track.tsv.gz` | One-to-one mapping of merged → source transcripts (gzip-compressed TSV) |
 | `<prefix>.merged_info.json` | Run statistics (source file count, merged transcript counts, guide usage, etc.) |
 
+Use `--chop` to omit `ISOM_SRC` from `<prefix>.merged.gtf.gz` and reduce GTF size. The track TSV is still written, but the merged GTF cannot be used with `isomatch tools revert`.
+
 In `<prefix>.merged_info.json`, `*_pct` values are percentages on a 0-100 scale rounded to four decimal places.
 
 ---
@@ -317,7 +326,7 @@ Each merged transcript record in the output GTF includes the following extra att
 |-----------|-------------|
 | `ISOM_EXONS` | Number of exons |
 | `ISOM_COUNT` | Number of source transcripts merged into this record |
-| `ISOM_SRC` | `\|`-separated list of source transcripts, each formatted as `S{sample_index}:{tx_id}:{start}:{end}:{tx_type}:{donor_diff}:{acceptor_diff}:{exon_diffs}` |
+| `ISOM_SRC` | `\|`-separated list of source transcripts, each formatted as `S{sample_index}:{tx_id}:{start}:{end}:{tx_type}:{donor_diff}:{acceptor_diff}:{exon_diffs}`; omitted when `merge --chop` is used |
 | `ISOM_REPR_POLICY` | Representative selection policies as `SJ_POLICY:TSS_POLICY:TES_POLICY`; `SJ_POLICY` is `NA` for mono-exon transcripts |
 
 The `exon_diffs` field in `ISOM_SRC` records only exons that differ from the representative, in the format `(exon_number,left_offset,right_offset)`. Exons with no difference are omitted and shown as `no_diff`.
@@ -509,3 +518,36 @@ Key parameters:
 `<prefix>.valtable.tsv.gz` is a tab-separated matrix: the first column is `transcript_id` (merged transcript IDs in their original order), and each subsequent column is named after the source GTF filename.
 
 `<prefix>.valtable_stats.json` records the number of merged transcripts, the list of source samples found in the merged GTF header, and per-file extraction counts (`extracted`, `attr_missing`, `src_tx_not_in_merged`).
+
+## isomatch tools revert
+
+`revert` reads a merged GTF produced by `isomatch merge` and reconstructs one source-like GTF for each sample recorded in the merged GTF `##ISOM <SAMPLE>` headers. It requires the merged GTF to contain `ISOM_SRC`, so it cannot be used on GTFs produced with `merge --chop`. Output transcript and exon records include `ISOM_TX_ID`, which records the merged transcript ID they came from.
+
+```
+isomatch tools revert \
+    -o reverted_gtfs \
+    merged.merged.gtf.gz
+# outputs: reverted_gtfs/sample1.gtf.gz  reverted_gtfs/sample2.gtf.gz ...
+```
+
+By default, reverted records use the merged `gene_id` (`ISOMG_*`). Provide the merge track file to restore source `gene_id` values from the `src_gene_id` column.
+
+```
+isomatch tools revert \
+    -t merged.track.tsv.gz \
+    -o reverted_gtfs \
+    merged.merged.gtf.gz
+```
+
+| Item | Description |
+|------|-------------|
+| Input | Merged GTF produced by `isomatch merge` (gzip or plain) |
+| Output | One GTF per sample in the output directory, named from `##ISOM <SAMPLE>` filenames |
+
+Key parameters:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-o, --out` | Output directory | required |
+| `-t, --track-file` | Track TSV from `isomatch merge`, used to restore source `gene_id` values | use merged `gene_id` |
+| `--gz` | Output gzip-compressed GTFs even when source filenames are not gzipped | follow source filename suffix |

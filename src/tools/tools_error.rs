@@ -1,9 +1,16 @@
+use std::convert::Infallible;
+
 use thiserror::Error;
+
+use crate::utils::UtilsError;
 
 #[derive(Error, Debug)]
 pub enum ToolError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Utils(#[from] UtilsError),
 
     #[error("Strand is not correct:{reason}")]
     InvaidStrand { reason: String },
@@ -22,4 +29,7 @@ pub enum ToolError {
 
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    ParseStr(#[from] Infallible),
 }
