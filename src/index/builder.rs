@@ -177,18 +177,15 @@ impl IndexBuilder {
         let junction_pool_len = encode_compressed(&entry.junction_pool, &mut self.file)?;
         self.current_offset += u64_from_usize(junction_pool_len, "junction pool length")?;
 
-    
         let string_pool_offset =
             junction_pool_offset + u64_from_usize(junction_pool_len, "junction pool length")?;
         let string_pool_len = encode_compressed(&entry.string_pool, &mut self.file)?;
         self.current_offset += u64_from_usize(string_pool_len, "string pool length")?;
 
-
         let splice_site_pool_offset =
             string_pool_offset + u64_from_usize(string_pool_len, "string pool length")?;
         let splice_site_pool_len = encode_compressed(&entry.splice_site_pool, &mut self.file)?;
         self.current_offset += u64_from_usize(splice_site_pool_len, "splice site pool length")?;
-
 
         let tx_count = u64::try_from(entry.txs.len()).map_err(|_| {
             io::Error::new(

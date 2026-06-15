@@ -350,6 +350,7 @@ impl ChromBlockBuilder {
     pub fn add_tx(
         &mut self,
         gtf_tx: TxStructure,
+        chrom_name: &str,
         refr: &mut FastaReader,
         seqr: &mut Option<FastaReader>,
         stats: &mut IndexStats,
@@ -390,7 +391,7 @@ impl ChromBlockBuilder {
         } else {
             let reference_seq = refr
                 .fetch(
-                    &gtf_tx.chrom,
+                    chrom_name,
                     gtf_tx.get_0based_start() as usize,
                     gtf_tx.end as usize,
                     true,
@@ -398,7 +399,7 @@ impl ChromBlockBuilder {
                 .map_err(|e| IndexError::FetchSeqFailed {
                     reason: format!(
                         "Can not fetch reference sequence for transcript {} on {}:{}-{}: {}",
-                        gtf_tx.tx_id, gtf_tx.chrom, gtf_tx.start, gtf_tx.end, e
+                        gtf_tx.tx_id, chrom_name, gtf_tx.start, gtf_tx.end, e
                     ),
                 })?;
 

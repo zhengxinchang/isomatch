@@ -67,7 +67,6 @@ pub struct Cli {
 pub enum Commands {
     Index(IndexArgs),
     Merge(MergeArgs),
-    // Bench(BenchArgs),
     Classify(ClassifyArgs),
     #[command(subcommand)]
     Tools(ToolssArgs),
@@ -469,49 +468,6 @@ pub struct ClassifyArgs {
         value_name = "BP"
     )]
     pub motif_search_window: usize,
-
-    #[clap(
-        long = "skip-missing-ref-chr",
-        action = ArgAction::SetTrue,
-        help_heading = "Auto Indexing",
-        help = "Skip transcripts on seqids absent from the reference FASTA"
-    )]
-    pub skip_missing_ref_chr: bool,
-}
-
-// for comparison two GTFs and report F1 etc..
-#[derive(Parser, Debug, Serialize, Clone)]
-#[clap(
-    about = "compare input GTF with base line GTF and report comparison metrics
-"
-)]
-pub struct BenchArgs {
-    #[clap(help_heading = "Input", help = "Compared GTF")]
-    pub input: PathBuf,
-
-    #[clap(
-        short = 'o',
-        long = "out",
-        help_heading = "Output",
-        help = "Output prefix"
-    )]
-    pub out: PathBuf,
-
-    #[clap(
-        short = 'b',
-        long = "base-gtf",
-        help_heading = "Baseline",
-        help = "Baseline GTF"
-    )]
-    pub ref_gtf: PathBuf,
-
-    #[clap(
-        short = 'r',
-        long = "ref-fa",
-        help_heading = "Auto Indexing",
-        help = "Reference FASTA"
-    )]
-    pub ref_fa: PathBuf,
 
     #[clap(
         long = "skip-missing-ref-chr",

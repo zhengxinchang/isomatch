@@ -1,4 +1,8 @@
-use std::{collections::HashSet, fs::File, io::Write};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::Write,
+};
 
 use anyhow::{Context, bail};
 use log::{error, info, warn};
@@ -199,8 +203,9 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     };
 
     if !args.quiet {
-        info!("Profiling GTF");
+        info!("Indexing GTF");
     }
+
     let mut gtf_reader = gtf::MyGTFReader::new(&args.input)
         .with_context(|| format!("Can not open GTF file: {}", args.input.display()))?;
     let profile = gtf_reader.profile().clone();
@@ -231,10 +236,27 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     }
 
     let missing_ref_seqid_set: HashSet<String> = missing_ref_seqids.into_iter().collect();
+    let missing_ref_chrom_ids: HashSet<gtf::ChromID> = missing_ref_seqid_set
+        .iter()
+        .filter_map(|chrom| profile.chrom_name_to_id.get(chrom).copied())
+        .collect();
     let chrom_names: Vec<String> = profile
         .chrom_names
-        .into_iter()
-        .filter(|chrom| !missing_ref_seqid_set.contains(chrom))
+        .iter()
+        .filter(|chrom| !missing_ref_seqid_set.contains(*chrom))
+        .cloned()
+        .collect();
+    let output_chrom_ids: HashMap<gtf::ChromID, u16> = profile
+        .chrom_names
+        .iter()
+        .filter(|chrom| !missing_ref_seqid_set.contains(*chrom))
+        .enumerate()
+        .filter_map(|(out_idx, chrom)| {
+            profile
+                .chrom_name_to_id
+                .get(chrom)
+                .map(|profile_id| (*profile_id, (out_idx + 1) as u16))
+        })
         .collect();
 
     if chrom_names.is_empty() {
@@ -266,11 +288,14 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     )
     .with_context(|| format!("Can not init index builder at {}", isomx_path.display()))?;
 
-    if !args.quiet {
-        info!("Indexing GTF");
-    }
-    let mut current_chrom = String::new();
-    let mut chrom_id = 0u16;
+    let mut isoms_path = isomx_path.clone();
+    isoms_path.set_extension("isoms");
+    let total_indexable_tx = gtf_reader.transcript_count_excluding(&missing_ref_chrom_ids);
+    let mut attr_builder =
+        attributes_index::AttrIndexBuilder::init(&isoms_path, total_indexable_tx, &profile.md5)
+            .with_context(|| format!("cannot init AttrIndexBuilder at {}", isoms_path.display()))?;
+
+    let mut current_chrom_id = 0u16;
     let mut chrom_block: Option<ChromBlockBuilder> = None;
     let mut next_written_tx_idx = 0u64;
     loop {
@@ -278,37 +303,57 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
             break;
         };
 
-        if current_chrom != tx_structure.chrom {
+        let chrom_name = gtf_reader
+            .chrom_name(tx_structure.chrom_id)
+            .with_context(|| format!("invalid chrom_id {}", tx_structure.chrom_id))?
+            .to_string();
+
+        if current_chrom_id != tx_structure.chrom_id {
             if let Some(cb) = chrom_block.take() {
                 builder.add_chrom(cb)?;
             }
-            current_chrom = tx_structure.chrom.clone();
-            if missing_ref_seqid_set.contains(&current_chrom) {
+            current_chrom_id = tx_structure.chrom_id;
+            if missing_ref_chrom_ids.contains(&current_chrom_id) {
                 if !args.quiet {
                     info!(
                         "Skipping chromosome {} because it is absent from the reference FASTA",
-                        &current_chrom
+                        chrom_name
                     );
                 }
                 chrom_block = None;
             } else {
-                chrom_id += 1;
-                chrom_block = Some(ChromBlockBuilder::init(chrom_id));
+                let output_chrom_id = *output_chrom_ids
+                    .get(&current_chrom_id)
+                    .with_context(|| format!("missing output chrom_id for {chrom_name}"))?;
+                chrom_block = Some(ChromBlockBuilder::init(output_chrom_id));
                 if !args.quiet {
-                    info!("Processing chromosome {}", &current_chrom);
+                    info!("Processing chromosome {}", chrom_name);
                 }
             }
         }
-        if missing_ref_seqid_set.contains(&tx_structure.chrom) {
+        if missing_ref_chrom_ids.contains(&tx_structure.chrom_id) {
             stats.observe_skipped_tx(&tx_structure.gene_id);
             continue;
         }
 
         tx_structure.set_gidx(next_written_tx_idx);
+        let attr_string = tx_structure.attr_string.clone();
         chrom_block
             .as_mut()
             .context("Can not access chromblock")?
-            .add_tx(tx_structure, &mut ref_far, &mut seq_far, &mut stats)?;
+            .add_tx(
+                tx_structure,
+                &chrom_name,
+                &mut ref_far,
+                &mut seq_far,
+                &mut stats,
+            )?;
+
+        if let Some(attr_string) = attr_string {
+            attr_builder
+                .dump_attr(attr_string, next_written_tx_idx)
+                .with_context(|| format!("dump_attr failed for tx_idx {}", next_written_tx_idx))?;
+        }
 
         next_written_tx_idx = next_written_tx_idx
             .checked_add(1)
@@ -321,58 +366,6 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     // isom_src_cache_builder.finalize()?;
     builder.finalize()?;
     stats.finalize();
-
-    // second pass to build the sidecar file isoms
-
-    use std::io::BufRead;
-    if !args.quiet {
-        info!("Profiling attributes sidecar file");
-    }
-    let index_file = File::open(&isomx_path).with_context(|| {
-        format!(
-            "cannot reopen index for second pass: {}",
-            isomx_path.display()
-        )
-    })?;
-    let mut index_reader = reader::IndexReader::open(index_file, 0)
-        .with_context(|| "cannot open IndexReader for second pass")?;
-    let txid_index = index_reader
-        .build_txid_index()
-        .with_context(|| "cannot build txid index")?;
-
-    let mut isoms_path = isomx_path.clone();
-    isoms_path.set_extension("isoms");
-
-    let mut attr_builder =
-        attributes_index::AttrIndexBuilder::init(&isoms_path, next_written_tx_idx, &profile.md5)
-            .with_context(|| format!("cannot init AttrIndexBuilder at {}", isoms_path.display()))?;
-
-    let gtf_lines = crate::utils::open_file_bufread(&args.input).with_context(|| {
-        format!(
-            "cannot reopen GTF for second pass: {}",
-            args.input.display()
-        )
-    })?;
-    for line in gtf_lines.lines() {
-        let line = line.with_context(|| "error reading GTF line in second pass")?;
-        if line.starts_with('#') {
-            continue;
-        }
-        let fields: Vec<&str> = line.splitn(9, '\t').collect();
-        if fields.len() < 9 || fields[2] != "transcript" {
-            continue;
-        }
-        let attr_str = fields[8];
-        let Some(tx_id) = gtf::parse_gtf_attr_value(attr_str, "transcript_id") else {
-            continue;
-        };
-        let Some(&tx_gidx) = txid_index.get(&tx_id) else {
-            continue; // filtered out (e.g. missing ref seqid)
-        };
-        attr_builder
-            .dump_attr(attr_str.as_bytes().to_vec(), tx_gidx)
-            .with_context(|| format!("dump_attr failed for {}", tx_id))?;
-    }
 
     attr_builder
         .finish()
