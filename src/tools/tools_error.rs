@@ -12,6 +12,9 @@ pub enum ToolError {
     #[error(transparent)]
     Utils(#[from] UtilsError),
 
+    #[error(transparent)]
+    Region(#[from] crate::region::RegionError),
+
     #[error("Strand is not correct:{reason}")]
     InvaidStrand { reason: String },
 

@@ -6,9 +6,9 @@ use crate::core::tx_strand::ISOMSTRAND;
 use crate::index::reader::ChromBlockReader;
 use crate::index::run_index;
 use crate::merge::grouped_ptirs::GroupedPTIR;
-use crate::merge::guide::GuideDb;
 use crate::merge::policy::MergePolicyUsed;
 use crate::merge::policy::merge_cluster;
+use crate::region::{RegionDb, RegionType};
 use crate::utils::check_index_ready;
 use crate::utils::greetings2;
 use crate::utils::print_json_block;
@@ -23,7 +23,6 @@ use std::{
     fs::File,
 };
 pub mod grouped_ptirs;
-pub mod guide;
 pub mod merge_error;
 pub mod policy;
 use anyhow::Context;
@@ -160,9 +159,9 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     // load the guide files if provided
 
     let guide_tss_index = if let Some(tss_p) = args.guide_tss.clone() {
-        Some(GuideDb::from_bed_path(
+        Some(RegionDb::from_bed_path(
             tss_p,
-            guide::GuideBEDType::Tss,
+            RegionType::Tss,
             &args.chrmap,
         )?)
     } else {
@@ -170,9 +169,9 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     };
 
     let guide_tes_index = if let Some(tes_p) = args.guide_tes.clone() {
-        Some(GuideDb::from_bed_path(
+        Some(RegionDb::from_bed_path(
             tes_p,
-            guide::GuideBEDType::Tes,
+            RegionType::Tes,
             &args.chrmap,
         )?)
     } else {
@@ -317,8 +316,8 @@ pub fn process_super_cluster(
     bufwriter: &mut dyn Write,
     track_bufwriter: &mut dyn Write,
     present_absent_writer: &mut dyn Write,
-    guide_tss: &Option<GuideDb>,
-    guide_tes: &Option<GuideDb>,
+    guide_tss: &Option<RegionDb>,
+    guide_tes: &Option<RegionDb>,
 ) -> Result<(), MergeError> {
     // println!("super cluster size {}", super_cluster.len());
     *global_scluster_id += 1;

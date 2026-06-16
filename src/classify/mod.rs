@@ -21,7 +21,7 @@ use crate::{
         fasta::{FaType, FastaReader},
         run_index,
     },
-    merge::guide::GuideDb,
+    region::{RegionDb, RegionType},
     traits::ArgValidate,
     utils::{check_index_ready, greetings2, print_json_block, require_file},
 };
@@ -227,18 +227,18 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
     let mut fa_reader = FastaReader::open(&args.ref_fa, FaType::Ref)?;
 
     let reftss_db = match &args.guide_tss {
-        Some(path) => Some(GuideDb::from_bed_path(
+        Some(path) => Some(RegionDb::from_bed_path(
             path,
-            crate::merge::guide::GuideBEDType::Tss,
+            RegionType::Tss,
             &args.chrmap.as_ref(),
         )?),
         None => None,
     };
 
     let reftes_db = match &args.guide_tes {
-        Some(path) => Some(GuideDb::from_bed_path(
+        Some(path) => Some(RegionDb::from_bed_path(
             path,
-            crate::merge::guide::GuideBEDType::Tes,
+            RegionType::Tes,
             &args.chrmap.as_ref(),
         )?),
         None => None,

@@ -20,7 +20,7 @@ use crate::{
     constants::MOTIFS,
     core::{tx_strand::ISOMSTRAND, tx_type::TxType},
     index::fasta::FastaReader,
-    merge::guide::{GuideDb, GuideInterval},
+    region::{MyRegion, RegionDb},
     utils::rev_comp,
 };
 
@@ -1003,8 +1003,8 @@ pub fn update_group3_seq_context(
 pub fn update_group4_regions(
     class: &mut ClassifyRecord,
     query_ptir: &QueryPTIR,
-    ref_tss: &Option<GuideDb>,
-    ref_tes: &Option<GuideDb>,
+    ref_tss: &Option<RegionDb>,
+    ref_tes: &Option<RegionDb>,
     args: &ClassifyArgs,
 ) {
     let chr = &query_ptir.chr_name;
@@ -1089,21 +1089,21 @@ pub fn update_group4_regions(
     }
 }
 
-fn bed_overlaps_window(peak: &GuideInterval, query: i64, search_window: u32) -> bool {
+fn bed_overlaps_window(peak: &MyRegion, query: i64, search_window: u32) -> bool {
     let start0 = peak.start as i64 - 1;
     let end1 = peak.end as i64;
     let window = search_window as i64;
     start0 < query + window && end1 > query - window
 }
 
-fn cage_peak_is_downstream(peak: &GuideInterval, strand: ISOMSTRAND, tss: u32) -> bool {
+fn cage_peak_is_downstream(peak: &MyRegion, strand: ISOMSTRAND, tss: u32) -> bool {
     match strand {
         ISOMSTRAND::Minus => peak.end < tss,
         ISOMSTRAND::Plus | ISOMSTRAND::Unknown => peak.start > tss,
     }
 }
 
-fn cage_dist(peak: &GuideInterval, strand: ISOMSTRAND, tss: u32) -> i32 {
+fn cage_dist(peak: &MyRegion, strand: ISOMSTRAND, tss: u32) -> i32 {
     let peak_tss = cage_tss(peak) as i32;
     let dist = peak_tss - tss as i32;
     if strand == ISOMSTRAND::Minus {
@@ -1113,7 +1113,7 @@ fn cage_dist(peak: &GuideInterval, strand: ISOMSTRAND, tss: u32) -> i32 {
     }
 }
 /// calcualte the TSS sites, with expection on 1bp interval.
-fn cage_tss(peak: &GuideInterval) -> u32 {
+fn cage_tss(peak: &MyRegion) -> u32 {
     if peak.len() > 1 {
         ((peak.start as u64 - 1 + peak.end as u64) / 2 + 1) as u32
     } else {
@@ -1128,7 +1128,7 @@ fn polya_query(tes: u32, strand: ISOMSTRAND) -> i64 {
     }
 }
 
-fn polya_within(peak: &GuideInterval, strand: ISOMSTRAND, query: i64) -> bool {
+fn polya_within(peak: &MyRegion, strand: ISOMSTRAND, query: i64) -> bool {
     let start0 = peak.start as i64 - 1;
     let end1 = peak.end as i64;
     match strand {
@@ -1137,7 +1137,7 @@ fn polya_within(peak: &GuideInterval, strand: ISOMSTRAND, query: i64) -> bool {
     }
 }
 
-fn polya_dist(peak: &GuideInterval, strand: ISOMSTRAND, query: i64) -> i32 {
+fn polya_dist(peak: &MyRegion, strand: ISOMSTRAND, query: i64) -> i32 {
     let start0 = peak.start as i64 - 1;
     let end1 = peak.end as i64;
     let dist = match strand {

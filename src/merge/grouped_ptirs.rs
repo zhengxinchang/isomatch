@@ -4,10 +4,10 @@ use crate::{
     MergeArgs,
     core::{ptir::PTIR, tx_strand::ISOMSTRAND, tx_type::TxType},
     merge::{
-        guide::GuideDb,
         merge_error::MergeError,
         policy::{GuideResolution, MergePolicyArg, MergePolicyUsed},
     },
+    region::RegionDb,
 };
 use ahash::HashSet;
 use rustc_hash::FxHashMap;
@@ -212,8 +212,8 @@ impl GroupedPTIR {
         &mut self,
         chrom: &str,
         args: &MergeArgs,
-        guide_tss: &Option<GuideDb>,
-        guide_tes: &Option<GuideDb>,
+        guide_tss: &Option<RegionDb>,
+        guide_tes: &Option<RegionDb>,
     ) -> Result<(), MergeError> {
         // generate canonical_junction_range based on canonical_ptir_list
         self.canonical_junction_range.clear();
@@ -316,8 +316,8 @@ impl GroupedPTIR {
         &mut self,
         chrom: &str,
         args: &MergeArgs,
-        guide_tss: &Option<GuideDb>,
-        guide_tes: &Option<GuideDb>,
+        guide_tss: &Option<RegionDb>,
+        guide_tes: &Option<RegionDb>,
     ) -> Result<(), MergeError> {
         self.repr_junction.clear();
         self.repr_left = 0;
@@ -389,8 +389,8 @@ impl GroupedPTIR {
         &mut self,
         chrom: &str,
         args: &MergeArgs,
-        guide_tss: &Option<GuideDb>,
-        guide_tes: &Option<GuideDb>,
+        guide_tss: &Option<RegionDb>,
+        guide_tes: &Option<RegionDb>,
     ) -> Result<(), MergeError> {
         self.canonical_junction_range.clear();
         self.repr_junction.clear();
@@ -892,7 +892,7 @@ fn select_terminal(
     strand: &ISOMSTRAND,
     is_left_boundary: bool,
     policy: MergePolicyArg,
-    guide: &Option<GuideDb>,
+    guide: &Option<RegionDb>,
     guide_flank: u32,
 ) -> Result<(u32, MergePolicyUsed), MergeError> {
     // if no guide file provided, fallback to non guide policy
@@ -959,8 +959,8 @@ fn select_repr_terminals(
     strand: &ISOMSTRAND,
     tss_policy: MergePolicyArg,
     tes_policy: MergePolicyArg,
-    guide_tss: &Option<GuideDb>,
-    guide_tes: &Option<GuideDb>,
+    guide_tss: &Option<RegionDb>,
+    guide_tes: &Option<RegionDb>,
     guide_tss_flank: u32,
     guide_tes_flank: u32,
 ) -> Result<((u32, u32), (MergePolicyUsed, MergePolicyUsed)), MergeError> {

@@ -5,9 +5,9 @@ use crate::{
     core::{ptir::PTIR, tx_strand::ISOMSTRAND, tx_type::TxType},
     merge::{
         grouped_ptirs::{GroupedPTIR, GroupedPTIREntry},
-        guide::GuideDb,
         merge_error::MergeError,
     },
+    region::RegionDb,
 };
 use clap::ValueEnum;
 use rustc_hash::FxHashMap;
@@ -76,8 +76,8 @@ pub fn merge_cluster(
     cluster_idx: &Vec<usize>,
     scluster: &[PTIR],
     args: &MergeArgs,
-    guide_tss: &Option<GuideDb>,
-    guide_tes: &Option<GuideDb>,
+    guide_tss: &Option<RegionDb>,
+    guide_tes: &Option<RegionDb>,
 ) -> Result<Vec<GroupedPTIR>, MergeError> {
     // match strand {
     //     ISOMSTRAND::Plus | ISOMSTRAND::Minus | ISOMSTRAND::Unknown => {
@@ -550,8 +550,8 @@ pub fn merge_mono_exon(
     scluster: &[PTIR],
     strand: &ISOMSTRAND,
     args: &MergeArgs,
-    guide_tss: &Option<GuideDb>,
-    guide_tes: &Option<GuideDb>,
+    guide_tss: &Option<RegionDb>,
+    guide_tes: &Option<RegionDb>,
 ) -> Result<Vec<GroupedPTIR>, MergeError> {
     // 对scluster_idxs 按照PTIR的start 和end 排序
     if scluster_idxs.is_empty() {

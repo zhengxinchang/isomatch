@@ -1,4 +1,6 @@
 use crate::core::tx_strand::ISOMSTRAND;
+use crate::index::gtf::parse_gtf_attr_value;
+use crate::utils::open_file_bufread;
 use rustc_hash::FxHashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -9,21 +11,25 @@ use std::path::{Path, PathBuf};
 // chr1    16013   16020   rfhg_1.1        1       -
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GuideBEDType {
+pub enum RegionType {
     Tss,
     Tes,
+    Gene,
 }
 
 pub type ChromMap = FxHashMap<String, String>;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GuideInterval {
+#[derive(Debug, Clone, PartialEq)]
+pub struct MyRegion {
     pub start: u32, // 1-based closed
     pub end: u32,   // 1-based closed
     pub score: f32,
+    pub id: String,
+    pub name: String,
+    pub strand: ISOMSTRAND,
 }
 
-impl GuideInterval {
+impl MyRegion {
     #[inline]
     pub fn overlaps_point(&self, pos: u32) -> bool {
         self.start <= pos && pos <= self.end
@@ -42,12 +48,12 @@ impl GuideInterval {
 
 #[derive(Debug, Clone, Default)]
 pub struct ChromGuideIndex {
-    intervals: Vec<GuideInterval>,
+    intervals: Vec<MyRegion>,
     max_len: u32,
 }
 
 impl ChromGuideIndex {
-    pub fn intervals(&self) -> &[GuideInterval] {
+    pub fn intervals(&self) -> &[MyRegion] {
         &self.intervals
     }
 
@@ -59,17 +65,17 @@ impl ChromGuideIndex {
         self.intervals.is_empty()
     }
 
-    pub fn query_overlaps(&self, pos: u32) -> Vec<&GuideInterval> {
+    pub fn query_overlaps(&self, pos: u32) -> Vec<&MyRegion> {
         self.query_overlaps_with_flank(pos, 0)
     }
 
-    pub fn query_overlaps_with_flank(&self, pos: u32, flank: u32) -> Vec<&GuideInterval> {
+    pub fn query_overlaps_with_flank(&self, pos: u32, flank: u32) -> Vec<&MyRegion> {
         let start = pos.saturating_sub(flank);
         let end = pos.saturating_add(flank);
         self.query_overlaps_range(start, end)
     }
 
-    fn query_overlaps_range(&self, start: u32, end: u32) -> Vec<&GuideInterval> {
+    fn query_overlaps_range(&self, start: u32, end: u32) -> Vec<&MyRegion> {
         if self.intervals.is_empty() {
             return Vec::new();
         }
@@ -90,21 +96,21 @@ impl ChromGuideIndex {
 }
 
 #[derive(Debug)]
-pub struct GuideDb {
-    guide_type: GuideBEDType,
+pub struct RegionDb {
+    guide_type: RegionType,
     // bed_chroms: HashSet<String>,
     by_chrom_strand: FxHashMap<(String, ISOMSTRAND), ChromGuideIndex>,
     chrmap: Option<ChromMap>,
 }
 
-impl GuideDb {
+impl RegionDb {
     pub fn from_bed_path<P: AsRef<Path>>(
         path: P,
-        guide_type: GuideBEDType,
+        guide_type: RegionType,
         chrmap_path: &Option<P>,
-    ) -> Result<Self, GuideError> {
+    ) -> Result<Self, RegionError> {
         let path = path.as_ref();
-        let file = File::open(path).map_err(|err| GuideError::Io {
+        let file = File::open(path).map_err(|err| RegionError::Io {
             path: path.to_path_buf(),
             source: err,
         })?;
@@ -112,10 +118,10 @@ impl GuideDb {
         // Self::from_bed_reader(reader, guide_type)
         // let mut bed_chroms = HashSet::default();
 
-        let mut grouped: FxHashMap<(String, ISOMSTRAND), Vec<GuideInterval>> = FxHashMap::default();
+        let mut grouped: FxHashMap<(String, ISOMSTRAND), Vec<MyRegion>> = FxHashMap::default();
 
         for (line_no, line_result) in reader.lines().enumerate() {
-            let raw_line = line_result.map_err(|err| GuideError::Io {
+            let raw_line = line_result.map_err(|err| RegionError::Io {
                 path: path.to_path_buf(),
                 source: err,
             })?;
@@ -146,7 +152,7 @@ impl GuideDb {
             .into_iter()
             .map(|(key, mut intervals)| {
                 intervals.sort_by_key(|interval| interval.start);
-                let max_len = intervals.iter().map(GuideInterval::len).max().unwrap_or(0);
+                let max_len = intervals.iter().map(MyRegion::len).max().unwrap_or(0);
                 (key, ChromGuideIndex { intervals, max_len })
             })
             .collect();
@@ -165,7 +171,87 @@ impl GuideDb {
         })
     }
 
-    pub fn guide_type(&self) -> GuideBEDType {
+    pub fn from_gtf_gene<P: AsRef<Path>>(
+        path: P,
+        guide_type: RegionType,
+        chrmap_path: &Option<P>,
+    ) -> Result<Self, RegionError> {
+        let path = path.as_ref();
+        let mut reader = open_file_bufread(path).map_err(|err| RegionError::Io {
+            path: path.to_path_buf(),
+            source: err,
+        })?;
+        let mut grouped: FxHashMap<(String, ISOMSTRAND), Vec<MyRegion>> = FxHashMap::default();
+        let mut line = String::new();
+        let mut line_no = 0usize;
+
+        while reader.read_line(&mut line).map_err(|err| RegionError::Io {
+            path: path.to_path_buf(),
+            source: err,
+        })? != 0
+        {
+            line_no += 1;
+            let raw = line.trim_end();
+            if raw.is_empty() || raw.starts_with('#') {
+                line.clear();
+                continue;
+            }
+
+            let fields: Vec<&str> = raw.split('\t').collect();
+            if fields.len() < 9 {
+                return Err(RegionError::InvalidGtfLine {
+                    line_no,
+                    reason: format!("expected 9 columns, got {}", fields.len()),
+                });
+            }
+            if fields[2] != "gene" {
+                line.clear();
+                continue;
+            }
+
+            let start = parse_gtf_u32_field(fields[3], line_no, "start")?;
+            let end = parse_gtf_u32_field(fields[4], line_no, "end")?;
+            let strand = parse_gtf_strand_field(fields[6], line_no)?;
+            let id = parse_gtf_attr_value(fields[8], "gene_id").unwrap_or_default();
+            let name = parse_gtf_attr_value(fields[8], "gene_name").unwrap_or_else(|| id.clone());
+
+            grouped
+                .entry((fields[0].to_string(), strand))
+                .or_default()
+                .push(MyRegion {
+                    start,
+                    end,
+                    score: 0.0,
+                    id,
+                    name,
+                    strand,
+                });
+            line.clear();
+        }
+
+        let by_chrom_strand = grouped
+            .into_iter()
+            .map(|(key, mut intervals)| {
+                intervals.sort_by_key(|interval| interval.start);
+                let max_len = intervals.iter().map(MyRegion::len).max().unwrap_or(0);
+                (key, ChromGuideIndex { intervals, max_len })
+            })
+            .collect();
+
+        let chrmap = if let Some(p) = chrmap_path {
+            Some(load_chrmap_path(p)?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            guide_type,
+            by_chrom_strand,
+            chrmap,
+        })
+    }
+
+    pub fn guide_type(&self) -> RegionType {
         self.guide_type
     }
 
@@ -181,10 +267,26 @@ impl GuideDb {
         None
     }
 
-    pub fn query_overlaps(&self, chrom: &str, strand: ISOMSTRAND, pos: u32) -> Vec<&GuideInterval> {
+    pub fn query_overlaps(&self, chrom: &str, strand: ISOMSTRAND, pos: u32) -> Vec<&MyRegion> {
         self.get_index(chrom, strand)
             .map(|index| index.query_overlaps(pos))
             .unwrap_or_default()
+    }
+
+    pub fn query_overlaps_range_all_strands(
+        &self,
+        chrom: &str,
+        start: u32,
+        end: u32,
+    ) -> Vec<&MyRegion> {
+        [ISOMSTRAND::Plus, ISOMSTRAND::Minus, ISOMSTRAND::Unknown]
+            .into_iter()
+            .flat_map(|strand| {
+                self.get_index(chrom, strand)
+                    .map(|index| index.query_overlaps_range(start, end))
+                    .unwrap_or_default()
+            })
+            .collect()
     }
 
     pub fn query_overlaps_with_flank(
@@ -193,7 +295,7 @@ impl GuideDb {
         strand: &ISOMSTRAND,
         pos: u32,
         flank: u32,
-    ) -> Vec<&GuideInterval> {
+    ) -> Vec<&MyRegion> {
         self.get_index(chrom, *strand)
             .map(|index| index.query_overlaps_with_flank(pos, flank))
             .unwrap_or_default()
@@ -212,9 +314,9 @@ impl GuideDb {
     }
 }
 
-pub fn load_chrmap_path<P: AsRef<Path>>(path: P) -> Result<ChromMap, GuideError> {
+pub fn load_chrmap_path<P: AsRef<Path>>(path: P) -> Result<ChromMap, RegionError> {
     let path = path.as_ref();
-    let file = File::open(path).map_err(|err| GuideError::Io {
+    let file = File::open(path).map_err(|err| RegionError::Io {
         path: path.to_path_buf(),
         source: err,
     })?;
@@ -222,7 +324,7 @@ pub fn load_chrmap_path<P: AsRef<Path>>(path: P) -> Result<ChromMap, GuideError>
     let mut chrmap = FxHashMap::default();
 
     for (line_no, line_result) in reader.lines().enumerate() {
-        let raw_line = line_result.map_err(|err| GuideError::Io {
+        let raw_line = line_result.map_err(|err| RegionError::Io {
             path: path.to_path_buf(),
             source: err,
         })?;
@@ -242,13 +344,13 @@ pub fn load_chrmap_path<P: AsRef<Path>>(path: P) -> Result<ChromMap, GuideError>
             continue;
         };
         let Some(secondary) = fields.next() else {
-            return Err(GuideError::InvalidChrMapLine {
+            return Err(RegionError::InvalidChrMapLine {
                 line_no: line_no + 1,
                 reason: "expected 2 columns: primary_chrom secondary_chrom".to_string(),
             });
         };
         if fields.next().is_some() {
-            return Err(GuideError::InvalidChrMapLine {
+            return Err(RegionError::InvalidChrMapLine {
                 line_no: line_no + 1,
                 reason: "expected exactly 2 columns".to_string(),
             });
@@ -258,7 +360,7 @@ pub fn load_chrmap_path<P: AsRef<Path>>(path: P) -> Result<ChromMap, GuideError>
             .insert(primary.to_string(), secondary.to_string())
             .is_some()
         {
-            return Err(GuideError::InvalidChrMapLine {
+            return Err(RegionError::InvalidChrMapLine {
                 line_no: line_no + 1,
                 reason: format!("duplicate primary_chrom: {primary}"),
             });
@@ -272,45 +374,49 @@ pub fn load_chrmap_path<P: AsRef<Path>>(path: P) -> Result<ChromMap, GuideError>
 struct ParsedBedRecord {
     chrom: String,
     strand: ISOMSTRAND,
-    interval: GuideInterval,
+    interval: MyRegion,
 }
 
 #[derive(Debug)]
-pub enum GuideError {
+pub enum RegionError {
     Io { path: PathBuf, source: io::Error },
     InvalidBedLine { line_no: usize, reason: String },
+    InvalidGtfLine { line_no: usize, reason: String },
     InvalidChrMapLine { line_no: usize, reason: String },
 }
 
-impl std::fmt::Display for GuideError {
+impl std::fmt::Display for RegionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GuideError::Io { path, source } => {
+            RegionError::Io { path, source } => {
                 write!(f, "I/O error when loading {}: {source}", path.display())
             }
-            GuideError::InvalidBedLine { line_no, reason } => {
+            RegionError::InvalidBedLine { line_no, reason } => {
                 write!(f, "invalid BED line {line_no}: {reason}")
             }
-            GuideError::InvalidChrMapLine { line_no, reason } => {
+            RegionError::InvalidGtfLine { line_no, reason } => {
+                write!(f, "invalid GTF line {line_no}: {reason}")
+            }
+            RegionError::InvalidChrMapLine { line_no, reason } => {
                 write!(f, "invalid chrmap line {line_no}: {reason}")
             }
         }
     }
 }
 
-impl std::error::Error for GuideError {
+impl std::error::Error for RegionError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            GuideError::Io { source, .. } => Some(source),
+            RegionError::Io { source, .. } => Some(source),
             _ => None,
         }
     }
 }
 
-fn parse_bed_record(line: &str, line_no: usize) -> Result<ParsedBedRecord, GuideError> {
+fn parse_bed_record(line: &str, line_no: usize) -> Result<ParsedBedRecord, RegionError> {
     let fields: Vec<&str> = line.split('\t').collect();
     if fields.len() < 6 {
-        return Err(GuideError::InvalidBedLine {
+        return Err(RegionError::InvalidBedLine {
             line_no,
             reason: format!("expected at least 6 columns, got {}", fields.len()),
         });
@@ -320,7 +426,7 @@ fn parse_bed_record(line: &str, line_no: usize) -> Result<ParsedBedRecord, Guide
     let bed_start = parse_u32_field(fields[1], line_no, "start")?;
     let bed_end = parse_u32_field(fields[2], line_no, "end")?;
     if bed_end <= bed_start {
-        return Err(GuideError::InvalidBedLine {
+        return Err(RegionError::InvalidBedLine {
             line_no,
             reason: format!(
                 "BED end must be greater than start for half-open interval, got start={} end={}",
@@ -333,10 +439,13 @@ fn parse_bed_record(line: &str, line_no: usize) -> Result<ParsedBedRecord, Guide
     let strand = parse_strand_field(fields[5], line_no)?;
 
     // BED is 0-based half-open [start, end); convert to 1-based closed [start+1, end].
-    let interval = GuideInterval {
+    let interval = MyRegion {
         start: bed_start + 1,
         end: bed_end,
         score,
+        id: fields[3].to_string(),
+        name: fields[3].to_string(),
+        strand,
     };
 
     Ok(ParsedBedRecord {
@@ -346,26 +455,45 @@ fn parse_bed_record(line: &str, line_no: usize) -> Result<ParsedBedRecord, Guide
     })
 }
 
-fn parse_u32_field(raw: &str, line_no: usize, field_name: &str) -> Result<u32, GuideError> {
-    raw.parse::<u32>().map_err(|_| GuideError::InvalidBedLine {
+fn parse_gtf_u32_field(raw: &str, line_no: usize, field_name: &str) -> Result<u32, RegionError> {
+    raw.parse::<u32>().map_err(|_| RegionError::InvalidGtfLine {
         line_no,
         reason: format!("invalid {field_name}: {raw}"),
     })
 }
 
-fn parse_f32_field(raw: &str, line_no: usize, field_name: &str) -> Result<f32, GuideError> {
-    raw.parse::<f32>().map_err(|_| GuideError::InvalidBedLine {
-        line_no,
-        reason: format!("invalid {field_name}: {raw}"),
-    })
-}
-
-fn parse_strand_field(raw: &str, line_no: usize) -> Result<ISOMSTRAND, GuideError> {
+fn parse_gtf_strand_field(raw: &str, line_no: usize) -> Result<ISOMSTRAND, RegionError> {
     match raw {
         "+" => Ok(ISOMSTRAND::Plus),
         "-" => Ok(ISOMSTRAND::Minus),
         "." => Ok(ISOMSTRAND::Unknown),
-        _ => Err(GuideError::InvalidBedLine {
+        _ => Err(RegionError::InvalidGtfLine {
+            line_no,
+            reason: format!("invalid strand: {raw}"),
+        }),
+    }
+}
+
+fn parse_u32_field(raw: &str, line_no: usize, field_name: &str) -> Result<u32, RegionError> {
+    raw.parse::<u32>().map_err(|_| RegionError::InvalidBedLine {
+        line_no,
+        reason: format!("invalid {field_name}: {raw}"),
+    })
+}
+
+fn parse_f32_field(raw: &str, line_no: usize, field_name: &str) -> Result<f32, RegionError> {
+    raw.parse::<f32>().map_err(|_| RegionError::InvalidBedLine {
+        line_no,
+        reason: format!("invalid {field_name}: {raw}"),
+    })
+}
+
+fn parse_strand_field(raw: &str, line_no: usize) -> Result<ISOMSTRAND, RegionError> {
+    match raw {
+        "+" => Ok(ISOMSTRAND::Plus),
+        "-" => Ok(ISOMSTRAND::Minus),
+        "." => Ok(ISOMSTRAND::Unknown),
+        _ => Err(RegionError::InvalidBedLine {
             line_no,
             reason: format!("invalid strand: {raw}"),
         }),

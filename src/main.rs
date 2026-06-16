@@ -4,9 +4,11 @@ use clap::{ArgAction, Parser, Subcommand};
 use log::error;
 use serde::Serialize;
 pub mod core;
+pub mod region;
 pub mod utils;
 use crate::classify::run_classify;
 use crate::tools::chop::run_chop;
+use crate::tools::mark::run_mark;
 use crate::tools::revert::run_revert;
 use crate::tools::valtable::run_valtable;
 use crate::{index::run_index, merge::run_merge};
@@ -612,11 +614,36 @@ pub struct ValTableArgs {
     pub default_val: Option<String>,
 }
 
+#[derive(Parser, Debug, Serialize, Clone)]
+#[clap(about = "Mark transcripts according to specified criteria
+")]
+pub struct MarkArgs {
+    #[clap(help_heading = "Input", help = "Input GTF")]
+    pub input: PathBuf,
+
+    #[clap(
+        short = 'g',
+        long = "ref-gtf",
+        help_heading = "Parameters",
+        help = "Reference GTF used for marking transcripts"
+    )]
+    pub track_file: PathBuf,
+
+    #[clap(
+        short = 'o',
+        long = "out",
+        help_heading = "Output",
+        help = "Output prefix"
+    )]
+    pub out: PathBuf,
+}
+
 #[derive(Subcommand, Debug, Clone, Serialize)]
 pub enum ToolssArgs {
     Chop(ChopArgs),
     Valtable(ValTableArgs),
     Revert(RevertArgs),
+    Mark(MarkArgs),
 }
 
 fn main() {
@@ -665,6 +692,12 @@ fn main() {
             }
             ToolssArgs::Revert(args) => {
                 if let Err(e) = run_revert(&args) {
+                    error!("{:#}", e);
+                    std::process::exit(1);
+                }
+            }
+            ToolssArgs::Mark(args) => {
+                if let Err(e) = run_mark(&args) {
                     error!("{:#}", e);
                     std::process::exit(1);
                 }
