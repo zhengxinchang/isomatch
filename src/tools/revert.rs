@@ -1,25 +1,25 @@
 //! revert isomatch merged sample into multiple GTFs
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::File,
     io::{BufRead, BufWriter, Write},
     path::{Path, PathBuf},
 };
 
-use flate2::{write::GzEncoder, Compression};
+use flate2::{Compression, write::GzEncoder};
 use log::{info, warn};
 use serde::Serialize;
 
 use crate::{
+    RevertArgs,
     index::gtf::parse_gtf_attr_value,
     tools::tools_error::ToolError,
     traits::ArgValidate,
     utils::{
-        greetings2, is_gzipped, is_isomatch_merged_gtf, open_file_bufread, print_json_block,
-        read_samples, require_file, IsomSample,
+        IsomSample, greetings2, is_gzipped, is_isomatch_merged_gtf, open_file_bufread,
+        print_json_block, read_samples, require_file,
     },
-    RevertArgs,
 };
 
 const MAX_OPEN_FILES: usize = 512;
@@ -99,11 +99,9 @@ pub fn run_revert(args: &RevertArgs) -> Result<(), ToolError> {
 
     for (batch_idx, chunk) in file_ids.chunks(MAX_OPEN_FILES).enumerate() {
         info!("Reverting sample batch with {} output file(s)", chunk.len());
-        let active_ids: HashSet<u32> = chunk.iter().copied().collect();
-        let mut writers = open_writers(&args.out, &samples, chunk, args)?;
+        let mut writers = open_writers(&samples, chunk, args)?;
         write_reverted_batch(
             &args.input,
-            &active_ids,
             &mut writers,
             track_gene_ids.as_ref(),
             batch_idx == 0,
@@ -114,7 +112,6 @@ pub fn run_revert(args: &RevertArgs) -> Result<(), ToolError> {
         }
     }
 
-    stats.finalize();
     print_json_block("Revert stats", &stats);
     let stats_path = args.out.join("revert_stats.json");
     let stats_json = serde_json::to_string_pretty(&stats)?;
@@ -215,10 +212,6 @@ impl RevertStats {
             self.per_file[idx].missing_track_gene_id += 1;
         }
     }
-
-    fn finalize(&mut self) {
-        self.per_file.sort_by_key(|stats| stats.file_id);
-    }
 }
 
 #[derive(Debug)]
@@ -231,6 +224,95 @@ struct MergedBlock {
     exons: Vec<(u32, u32)>,
 }
 
+impl MergedBlock {
+    fn from_gtf_cols(cols: &[&str], line_no: usize) -> Result<Self, ToolError> {
+        let attrs = cols[8];
+        let merged_tx_id = require_attr(attrs, "transcript_id", line_no)?;
+        let merged_gene_id = require_attr(attrs, "gene_id", line_no)?;
+        let isom_src = require_attr(attrs, "ISOM_SRC", line_no)?;
+
+        Ok(Self {
+            chrom: cols[0].to_string(),
+            strand: cols[6].to_string(),
+            merged_tx_id,
+            merged_gene_id,
+            sources: parse_sources(&isom_src, line_no)?,
+            exons: Vec::new(),
+        })
+    }
+
+    fn write_sources(
+        &self,
+        writers: &mut HashMap<u32, Box<dyn Write>>,
+        track_gene_ids: Option<&TrackGeneIds>,
+        stats: &mut RevertStats,
+    ) -> Result<(), ToolError> {
+        if self.exons.is_empty() {
+            return Err(ToolError::ReadMergedGTFFailed {
+                reason: format!("Merged transcript {} has no exon", self.merged_tx_id),
+            });
+        }
+
+        for source in &self.sources {
+            let Some(writer) = writers.get_mut(&source.file_id) else {
+                continue;
+            };
+
+            let gene_id = match track_gene_ids {
+                Some(gene_ids) => gene_ids
+                    .get(&(
+                        source.file_id,
+                        self.merged_tx_id.clone(),
+                        source.tx_id.clone(),
+                    ))
+                    .map(String::as_str)
+                    .unwrap_or_else(|| {
+                        warn!(
+                            "No track gene_id for S{}:{} in {}, using merged gene_id",
+                            source.file_id, source.tx_id, self.merged_tx_id
+                        );
+                        stats.observe_missing_track_gene_id(source.file_id);
+                        self.merged_gene_id.as_str()
+                    }),
+                None => self.merged_gene_id.as_str(),
+            };
+
+            let source_exons = source.exons_from_repr(&self.exons)?;
+            stats.observe_source_tx(source.file_id, source_exons.len());
+
+            write_gtf_record(
+                writer.as_mut(),
+                &self.chrom,
+                "transcript",
+                source.start,
+                source.end,
+                &self.strand,
+                gene_id,
+                &source.tx_id,
+                &self.merged_tx_id,
+                None,
+            )?;
+
+            for (idx, (start, end)) in source_exons.iter().enumerate() {
+                write_gtf_record(
+                    writer.as_mut(),
+                    &self.chrom,
+                    "exon",
+                    *start,
+                    *end,
+                    &self.strand,
+                    gene_id,
+                    &source.tx_id,
+                    &self.merged_tx_id,
+                    Some(idx + 1),
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 struct SourceRecord {
     file_id: u32,
@@ -238,6 +320,29 @@ struct SourceRecord {
     start: u32,
     end: u32,
     exon_diffs: String,
+}
+
+impl SourceRecord {
+    fn exons_from_repr(&self, repr_exons: &[(u32, u32)]) -> Result<Vec<(u32, u32)>, ToolError> {
+        let mut exons = repr_exons.to_vec();
+        exons[0].0 = self.start;
+        let last_idx = exons.len() - 1;
+        exons[last_idx].1 = self.end;
+
+        for (exon_no, left_diff, right_diff) in parse_exon_diffs(&self.exon_diffs)? {
+            if exon_no == 0 || exon_no >= exons.len() {
+                return Err(ToolError::ReadMergedGTFFailed {
+                    reason: format!("Invalid exon diff index {exon_no} for {}", self.tx_id),
+                });
+            }
+            let junction_idx = exon_no - 1;
+            exons[junction_idx].1 = shift_coordinate(repr_exons[junction_idx].1, left_diff)?;
+            exons[junction_idx + 1].0 =
+                shift_coordinate(repr_exons[junction_idx + 1].0, right_diff)?;
+        }
+
+        Ok(exons)
+    }
 }
 
 type TrackGeneIds = HashMap<(u32, String, String), String>;
@@ -304,7 +409,6 @@ fn track_col(header: &[&str], name: &str) -> Result<usize, ToolError> {
 }
 
 fn open_writers(
-    out_dir: &Path,
     samples: &HashMap<u32, IsomSample>,
     file_ids: &[u32],
     args: &RevertArgs,
@@ -317,7 +421,7 @@ fn open_writers(
                 reason: format!("No sample header found for S{file_id}"),
             })?;
 
-        let out_path = output_path_for_sample(out_dir, sample, args);
+        let out_path = output_path_for_sample(&args.out, sample, args);
         let file = File::create(&out_path)?;
         let writer: Box<dyn Write> = if is_gzipped(&out_path) {
             Box::new(BufWriter::new(GzEncoder::new(file, Compression::default())))
@@ -340,7 +444,6 @@ fn output_path_for_sample(out_dir: &Path, sample: &IsomSample, args: &RevertArgs
 /// take input merged gtf and a set of activated file id to revert them in to single files.
 fn write_reverted_batch(
     merged_gtf: &Path,
-    active_ids: &HashSet<u32>,
     writers: &mut HashMap<u32, Box<dyn Write>>,
     track_gene_ids: Option<&TrackGeneIds>,
     observe_merged_txs: bool,
@@ -372,9 +475,9 @@ fn write_reverted_batch(
                     if observe_merged_txs {
                         stats.observe_merged_tx();
                     }
-                    write_block(&prev_block, active_ids, writers, track_gene_ids, stats)?;
+                    prev_block.write_sources(writers, track_gene_ids, stats)?;
                 }
-                block = Some(parse_merged_transcript(&cols, line_no)?);
+                block = Some(MergedBlock::from_gtf_cols(&cols, line_no)?);
             }
             "exon" => {
                 let Some(curr_block) = block.as_mut() else {
@@ -399,124 +502,10 @@ fn write_reverted_batch(
         if observe_merged_txs {
             stats.observe_merged_tx();
         }
-        write_block(&prev_block, active_ids, writers, track_gene_ids, stats)?;
+        prev_block.write_sources(writers, track_gene_ids, stats)?;
     }
 
     Ok(())
-}
-
-fn parse_merged_transcript(cols: &[&str], line_no: usize) -> Result<MergedBlock, ToolError> {
-    let attrs = cols[8];
-    let merged_tx_id = require_attr(attrs, "transcript_id", line_no)?;
-    let merged_gene_id = require_attr(attrs, "gene_id", line_no)?;
-    let isom_src = require_attr(attrs, "ISOM_SRC", line_no)?;
-
-    Ok(MergedBlock {
-        chrom: cols[0].to_string(),
-        strand: cols[6].to_string(),
-        merged_tx_id,
-        merged_gene_id,
-        sources: parse_sources(&isom_src, line_no)?,
-        exons: Vec::new(),
-    })
-}
-
-fn write_block(
-    block: &MergedBlock,
-    active_ids: &HashSet<u32>,
-    writers: &mut HashMap<u32, Box<dyn Write>>,
-    track_gene_ids: Option<&TrackGeneIds>,
-    stats: &mut RevertStats,
-) -> Result<(), ToolError> {
-    if block.exons.is_empty() {
-        return Err(ToolError::ReadMergedGTFFailed {
-            reason: format!("Merged transcript {} has no exon", block.merged_tx_id),
-        });
-    }
-
-    for source in &block.sources {
-        if !active_ids.contains(&source.file_id) {
-            continue;
-        }
-
-        let gene_id = match track_gene_ids {
-            Some(gene_ids) => gene_ids
-                .get(&(
-                    source.file_id,
-                    block.merged_tx_id.clone(),
-                    source.tx_id.clone(),
-                ))
-                .map(String::as_str)
-                .unwrap_or_else(|| {
-                    warn!(
-                        "No track gene_id for S{}:{} in {}, using merged gene_id",
-                        source.file_id, source.tx_id, block.merged_tx_id
-                    );
-                    stats.observe_missing_track_gene_id(source.file_id);
-                    block.merged_gene_id.as_str()
-                }),
-            None => block.merged_gene_id.as_str(),
-        };
-
-        let source_exons = source_exons(source, &block.exons)?;
-        let Some(writer) = writers.get_mut(&source.file_id) else {
-            continue;
-        };
-        stats.observe_source_tx(source.file_id, source_exons.len());
-
-        write_gtf_record(
-            writer.as_mut(),
-            &block.chrom,
-            "transcript",
-            source.start,
-            source.end,
-            &block.strand,
-            gene_id,
-            &source.tx_id,
-            &block.merged_tx_id,
-            None,
-        )?;
-
-        for (idx, (start, end)) in source_exons.iter().enumerate() {
-            write_gtf_record(
-                writer.as_mut(),
-                &block.chrom,
-                "exon",
-                *start,
-                *end,
-                &block.strand,
-                gene_id,
-                &source.tx_id,
-                &block.merged_tx_id,
-                Some(idx + 1),
-            )?;
-        }
-    }
-
-    Ok(())
-}
-
-fn source_exons(
-    source: &SourceRecord,
-    repr_exons: &[(u32, u32)],
-) -> Result<Vec<(u32, u32)>, ToolError> {
-    let mut exons = repr_exons.to_vec();
-    exons[0].0 = source.start;
-    let last_idx = exons.len() - 1;
-    exons[last_idx].1 = source.end;
-
-    for (exon_no, left_diff, right_diff) in parse_exon_diffs(&source.exon_diffs)? {
-        if exon_no == 0 || exon_no >= exons.len() {
-            return Err(ToolError::ReadMergedGTFFailed {
-                reason: format!("Invalid exon diff index {exon_no} for {}", source.tx_id),
-            });
-        }
-        let junction_idx = exon_no - 1;
-        exons[junction_idx].1 = shift_coordinate(repr_exons[junction_idx].1, left_diff)?;
-        exons[junction_idx + 1].0 = shift_coordinate(repr_exons[junction_idx + 1].0, right_diff)?;
-    }
-
-    Ok(exons)
 }
 
 fn parse_sources(isom_src: &str, line_no: usize) -> Result<Vec<SourceRecord>, ToolError> {
