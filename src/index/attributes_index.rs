@@ -36,14 +36,8 @@ pub struct AttrIndexBuilder {
 }
 
 impl AttrIndexBuilder {
-    pub fn init<P: AsRef<Path>>(
-        path: P,
-        total_tx_n: u64,
-        md5: &[u8; 16],
-    ) -> Result<Self, IndexError> {
-        let file = File::create(path).map_err(|e| IndexError::FailReadIndex {
-            reason: e.to_string(),
-        })?;
+
+    pub(crate) fn new(file: File, total_tx_n: u64, md5: &[u8; 16]) -> Result<Self, IndexError> {
         let mut file = BufWriter::new(file);
         // Reserve space for header; will be overwritten in finish()
         file.write_all(&[0u8; HEADER_SIZE])

@@ -37,6 +37,8 @@ Easy to use
 
 - `isomatch tools valtable`: extract a per-transcript attribute （e.g., TPM）value from source GTFs and assemble it into a matrix aligned to the merged GTF transcript order.
 
+- `isomatch tools mark`: mark transcripts with overlapping reference genes.
+
 - `isomatch tools revert`: reconstruct per-sample source-like GTFs from an isomatch merged GTF.
 
 Typical workflow:
@@ -47,7 +49,8 @@ Typical workflow:
 
     1. `isomatch tools chop` to remove isomatch-added attributes, 
     2. `isomatch tools valtable` to extract expression values from source GTFs,
-    3. `isomatch tools revert` to split a merged GTF back into per-sample GTFs.
+    3. `isomatch tools mark` to annotate transcripts with overlapping reference genes,
+    4. `isomatch tools revert` to split a merged GTF back into per-sample GTFs.
 
 Note: All subcommands output json file with run statistics, which are easy to parse for downstream analysis and reporting. 
 
@@ -518,6 +521,33 @@ Key parameters:
 `<prefix>.valtable.tsv.gz` is a tab-separated matrix: the first column is `transcript_id` (merged transcript IDs in their original order), and each subsequent column is named after the source GTF filename.
 
 `<prefix>.valtable_stats.json` records the number of merged transcripts, the list of source samples found in the merged GTF header, and per-file extraction counts (`extracted`, `attr_missing`, `src_tx_not_in_merged`).
+
+## isomatch tools mark
+
+`mark` reads a GTF and a reference GTF, finds reference genes that overlap each transcript record, and adds `ISOM_OVLP_GENE` to transcript lines.
+
+```
+isomatch tools mark \
+    --ref-gtf reference.gtf.gz \
+    -o marked \
+    query.gtf.gz
+# outputs: marked.mark.gtf.gz  marked.mark_dup_gene.tsv.gz  marked.mark_stats.json
+```
+
+`ISOM_OVLP_GENE` is formatted as `count:gene_id1,gene_id2,`.
+
+| Item | Description |
+|------|-------------|
+| Input | Query GTF and reference GTF (gzip or plain) |
+| Output | `<prefix>.mark.gtf.gz`, `<prefix>.mark_dup_gene.tsv.gz`, `<prefix>.mark_stats.json` |
+
+Key parameters:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-g, --ref-gtf` | Reference GTF used to find overlapping genes | required |
+| `-o, --out` | Output prefix | required |
+| (positional) | Input GTF | required |
 
 ## isomatch tools revert
 

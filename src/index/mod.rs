@@ -1,7 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
+    fs::{self, File},
     io::Write,
+    path::PathBuf,
 };
 
 use anyhow::{Context, bail};
@@ -50,6 +51,38 @@ pub struct IndexStats {
     gene_ids: HashSet<String>,
     #[serde(skip_serializing)]
     skipped_gene_ids: HashSet<String>,
+}
+
+struct OutputCleanup {
+    paths: Vec<PathBuf>,
+    armed: bool,
+}
+
+impl OutputCleanup {
+    fn new() -> Self {
+        Self {
+            paths: Vec::new(),
+            armed: true,
+        }
+    }
+
+    fn track(&mut self, path: PathBuf) {
+        self.paths.push(path);
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for OutputCleanup {
+    fn drop(&mut self) {
+        if self.armed {
+            for path in &self.paths {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
 }
 
 impl IndexStats {
@@ -275,8 +308,10 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         info!("Initializing Builder");
     }
     let missing_seqids_vec: Vec<String> = missing_ref_seqid_set.iter().cloned().collect();
+    let mut output_cleanup = OutputCleanup::new();
     let isomx_file = File::create(&isomx_path)
         .with_context(|| format!("Can not create output file: {}", isomx_path.display()))?;
+    output_cleanup.track(isomx_path.clone());
     let mut builder = builder::IndexBuilder::new(
         isomx_file,
         chrom_names,
@@ -291,8 +326,11 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     let mut isoms_path = isomx_path.clone();
     isoms_path.set_extension("isoms");
     let total_indexable_tx = gtf_reader.transcript_count_excluding(&missing_ref_chrom_ids);
+    let isoms_file = File::create(&isoms_path)
+        .with_context(|| format!("cannot create isoms at {}", isoms_path.display()))?;
+    output_cleanup.track(isoms_path.clone());
     let mut attr_builder =
-        attributes_index::AttrIndexBuilder::init(&isoms_path, total_indexable_tx, &profile.md5)
+        attributes_index::AttrIndexBuilder::new(isoms_file, total_indexable_tx, &profile.md5)
             .with_context(|| format!("cannot init AttrIndexBuilder at {}", isoms_path.display()))?;
 
     let mut current_chrom_id = 0u16;
@@ -378,7 +416,8 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
 
     let mut isomx_info_path = isomx_path.clone();
     isomx_info_path.add_extension("info.json");
-    let mut isomx_info_writer = File::create(isomx_info_path)?;
+    let mut isomx_info_writer = File::create(&isomx_info_path)?;
+    output_cleanup.track(isomx_info_path);
     if !args.quiet {
         print_json_block("Index summary", &stats);
     }
@@ -387,6 +426,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
 
     isomx_info_writer.write(info_json.as_bytes())?;
     isomx_info_writer.flush()?;
+    output_cleanup.disarm();
 
     if !args.quiet {
         info!("Finished!");

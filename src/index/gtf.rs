@@ -386,11 +386,35 @@ pub struct MyGTFReader {
     temp_dir: PathBuf,
 }
 
+struct TempDirCleanup {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl TempDirCleanup {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TempDirCleanup {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
 impl MyGTFReader {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, GTFError> {
         let path = path.as_ref();
         let file_size = fs::metadata(path)?.len();
         let temp_dir = make_temp_dir(path)?;
+        let mut temp_cleanup = TempDirCleanup::new(temp_dir.clone());
         let bucket_dir = temp_dir.join("buckets");
         let sorted_dir = temp_dir.join("sorted_buckets");
         fs::create_dir(&bucket_dir)?;
@@ -568,6 +592,7 @@ impl MyGTFReader {
             }
         }
 
+        temp_cleanup.disarm();
         Ok(Self {
             sorted_buckets,
             heap,
