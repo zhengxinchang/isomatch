@@ -329,10 +329,10 @@ Each merged transcript record in the output GTF includes the following extra att
 |-----------|-------------|
 | `ISOM_EXONS` | Number of exons |
 | `ISOM_COUNT` | Number of source transcripts merged into this record |
-| `ISOM_SRC` | `\|`-separated list of source transcripts, each formatted as `S{sample_index}:{tx_id}:{start}:{end}:{tx_type}:{donor_diff}:{acceptor_diff}:{exon_diffs}`; omitted when `merge --chop` is used |
+| `ISOM_SRC` | `\|`-separated list of source transcripts, each formatted as `S{sample_index}:{tx_id}:{start}:{end}:{tx_type}:{donor_diff}:{acceptor_diff}:{junction_diffs}`; omitted when `merge --chop` is used |
 | `ISOM_REPR_POLICY` | Representative selection policies as `SJ_POLICY:TSS_POLICY:TES_POLICY`; `SJ_POLICY` is `NA` for mono-exon transcripts |
 
-The `exon_diffs` field in `ISOM_SRC` records only exons that differ from the representative, in the format `(exon_number,left_offset,right_offset)`. Exons with no difference are omitted and shown as `no_diff`.
+The `junction_diffs` field in `ISOM_SRC` records only junctions that differ from the representative, in the format `(junction_number,left_offset,right_offset)`. `junction_number` is 1-based. Junctions with no difference are omitted and shown as `no_diff`.
 
 Policy values for all policy fields: `major`, `longer`, `shorter`, `guide_definitive`, `guide_majority`, `guide_longer`.
 
@@ -358,7 +358,7 @@ Policy values for all policy fields: `major`, `longer`, `shorter`, `guide_defini
 | `src_gene_id` | Source gene ID |
 | `total_donor_diff` | Sum of donor-site deviations between source and representative junctions |
 | `total_acceptor_diff` | Sum of acceptor-site deviations between source and representative junctions |
-| `exon_diff` | Per-exon coordinate differences in `(exon_number,left_offset,right_offset)` format; `no_diff` if identical |
+| `junction_diff` | Per-junction coordinate differences in `(junction_number,left_offset,right_offset)` format; `no_diff` if identical |
 
 Note: `junction_policy`, `tss_policy`, and `tes_policy` are the same for all rows sharing the same `merged_tx_id`, and `ISOM_REPR_POLICY` now uses the same strand-aware `SJ_POLICY:TSS_POLICY:TES_POLICY` ordering.
 

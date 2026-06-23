@@ -191,7 +191,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     )));
     writeln!(
         track_bufwriter,
-        "merged_tx_id\tmerged_gene_id\tmerged_start\tmerged_end\tmerged_strand\tmerged_exon_num\tjunction_policy\ttss_policy\ttes_policy\tsrc_tx_count_in_merged_group\tsrc_tx_id\tsrc_gene_id\ttotal_donor_diff\ttotal_acceptor_diff\texon_diff\tsrc_file_name"
+        "merged_tx_id\tmerged_gene_id\tmerged_start\tmerged_end\tmerged_strand\tmerged_exon_num\tjunction_policy\ttss_policy\ttes_policy\tsrc_tx_count_in_merged_group\tsrc_tx_id\tsrc_gene_id\ttotal_donor_diff\ttotal_acceptor_diff\tjunction_diff\tsrc_file_name"
     )?;
 
     // init present_absent writer
@@ -489,7 +489,7 @@ pub fn add_output_header(bufwriter: &mut dyn Write, args: &MergeArgs) -> AnyResu
     )?;
     writeln!(
         bufwriter,
-        "##ISOM <FORMAT> ID=\"ISOM_SRC\"; Description=\"vertical line separated source transcript records in the form S#:tx_id:start:end:tx_type:donor_diff:acceptor_diff:(exon_number,left_offset,right_offset),(exon_number,left_offset,right_offset)... Only exons has difference will be shown.\";"
+        "##ISOM <FORMAT> ID=\"ISOM_SRC\"; Description=\"vertical line separated source transcript records in the form S#:tx_id:start:end:tx_type:donor_diff:acceptor_diff:(junction_number,left_offset,right_offset),(junction_number,left_offset,right_offset)... Only junctions with coordinate differences will be shown.\";"
     )?;
     writeln!(
         bufwriter,

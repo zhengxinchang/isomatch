@@ -319,7 +319,7 @@ struct SourceRecord {
     tx_id: String,
     start: u32,
     end: u32,
-    exon_diffs: String,
+    junction_diffs: String,
 }
 
 impl SourceRecord {
@@ -329,13 +329,16 @@ impl SourceRecord {
         let last_idx = exons.len() - 1;
         exons[last_idx].1 = self.end;
 
-        for (exon_no, left_diff, right_diff) in parse_exon_diffs(&self.exon_diffs)? {
-            if exon_no == 0 || exon_no >= exons.len() {
+        for (junction_no, left_diff, right_diff) in parse_junction_diffs(&self.junction_diffs)? {
+            if junction_no == 0 || junction_no >= exons.len() {
                 return Err(ToolError::ReadMergedGTFFailed {
-                    reason: format!("Invalid exon diff index {exon_no} for {}", self.tx_id),
+                    reason: format!(
+                        "Invalid junction diff index {junction_no} for {}",
+                        self.tx_id
+                    ),
                 });
             }
-            let junction_idx = exon_no - 1;
+            let junction_idx = junction_no - 1;
             exons[junction_idx].1 = shift_coordinate(repr_exons[junction_idx].1, left_diff)?;
             exons[junction_idx + 1].0 =
                 shift_coordinate(repr_exons[junction_idx + 1].0, right_diff)?;
@@ -522,57 +525,57 @@ fn parse_sources(isom_src: &str, line_no: usize) -> Result<Vec<SourceRecord>, To
             tx_id: parts[1].to_string(),
             start: parts[2].parse::<u32>()?,
             end: parts[3].parse::<u32>()?,
-            exon_diffs: parts[7].to_string(),
+            junction_diffs: parts[7].to_string(),
         });
     }
     Ok(out)
 }
 
-fn parse_exon_diffs(exon_diffs: &str) -> Result<Vec<(usize, i32, i32)>, ToolError> {
-    if exon_diffs == "no_diff" {
+fn parse_junction_diffs(junction_diffs: &str) -> Result<Vec<(usize, i32, i32)>, ToolError> {
+    if junction_diffs == "no_diff" {
         return Ok(Vec::new());
     }
 
     let mut out = Vec::new();
-    let mut rest = exon_diffs.trim();
+    let mut rest = junction_diffs.trim();
     while !rest.is_empty() {
         let start = rest
             .find('(')
             .ok_or_else(|| ToolError::ReadMergedGTFFailed {
-                reason: format!("Malformed exon diff list: {exon_diffs}"),
+                reason: format!("Malformed junction diff list: {junction_diffs}"),
             })?;
         let end = rest[start..]
             .find(')')
             .map(|idx| start + idx)
             .ok_or_else(|| ToolError::ReadMergedGTFFailed {
-                reason: format!("Malformed exon diff list: {exon_diffs}"),
+                reason: format!("Malformed junction diff list: {junction_diffs}"),
             })?;
-        out.push(parse_exon_diff(&rest[start..=end])?);
+        out.push(parse_junction_diff(&rest[start..=end])?);
         rest = rest[end + 1..].trim_start_matches([',', ' ', '\t']);
     }
 
     Ok(out)
 }
 
-fn parse_exon_diff(diff: &str) -> Result<(usize, i32, i32), ToolError> {
+fn parse_junction_diff(diff: &str) -> Result<(usize, i32, i32), ToolError> {
     let diff = diff.trim();
     let diff = diff
         .strip_prefix('(')
         .and_then(|value| value.strip_suffix(')'))
         .ok_or_else(|| ToolError::ReadMergedGTFFailed {
-            reason: format!("Malformed exon diff: {diff}"),
+            reason: format!("Malformed junction diff: {diff}"),
         })?;
     let parts: Vec<&str> = diff.split(',').collect();
     if parts.len() != 3 {
         return Err(ToolError::ReadMergedGTFFailed {
-            reason: format!("Malformed exon diff: {diff}"),
+            reason: format!("Malformed junction diff: {diff}"),
         });
     }
     Ok((
         parts[0]
             .parse::<usize>()
             .map_err(|err| ToolError::ReadMergedGTFFailed {
-                reason: format!("Can not parse exon number in diff {diff}: {err}"),
+                reason: format!("Can not parse junction number in diff {diff}: {err}"),
             })?,
         parts[1]
             .parse::<i32>()

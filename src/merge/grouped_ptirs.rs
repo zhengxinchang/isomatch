@@ -546,14 +546,14 @@ impl GroupedPTIR {
                     &self.repr_junction,
                     self.strand,
                 );
-                let exons_diff =
-                    junction_exon_diffs(ptir.junctions().unwrap_or(&[]), &self.repr_junction)
+                let junctions_diff =
+                    junction_diffs(ptir.junctions().unwrap_or(&[]), &self.repr_junction)
                         .expect("PTIR must have same junctions as representative");
 
-                let exon_diff_str = if exons_diff.is_empty() {
+                let junction_diff_str = if junctions_diff.is_empty() {
                     "no_diff".to_string()
                 } else {
-                    exons_diff
+                    junctions_diff
                         .into_iter()
                         .map(|a| format!("({},{},{})", a.0, a.1, a.2))
                         .collect::<Vec<_>>()
@@ -569,7 +569,7 @@ impl GroupedPTIR {
                     ptir.tx_type,
                     donor_diff,
                     acceptor_diff,
-                    exon_diff_str
+                    junction_diff_str
                 );
 
                 SrcRecord {
@@ -577,7 +577,7 @@ impl GroupedPTIR {
                     ptir,
                     donor_diff,
                     acceptor_diff,
-                    exon_diff_str,
+                    junction_diff_str,
                 }
             })
             .collect();
@@ -657,7 +657,7 @@ impl GroupedPTIR {
                 r.ptir.source_geneid,
                 r.donor_diff,
                 r.acceptor_diff,
-                r.exon_diff_str,
+                r.junction_diff_str,
             )?;
             track_bufwriter.write_all(b"\t")?;
             track_bufwriter.write_all(src_file_name)?;
@@ -718,7 +718,7 @@ struct SrcRecord<'a> {
     ptir: &'a PTIR,
     donor_diff: u32,
     acceptor_diff: u32,
-    exon_diff_str: String,
+    junction_diff_str: String,
 }
 
 fn majority_vote_unique_pair(positions: &[(u32, u32)]) -> Option<(u32, u32)> {
@@ -1015,12 +1015,12 @@ fn junction_diff_sums(curr: &[(u32, u32)], repr: &[(u32, u32)], strand: ISOMSTRA
     (donor_sum, acceptor_sum)
 }
 
-fn junction_exon_diffs(
+fn junction_diffs(
     curr: &[(u32, u32)],
     repr: &[(u32, u32)],
 ) -> Result<
     Vec<(
-        usize, // exon number
+        usize, // junction number
         i32,   // left diff bp
         i32,   // right diff bp
     )>,
@@ -1029,15 +1029,15 @@ fn junction_exon_diffs(
     if curr.len() != repr.len() {
         return Err(MergeError::NoSameJunction);
     }
-    let mut exon_diffs = Vec::new();
-    for (exon_idx, (curr_junc, repr_junc)) in curr.iter().zip(repr.iter()).enumerate() {
+    let mut junction_diffs = Vec::new();
+    for (junction_idx, (curr_junc, repr_junc)) in curr.iter().zip(repr.iter()).enumerate() {
         let left_diff = repr_junc.0 as i32 - curr_junc.0 as i32;
         let right_diff = repr_junc.1 as i32 - curr_junc.1 as i32;
         if left_diff != 0 || right_diff != 0 {
-            exon_diffs.push((exon_idx + 1, left_diff, right_diff))
+            junction_diffs.push((junction_idx + 1, left_diff, right_diff))
         }
     }
-    Ok(exon_diffs)
+    Ok(junction_diffs)
 }
 
 #[cfg(test)]
@@ -1045,8 +1045,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn junction_exon_diffs_keeps_negative_offsets() {
-        let diffs = junction_exon_diffs(&[(105, 210)], &[(100, 200)]).unwrap();
+    fn junction_diffs_keeps_negative_offsets() {
+        let diffs = junction_diffs(&[(105, 210)], &[(100, 200)]).unwrap();
 
         assert_eq!(diffs, vec![(1, -5, -10)]);
     }
