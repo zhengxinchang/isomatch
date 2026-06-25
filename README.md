@@ -1,8 +1,6 @@
 # isomatch  <img src="./img/logo.png" align="right" alt="" width=180 />
 
-**Why isomatch?**
-
-isomatch is designed for **accurate and scalable transcript merging and classification**.
+**Why use isomatch?**
 
 **isomatch** is designed for **accurate and scalable transcript merging and classification**.
 
