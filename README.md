@@ -2,28 +2,14 @@
 
 **Why isomatch?**
 
-Merge
+isomatch is designed for **accurate and scalable transcript merging and classification**.
 
-- Supports configurable wobble for splice sites, TSS, and TES, making it well suited for long-read RNA-seq data.
-- Considers both junction structure and TSS/TES during transcript merging, rather than relying only on intron chains.
-- Uses splice-junction sequence context (GT-AG/GC-AG/AT-AC) to prioritize transcripts during merging.
-- Supports guide-based representative TSS/TES selection, enabling integration of high-confidence resources such as refTSS and PolyASite.
-- Fully tracks source transcripts after merging.
+**isomatch** is designed for **accurate and scalable transcript merging and classification**.
 
-Classification
+First, **isomatch supports high-quality transcript merging** for both **long-read** and **short-read RNA-seq** derived transcript models. For long-read RNA-seq, it provides fine-grained control over **splice junctions**, **TSSs**, and **TESs**, including **independent wobble parameters** for different transcript features. It can also incorporate **sequence information** during merging. For short-read RNA-seq derived transcript models, isomatch can be used in a **junction-only mode**.
 
-- Provides comprehensive transcript classification in seconds to minutes for millions of transcripts.
-- Supports SQANTI3-compatible structural classification categories.
+Second, **isomatch is built for large-scale transcript integration**. It is **memory-efficient** and **fast**, making it suitable for **population-scale transcriptome studies**. Importantly, isomatch is designed to **reduce over-merging** while providing an efficient `classify` function for **rapid annotation of very large transcript collections**.
 
-Scalability
-
-- Fast and memory-efficient.
-- Designed for population-scale analysis across thousands of samples (~10GB memory).
-
-Easy to use
-
-- No dependencies.
-- Download and run.
 
 # Subcommands and workflow
 
