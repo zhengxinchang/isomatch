@@ -8,6 +8,8 @@ First, **isomatch supports high-quality transcript merging** for both **long-rea
 
 Second, **isomatch is built for large-scale transcript integration**. It is **memory-efficient** and **fast**, making it suitable for **population-scale transcriptome studies**. Importantly, isomatch is designed to **reduce over-merging** while providing an efficient `classify` function for **rapid annotation of very large transcript collections**.
 
+Third, **isomatch enables provenance-aware transcript tracking while remaining fully GTF-compatible**. The `merge` output uses **specific header lines** and **custom GTF attributes** to record the original source transcripts and samples behind each merged model, allowing users to trace merged transcripts back to their supporting inputs. isomatch can also operate directly on **compressed GTF files**, greatly reducing storage requirements for **ultra-large population-scale merging**.
+
 
 # Subcommands and workflow
 
