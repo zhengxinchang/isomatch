@@ -4,6 +4,7 @@ use crate::{
     MergeArgs,
     core::{ptir::PTIR, tx_strand::ISOMSTRAND, tx_type::TxType},
     merge::{
+        MergeStats,
         merge_error::MergeError,
         policy::{GuideResolution, MergePolicyArg, MergePolicyUsed},
     },
@@ -477,6 +478,7 @@ impl GroupedPTIR {
         present_absent_writer: &mut dyn Write,
         input_file_names: &[Vec<u8>],
         args: &MergeArgs,
+        stats: &mut MergeStats,
     ) -> Result<(), MergeError> {
         debug_assert!(
             self.repr_loaded,
@@ -582,6 +584,9 @@ impl GroupedPTIR {
             })
             .collect();
 
+        let positive_sample_idxs: HashSet<usize> =
+            src_records.iter().map(|r| r.ptir.source_file_id).collect();
+
         if !args.chop {
             let source_attr = src_records
                 .iter()
@@ -592,6 +597,16 @@ impl GroupedPTIR {
             gtf_bufwriter.write_all(b"\"; ISOM_SRC \"")?;
             gtf_bufwriter.write_all(source_attr.as_bytes())?;
         }
+
+        let merged_samples_cnt = positive_sample_idxs.len();
+        stats.observe_merged_sample_cnt(merged_samples_cnt);
+        gtf_bufwriter.write_all(b"\"; ISOM_SAMPLE_CNT \"")?;
+        write!(gtf_bufwriter, "{}", merged_samples_cnt)?;
+
+        let sample_freq = merged_samples_cnt as f64 / input_file_names.len() as f64;
+
+        gtf_bufwriter.write_all(b"\"; ISOM_SAMPLE_FREQ \"")?;
+        write!(gtf_bufwriter, "{:.2}", sample_freq)?;
 
         let (used_tss_policy, used_tes_policy) = match self.strand {
             ISOMSTRAND::Minus => (self.used_repr_right_policy, self.used_repr_left_policy),
@@ -663,9 +678,6 @@ impl GroupedPTIR {
             track_bufwriter.write_all(src_file_name)?;
             track_bufwriter.write_all(b"\n")?;
         }
-
-        let positive_sample_idxs: HashSet<usize> =
-            src_records.iter().map(|r| r.ptir.source_file_id).collect();
 
         write!(
             present_absent_writer,

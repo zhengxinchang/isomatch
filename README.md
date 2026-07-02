@@ -303,7 +303,7 @@ For a run with `-o <prefix>`, three files are written:
 
 Use `--chop` to omit `ISOM_SRC` from `<prefix>.merged.gtf.gz` and reduce GTF size. The track TSV is still written, but the merged GTF cannot be used with `isomatch tools revert`.
 
-In `<prefix>.merged_info.json`, `*_pct` values are percentages on a 0-100 scale rounded to four decimal places.
+In `<prefix>.merged_info.json`, `*_pct` values are percentages on a 0-100 scale rounded to four decimal places. `sample_cnt_per_merged_tx` reports the number of merged transcripts for each distinct sample count.
 
 ---
 
@@ -315,6 +315,8 @@ Each merged transcript record in the output GTF includes the following extra att
 |-----------|-------------|
 | `ISOM_EXONS` | Number of exons |
 | `ISOM_COUNT` | Number of source transcripts merged into this record |
+| `ISOM_SAMPLE_CNT` | Number of input samples represented in this record |
+| `ISOM_SAMPLE_FREQ` | Fraction of all input samples represented in this record, rounded to two decimal places |
 | `ISOM_SRC` | `\|`-separated list of source transcripts, each formatted as `S{sample_index}:{tx_id}:{start}:{end}:{tx_type}:{donor_diff}:{acceptor_diff}:{junction_diffs}`; omitted when `merge --chop` is used |
 | `ISOM_REPR_POLICY` | Representative selection policies as `SJ_POLICY:TSS_POLICY:TES_POLICY`; `SJ_POLICY` is `NA` for mono-exon transcripts |
 

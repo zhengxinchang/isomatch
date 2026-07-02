@@ -36,7 +36,6 @@ pub struct AttrIndexBuilder {
 }
 
 impl AttrIndexBuilder {
-
     pub(crate) fn new(file: File, total_tx_n: u64, md5: &[u8; 16]) -> Result<Self, IndexError> {
         let mut file = BufWriter::new(file);
         // Reserve space for header; will be overwritten in finish()

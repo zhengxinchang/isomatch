@@ -365,6 +365,7 @@ pub fn process_super_cluster(
                 present_absent_writer,
                 input_file_names,
                 args,
+                stats,
             )?;
         }
     }
@@ -489,6 +490,14 @@ pub fn add_output_header(bufwriter: &mut dyn Write, args: &MergeArgs) -> AnyResu
     )?;
     writeln!(
         bufwriter,
+        "##ISOM <FORMAT> ID=\"ISOM_SAMPLE_CNT\"; Description=\"number of input samples represented in this output transcript\";"
+    )?;
+    writeln!(
+        bufwriter,
+        "##ISOM <FORMAT> ID=\"ISOM_SAMPLE_FREQ\"; Description=\"fraction of input samples represented in this output transcript\";"
+    )?;
+    writeln!(
+        bufwriter,
         "##ISOM <FORMAT> ID=\"ISOM_SRC\"; Description=\"vertical line separated source transcript records in the form S#:tx_id:start:end:tx_type:donor_diff:acceptor_diff:(junction_number,left_offset,right_offset),(junction_number,left_offset,right_offset)... Only junctions with coordinate differences will be shown.\";"
     )?;
     writeln!(
@@ -519,6 +528,8 @@ pub struct MergeStats {
     pub tes_guide_pct: f64,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub source_tx_cnt_per_merged_tx: BTreeMap<u32, u32>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub sample_cnt_per_merged_tx: BTreeMap<u32, u32>,
 }
 
 impl MergeStats {
@@ -549,6 +560,13 @@ impl MergeStats {
             .or_insert(0) += 1;
     }
 
+    fn observe_merged_sample_cnt(&mut self, sample_count: usize) {
+        *self
+            .sample_cnt_per_merged_tx
+            .entry(sample_count as u32)
+            .or_insert(0) += 1;
+    }
+
     fn finalize(&mut self) {
         if self.merged_tx_cnt == 0 {
             self.tss_guide_pct = 0.0;
@@ -562,5 +580,24 @@ impl MergeStats {
         self.tes_guide_pct =
             (self.tes_guide_cnt as f64 * 100.0 / self.merged_tx_cnt as f64 * 10000.0).round()
                 / 10000.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn observes_merged_sample_count_distribution() {
+        let mut stats = MergeStats::default();
+
+        stats.observe_merged_sample_cnt(1);
+        stats.observe_merged_sample_cnt(2);
+        stats.observe_merged_sample_cnt(2);
+
+        assert_eq!(
+            stats.sample_cnt_per_merged_tx,
+            BTreeMap::from([(1, 1), (2, 2)])
+        );
     }
 }
