@@ -46,3 +46,4 @@ Makefile
 script/
 paper/
 .snakemake/
+GTF_LIBRARY_DESIGN.md

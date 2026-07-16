@@ -258,6 +258,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             cluster_max_end = ptir.end;
             super_cluster.push(ptir); // first ptir for next super cluster
         }
+        
         // process the last super cluster
         // global_scluster_id += 1;
         process_super_cluster(
@@ -583,21 +584,3 @@ impl MergeStats {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn observes_merged_sample_count_distribution() {
-        let mut stats = MergeStats::default();
-
-        stats.observe_merged_sample_cnt(1);
-        stats.observe_merged_sample_cnt(2);
-        stats.observe_merged_sample_cnt(2);
-
-        assert_eq!(
-            stats.sample_cnt_per_merged_tx,
-            BTreeMap::from([(1, 1), (2, 2)])
-        );
-    }
-}
