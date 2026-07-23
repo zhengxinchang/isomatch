@@ -6,7 +6,7 @@
 2. Supports fully configurable splice-junction, TSS, and TES matching.
 3. Uses sequence information to prioritize canonical splice sites.
 4. Processes thousands of samples in a single run with minimal time and memory.
-5. Integrates `merge` and `classify` for population-scale transcript interpretation.
+5. Integrates `merge` and `classify` (similar functionality as SQANTI3 QC) for population-scale transcript interpretation.
 
 # Subcommands and workflow
 
