@@ -10,19 +10,15 @@
 
 # Subcommands and workflow
 
-- `isomatch index`: build `.isomx` and `.isoms` indexes for a GTF with a reference FASTA. GTF records can be unordered; transcripts must have `transcript` and `exon` records with matching seqids.
-
-- `isomatch merge`: merge multiple GTF files into a single merged GTF file, using the reference FASTA for sequence information.
-
-- `isomatch classify`: classify query transcripts against a reference GTF, similar to SQANTI3 QC.
-
-- `isomatch tools chop`: remove selected GTF attributes, commonly used to strip isomatch-added annotations from output GTF files.
-
-- `isomatch tools valtable`: extract a per-transcript attribute （e.g., TPM）value from source GTFs and assemble it into a matrix aligned to the merged GTF transcript order.
-
-- `isomatch tools mark`: mark transcripts with overlapping reference genes.
-
-- `isomatch tools revert`: reconstruct per-sample source-like GTFs from an isomatch merged GTF.
+- `isomatch index`: Build indexes for reading GTF files and generate summary statistics.
+  Automatically called by `merge` and `classify` if needed.
+- `isomatch merge`: Merge multiple GTF files into a single merged GTF file, using the reference FASTA for sequence information.
+- `isomatch classify`: Classify query transcripts against a reference GTF, similar to SQANTI3 QC.
+- `isomatch tools`: Run GTF manipulation utilities:
+  - `chop`: Remove selected GTF attributes, commonly used to strip isomatch-added annotations from output GTF files.
+  - `valtable`: Extract a per-transcript attribute value (e.g., TPM) from source GTFs and assemble it into a matrix aligned to the merged GTF transcript order.
+  - `mark`: Mark transcripts with overlapping reference genes.
+  - `revert`: Reconstruct per-sample source-like GTFs from an isomatch merged GTF.
 
 Typical workflow:
 1. create indexes with `isomatch index --ref-fa ref.fa`, or let `merge`/`classify` auto-create them.
