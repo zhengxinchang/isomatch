@@ -101,7 +101,7 @@ pub struct IndexArgs {
         short = 'o',
         long = "out",
         help_heading = "Output",
-        help = "Output indexes path; defaults to <input>.isomx and <input>.isoms"
+        help = "Output prefix; writes <prefix>.isomx and <prefix>.isoms. Defaults to <input>.isomx and <input>.isoms"
     )]
     pub out: Option<PathBuf>,
 

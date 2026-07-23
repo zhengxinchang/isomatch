@@ -23,7 +23,7 @@ use crate::{
     },
     region::{RegionDb, RegionType},
     traits::ArgValidate,
-    utils::{check_index_ready, greetings2, print_json_block, require_file},
+    utils::{check_index_ready, greetings2, print_json_block, require_file, save_json_block},
 };
 
 pub mod class_code;
@@ -178,6 +178,10 @@ impl ArgValidate for ClassifyArgs {
 pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
     greetings2(&args);
     args.validate();
+
+    let mut param_path = args.out.clone();
+    param_path.add_extension("classify_params.json");
+    save_json_block(&param_path, &args)?;
 
     info!("Loading 1 gtf(s)");
     // auto indexing

@@ -15,7 +15,7 @@ use crate::{
     // fasta::{self, FastaReader},
     index::format::ChromBlockBuilder,
     traits::ArgValidate,
-    utils::{greetings2, print_json_block, require_file},
+    utils::{greetings2, print_json_block, require_file, save_json_block},
 };
 pub use anyhow::Result as AnyResult;
 use fasta::FastaReader;
@@ -211,6 +211,20 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     }
 
     args.validate();
+
+    let mut output_cleanup = OutputCleanup::new();
+
+    let out_base = if let Some(out) = &args.out {
+        out.clone()
+    } else {
+        args.input.clone()
+    };
+
+    let mut param_path = out_base.clone();
+    param_path.add_extension("index_params.json");
+    save_json_block(&param_path, &args)?;
+    output_cleanup.track(param_path);
+
     let mut stats = IndexStats::default();
 
     if !args.quiet {
@@ -297,7 +311,9 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     }
 
     let isomx_path = if let Some(out) = &args.out {
-        out.clone()
+        let mut out_path = out.clone();
+        out_path.add_extension("isomx");
+        out_path
     } else {
         let mut default_out = args.input.clone();
         default_out.add_extension("isomx");
@@ -308,7 +324,6 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         info!("Initializing Builder");
     }
     let missing_seqids_vec: Vec<String> = missing_ref_seqid_set.iter().cloned().collect();
-    let mut output_cleanup = OutputCleanup::new();
     let isomx_file = File::create(&isomx_path)
         .with_context(|| format!("Can not create output file: {}", isomx_path.display()))?;
     output_cleanup.track(isomx_path.clone());
@@ -414,17 +429,17 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         info!("Sidecar isoms saved to {:?}", isoms_path);
     }
 
-    let mut isomx_info_path = isomx_path.clone();
-    isomx_info_path.add_extension("info.json");
-    let mut isomx_info_writer = File::create(&isomx_info_path)?;
-    output_cleanup.track(isomx_info_path);
+    let mut index_info_path = out_base.clone();
+    index_info_path.add_extension("index_info.json");
+    let mut isomx_info_writer = File::create(&index_info_path)?;
+    output_cleanup.track(index_info_path);
     if !args.quiet {
         print_json_block("Index summary", &stats);
     }
 
     let info_json = serde_json::to_string_pretty(&stats)?;
 
-    isomx_info_writer.write(info_json.as_bytes())?;
+    isomx_info_writer.write_all(info_json.as_bytes())?;
     isomx_info_writer.flush()?;
     output_cleanup.disarm();
 

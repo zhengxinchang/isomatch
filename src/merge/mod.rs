@@ -13,6 +13,7 @@ use crate::utils::check_index_ready;
 use crate::utils::greetings2;
 use crate::utils::print_json_block;
 use crate::utils::require_file;
+use crate::utils::save_json_block;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
 use serde::Serialize;
 use std::io::BufWriter;
@@ -84,6 +85,11 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     greetings2(&args);
     // open all files (isomx) into a vec
     args.validate();
+
+    let mut param_path = args.out.clone();
+    param_path.add_extension("merged_params.json");
+    save_json_block(&param_path, &args)?;
+
     let n_inputs = args.inputs.len();
     let input_file_names = input_file_name_bytes(&args.inputs);
     info!("Loading {n_inputs} gtf(s)");
@@ -583,4 +589,3 @@ impl MergeStats {
                 / 10000.0;
     }
 }
-

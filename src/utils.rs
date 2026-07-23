@@ -2,9 +2,10 @@ use ahash::RandomState;
 use flate2::bufread::MultiGzDecoder;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::format;
 use std::fs::File;
 use std::hash::Hash;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use thiserror::Error;
@@ -39,6 +40,17 @@ pub fn print_json_block<T: Serialize>(title: &str, msg: &T) {
     match serde_json::to_string_pretty(&msg) {
         Ok(json) => eprintln!("{}:\n{}", title, json),
         Err(e) => eprintln!("Failed to print {}: {}", title, e),
+    }
+}
+
+pub fn save_json_block<T: Serialize, P: AsRef<Path>>(path: &P, msg: &T) -> Result<(), io::Error> {
+    let mut file = File::create(path)?;
+    match serde_json::to_string_pretty(&msg) {
+        Ok(json) => file.write_all(json.as_bytes()),
+        Err(e) => Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to save {:?}: {}", path.as_ref(), e),
+        )),
     }
 }
 
