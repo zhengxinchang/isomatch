@@ -69,7 +69,7 @@ pub enum TerminalRefineMode {
     Both,
 }
 
-pub fn merge_cluster(
+pub fn merge_tx_cluster(
     chrom: &str,
     n_exon: u16,
     strand: ISOMSTRAND,

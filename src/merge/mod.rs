@@ -7,7 +7,7 @@ use crate::index::reader::ChromBlockReader;
 use crate::index::run_index;
 use crate::merge::grouped_ptirs::GroupedPTIR;
 use crate::merge::policy::MergePolicyUsed;
-use crate::merge::policy::merge_cluster;
+use crate::merge::policy::merge_tx_cluster;
 use crate::region::{RegionDb, RegionType};
 use crate::utils::check_index_ready;
 use crate::utils::greetings2;
@@ -258,7 +258,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             cluster_max_end = ptir.end;
             super_cluster.push(ptir); // first ptir for next super cluster
         }
-        
+
         // process the last super cluster
         // global_scluster_id += 1;
         process_super_cluster(
@@ -343,7 +343,7 @@ pub fn process_super_cluster(
 
     // process each junc cluster
     for ((strand, n_exons), sclu_idxs) in cluster_items {
-        let mut grpptirs = merge_cluster(
+        let mut grpptirs = merge_tx_cluster(
             chrom_name,
             *n_exons,
             *strand,

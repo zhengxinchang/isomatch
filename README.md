@@ -2,14 +2,11 @@
 
 **Why use isomatch?**
 
-**isomatch** is designed for **accurate and scalable transcript merging and classification**.
-
-First, **isomatch supports high-quality transcript merging** for both **long-read** and **short-read RNA-seq** derived transcript models. For long-read RNA-seq, it provides fine-grained control over **splice junctions**, **TSSs**, and **TESs**, including **independent wobble parameters** for different transcript features. It can also incorporate **sequence information** during merging. For short-read RNA-seq derived transcript models, isomatch can be used in a **junction-only mode**.
-
-Second, **isomatch is built for large-scale transcript integration**. It is **memory-efficient** and **fast**, making it suitable for **population-scale transcriptome studies**. Importantly, isomatch is designed to **reduce over-merging** while providing an efficient `classify` function for **rapid annotation of very large transcript collections**.
-
-Third, **isomatch enables provenance-aware transcript tracking while remaining fully GTF-compatible**. The `merge` output uses **specific header lines** and **custom GTF attributes** to record the original source transcripts and samples behind each merged model, allowing users to trace merged transcripts back to their supporting inputs. isomatch can also operate directly on **compressed GTF files**, greatly reducing storage requirements for **ultra-large population-scale merging**.
-
+1. Provides complete, end-to-end provenance tracking throughout transcript merging.
+2. Supports fully configurable splice-junction, TSS, and TES matching.
+3. Uses sequence information to prioritize canonical splice sites.
+4. Processes thousands of samples in a single run with minimal time and memory.
+5. Integrates `merge` and `classify` for population-scale transcript interpretation.
 
 # Subcommands and workflow
 
