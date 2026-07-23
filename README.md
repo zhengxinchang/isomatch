@@ -12,9 +12,9 @@
 
 - `isomatch index`: build `.isomx` and `.isoms` indexes for a GTF with a reference FASTA. GTF records can be unordered; transcripts must have `transcript` and `exon` records with matching seqids.
 
-- `isomatch merge`: merge transcripts from multiple inputs, auto-rebuilding missing/corrupted/outdated indexes when `--ref-fa` is supplied, and select representative transcripts based on optional third-party evidence.
+- `isomatch merge`: merge multiple GTF files into a single merged GTF file, using the reference FASTA for sequence information.
 
-- `isomatch classify`: classify query transcripts against a reference annotation, auto-rebuilding missing/corrupted/outdated query/reference indexes when `--ref-fa` is supplied.
+- `isomatch classify`: classify query transcripts against a reference GTF, similar to SQANTI3 QC.
 
 - `isomatch tools chop`: remove selected GTF attributes, commonly used to strip isomatch-added annotations from output GTF files.
 
