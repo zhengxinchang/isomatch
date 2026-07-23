@@ -31,7 +31,7 @@ Typical workflow:
     3. `isomatch tools mark` to annotate transcripts with overlapping reference genes,
     4. `isomatch tools revert` to split a merged GTF back into per-sample GTFs.
 
-Note: All subcommands output json file with run statistics, which are easy to parse for downstream analysis and reporting. 
+Note: Commands that write summary or parameter JSON follow the output naming convention described in [Output File Naming](docs/output_file_naming.md).
 
 # Installation
 
@@ -55,7 +55,8 @@ isomatch index --ref-fa ref.fa sample3.gtf.gz
 # merge with default parameters (-o takes a prefix, not a filename)
 # merge checks <input>.isomx and <input>.isoms; missing/stale indexes are rebuilt
 isomatch merge --ref-fa ref.fa -o merged sample1.gtf.gz sample2.gtf.gz sample3.gtf.gz
-# outputs: merged.merged.gtf.gz  merged.track.tsv.gz  merged.merged_info.json
+# outputs: merged.merged.gtf.gz  merged.track.tsv.gz  merged.present_absent.tsv.gz
+#          merged.merged_info.json  merged.merged_params.json
 
 # merge with guide-based terminal selection
 isomatch merge --ref-fa ref.fa -o merged \
@@ -79,7 +80,8 @@ isomatch merge --ref-fa ref.fa -o merged --chop \
 # classify also checks/rebuilds query and reference indexes
 isomatch classify --ref-fa ref.fa --ref-gtf reference.gtf.gz \
     -o query_vs_ref query.gtf.gz
-# outputs: query_vs_ref.classification.txt.gz  query_vs_ref.annotated.gtf.gz  query_vs_ref.classify_info.json
+# outputs: query_vs_ref.classification.txt.gz  query_vs_ref.annotated.gtf.gz
+#          query_vs_ref.classify_info.json  query_vs_ref.classify_params.json
 ```
 
 # How isomatch merge transcripts
@@ -286,13 +288,15 @@ Mono-exon transcripts are first grouped by reciprocal overlap using `--mono-ovlp
 
 ## Output Files
 
-For a run with `-o <prefix>`, three files are written:
+For a run with `-o <prefix>`, five files are written:
 
 | File | Description |
 |------|-------------|
 | `<prefix>.merged.gtf.gz` | Merged transcripts in GTF format (gzip-compressed) |
 | `<prefix>.track.tsv.gz` | One-to-one mapping of merged → source transcripts (gzip-compressed TSV) |
+| `<prefix>.present_absent.tsv.gz` | Presence/absence matrix for merged transcripts across source files (gzip-compressed TSV) |
 | `<prefix>.merged_info.json` | Run statistics (source file count, merged transcript counts, guide usage, etc.) |
+| `<prefix>.merged_params.json` | Parsed merge parameters |
 
 Use `--chop` to omit `ISOM_SRC` from `<prefix>.merged.gtf.gz` and reduce GTF size. The track TSV is still written, but the merged GTF cannot be used with `isomatch tools revert`.
 
@@ -433,9 +437,10 @@ For a run with `-o <prefix>`, the following files are written:
 
 | File | Description |
 |------|-------------|
-| `<prefix>.classification.txt.gz` | Per-transcript classification and sequence-context metrics |
+| `<prefix>.classification.txt.gz` | Per-transcript classification and sequence-context metrics (gzip-compressed TSV table) |
 | `<prefix>.annotated.gtf.gz` | Query transcript/exon GTF annotated with classification attributes |
 | `<prefix>.classify_info.json` | Run statistics (query/reference counts, category/subcategory counts, guide support, etc.) |
+| `<prefix>.classify_params.json` | Parsed classify parameters |
 
 The annotated GTF preserves query transcript/exon structures and adds or refreshes `ISOM_REF_TX_ID`, `ISOM_REF_GENE_ID`, `ISOM_REF_GENE_NAME`, `ISOM_CATEGORY`, and `ISOM_SUBCATEGORY`.
 
@@ -564,3 +569,7 @@ Key parameters:
 | `--gz` | Output gzip-compressed GTFs even when source filenames are not gzipped | follow source filename suffix |
 
 `revert_stats.json` records the number of merged transcripts read, source transcript/exon records written, output GTFs created, and per-file output counts.
+
+# Output naming
+
+See [docs/output_file_naming.md](docs/output_file_naming.md) for the current output naming convention and a short mapping from the previous two commits to the current output files.
