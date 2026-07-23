@@ -31,8 +31,6 @@ Typical workflow:
     3. `isomatch tools mark` to annotate transcripts with overlapping reference genes,
     4. `isomatch tools revert` to split a merged GTF back into per-sample GTFs.
 
-Note: Commands that write summary or parameter JSON follow the output naming convention described in [Output File Naming](docs/output_file_naming.md).
-
 # Installation
 
 1. Download the latest release binary from the [GitHub releases page](https://github.com/zhengxinchang/isomatch/releases)
@@ -572,4 +570,4 @@ Key parameters:
 
 # Output naming
 
-See [docs/output_file_naming.md](docs/output_file_naming.md) for the current output naming convention and a short mapping from the previous two commits to the current output files.
+See [docs/output_changes_since_0.6.1.md](docs/output_changes_since_0.6.1.md) for the current output naming convention and a short mapping from the previous two commits to the current output files.
