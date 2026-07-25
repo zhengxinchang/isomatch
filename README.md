@@ -1,12 +1,14 @@
-# isomatch  <img src="./img/logo.png" align="right" alt="" width=180 />
+# IsoMatch  <img src="./img/logo.png" align="right" alt="" width=180 />
 
-**Why use isomatch?**
+**Why use IsoMatch?**
 
 1. Provides complete, end-to-end provenance tracking throughout transcript merging.
 2. Supports fully configurable splice-junction, TSS, and TES matching.
 3. Uses sequence information to prioritize canonical splice sites.
 4. Processes thousands of samples in a single run with minimal time and memory.
 5. Integrates `merge` and `classify` (similar functionality as SQANTI3 QC) for population-scale transcript interpretation.
+
+Check out the [examples](docs/examples.md) for usage scenarios.
 
 # Subcommands and workflow
 
@@ -20,16 +22,6 @@
   - `mark`: Mark transcripts with overlapping reference genes.
   - `revert`: Reconstruct per-sample source-like GTFs from an isomatch merged GTF.
 
-Typical workflow:
-1. create indexes with `isomatch index --ref-fa ref.fa`, or let `merge`/`classify` auto-create them.
-2. merge transcripts with `isomatch merge --ref-fa ref.fa`, optionally using TSS/TES guide evidence.
-3. classify query or merged transcripts with `isomatch classify --ref-fa ref.fa --ref-gtf ref.gtf.gz`.
-4. use `isomatch tools` to manipulate GTF outputs, e.g., 
-
-    1. `isomatch tools chop` to remove isomatch-added attributes, 
-    2. `isomatch tools valtable` to extract expression values from source GTFs,
-    3. `isomatch tools mark` to annotate transcripts with overlapping reference genes,
-    4. `isomatch tools revert` to split a merged GTF back into per-sample GTFs.
 
 # Installation
 
@@ -86,7 +78,7 @@ isomatch classify --ref-fa ref.fa --ref-gtf reference.gtf.gz \
 
 ## Design Principles
 
-The core idea of isomatch merge is: **the intron chain defines transcript identity; TSS and TES distinguish isoforms sharing the same chain.**
+The core idea of `isomatch merge` is: **the intron chain defines transcript identity; TSS and TES distinguish isoforms sharing the same chain.**
 
 Unlike intron chain collapse only tools, isomatch:
 
