@@ -97,19 +97,35 @@ impl GroupedPTIR {
         self.repr_tes()
     }
 
-    pub(crate) fn strand(&self) -> ISOMSTRAND {
+    pub fn start(&self) -> u32 {
+        self.repr_left
+    }
+
+    pub fn end(&self) -> u32 {
+        self.repr_right
+    }
+
+    pub fn strand(&self) -> ISOMSTRAND {
         self.strand
     }
 
-    pub(crate) fn n_exon(&self) -> u16 {
+    pub fn n_exon(&self) -> u16 {
         self.n_exon
     }
 
-    pub(crate) fn canonical_entries_cloned(&self) -> Vec<GroupedPTIREntry> {
+    pub fn tx_id(&self) -> u32 {
+        self.tx_id
+    }
+
+    pub fn gene_id(&self) -> u32 {
+        self.gene_id
+    }
+
+    pub fn canonical_entries_cloned(&self) -> Vec<GroupedPTIREntry> {
         self.all_canonical_ptir_list.clone()
     }
 
-    pub(crate) fn non_canonical_entries_cloned(&self) -> Vec<GroupedPTIREntry> {
+    pub fn non_canonical_entries_cloned(&self) -> Vec<GroupedPTIREntry> {
         self.no_all_canonical_ptir_list.clone()
     }
 
@@ -697,9 +713,17 @@ impl GroupedPTIR {
         Ok(())
     }
 
-    pub fn update_ids(&mut self, gene_id: u32, tx_id: u32) {
-        self.gene_id = gene_id;
-        self.tx_id = tx_id;
+    // pub fn update_ids(&mut self, gene_id: u32, tx_id: u32) {
+    //     self.gene_id = gene_id;
+    //     self.tx_id = tx_id;
+    // }
+
+    pub fn update_tx_id(&mut self, tx_id: u32) {
+        self.tx_id = tx_id
+    }
+
+    pub fn update_gene_id(&mut self, gene_id: u32) {
+        self.gene_id = gene_id
     }
 }
 
