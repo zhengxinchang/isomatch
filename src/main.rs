@@ -380,6 +380,26 @@ pub struct MergeArgs {
         default_value_t = MergePolicyArg::Major
     )]
     pub tes_policy: MergePolicyArg,
+
+    #[clap(
+        long = "gene-assign-min-overlap",
+        help_heading = "Gene ID assignment",
+        help = "Minimum percent of an unassigned transcript that must overlap a gene group to inherit its gene ID",
+        default_value_t = 80,
+        value_name = "PERCENT",
+        value_parser = clap::value_parser!(u64).range(0..=100)
+    )]
+    pub gene_assign_min_overlap: u64,
+
+    #[clap(
+        long = "unassigned-group-min-overlap",
+        help_heading = "Gene ID assignment",
+        help = "Minimum reciprocal exon-overlap percent for grouping remaining unassigned transcripts into the same gene",
+        default_value_t = 20,
+        value_name = "PERCENT",
+        value_parser = clap::value_parser!(u64).range(0..=100)
+    )]
+    pub unassigned_group_min_overlap: u64,
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]

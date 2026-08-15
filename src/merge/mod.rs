@@ -15,19 +15,18 @@ use crate::utils::print_json_block;
 use crate::utils::require_file;
 use crate::utils::save_json_block;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
-use ahash::AHashSet;
-use rustc_hash::FxHashSet;
+
+use ids::assign_global_ids;
 use serde::Serialize;
 use std::io::BufWriter;
 use std::io::Write;
-use std::ops::RemAssign;
 use std::path::PathBuf;
-use std::u32;
 use std::{
     collections::{BTreeMap, HashSet},
     fs::File,
 };
 pub mod grouped_ptirs;
+pub mod ids;
 pub mod merge_error;
 pub mod policy;
 use anyhow::Context;
@@ -373,7 +372,7 @@ pub fn process_super_cluster(
         }
     }
 
-    assign_global_ids(&mut all_grouped_ptirs, global_gene_id, global_tx_id);
+    assign_global_ids(&mut all_grouped_ptirs, global_gene_id, global_tx_id, args);
 
     for grpptir in all_grouped_ptirs {
         stats.observe_merged_tx(&grpptir);
@@ -600,176 +599,4 @@ impl MergeStats {
             (self.tes_guide_cnt as f64 * 100.0 / self.merged_tx_cnt as f64 * 10000.0).round()
                 / 10000.0;
     }
-}
-
-pub fn assign_global_ids(
-    all_grouped_ptirs: &mut Vec<GroupedPTIR>,
-    global_gene_id: &mut u32,
-    global_tx_id: &mut u32,
-) {
-    // sweep line to break into gene clusters
-    all_grouped_ptirs.sort_by_key(|grp| (grp.strand(), grp.start(), grp.end()));
-
-    // assign all tx id
-
-    all_grouped_ptirs.iter_mut().for_each(|grp| {
-        *global_tx_id += 1;
-        grp.update_tx_id(*global_tx_id);
-    });
-
-    let plus_strand_grp = all_grouped_ptirs
-        .iter()
-        .filter(|grp| grp.strand() == ISOMSTRAND::Plus)
-        .collect::<Vec<_>>();
-
-    if plus_strand_grp.len() > 0 {
-        // splice groups by 0 coverage
-
-        let mut group_ovlp = Vec::new();
-        let mut curr_max_end = 0;
-        for gptir in plus_strand_grp {
-            if gptir.tes() > curr_max_end {
-                // positive strand
-                group_ovlp.push(gptir);
-                curr_max_end = gptir.end();
-            } else {
-                // collected one ovlp group
-                if group_ovlp.len() == 1 {
-                    update_next_gene_id(&mut group_ovlp, global_gene_id)
-                } else {
-                    let mut splice_site_set = FxHashSet::default();
-                    let mut group_splice_site = Vec::new();
-                    let mut groups = Vec::new();
-                    let mut rest_no_sj_match_or_mono = Vec::new();
-                    let mut marks: Vec<u8> = vec![1; group_ovlp.len()];
-
-                    let first = group_ovlp[0];
-                    group_splice_site.push(first);
-                    for (j1, j2) in first.repr_junction() {
-                        splice_site_set.insert(*j1);
-                        splice_site_set.insert(*j2);
-                    }
-                    marks[0] = 0;
-
-                    while marks.iter().sum::<u8>() > 0 {
-                        let prev_sum = marks.iter().sum::<u8>();
-                        for idx in 0..marks.len() {
-                            if marks[idx] == 1 {
-                                let gptir = group_ovlp[idx];
-                                let mut contains = false;
-                                for (j1, j2) in gptir.repr_junction() {
-                                    if splice_site_set.contains(j1) || splice_site_set.contains(j2)
-                                    {
-                                        contains = true;
-                                    }
-                                }
-                                if contains {
-                                    for (j1, j2) in gptir.repr_junction() {
-                                        splice_site_set.insert(*j1);
-                                        splice_site_set.insert(*j2);
-                                    }
-                                    group_splice_site.push(gptir);
-
-                                    marks[idx] == 0;
-                                }
-                            }
-                        }
-
-                        // here the group_splice_site has same strand, overlap and have at least 1 splice sites overlap
-                        // find bridge read throught transcript in here
-                        groups.push(group_splice_site.clone());
-                        group_splice_site.clear();
-                        splice_site_set.clear();
-
-                        // break if nothing left
-                        let curr_sum = marks.iter().sum::<u8>();
-                        if prev_sum == curr_sum {
-                            break;
-                        } 
-                    }
-                    // collect rest of gptirs in rest
-                    for idx in 0..marks.len() {
-                        if marks[idx] ==1 {
-                            rest_no_sj_match_or_mono.push(group_ovlp[idx]);
-                        }
-                    }
-
-                    let mut final_groups = Vec::new();
-
-                    for group in groups {
-                        for grp in split_group(&group) 
-                        {
-                            final_groups.push(grp);
-                        }
-                    }
-                    // assigh rest to final groups, if no final groups at this moment means no multipe sj transcirpt groups
-
-                    // make group by overlap and put it in final_groups
-
-                    
-
-                }
-
-                group_ovlp.clear();
-                curr_max_end = 0;
-            }
-        }
-
-    }
-
-    // proces minus next
-}
-
-pub fn update_next_gene_id(grps: &mut Vec<&GroupedPTIR>, curr_gene_id: &mut u32) {
-    *curr_gene_id += 1;
-
-    grps.iter_mut().for_each(|gptir| {
-        gptir.update_gene_id(curr_gene_id);
-    });
-}
-
-
-pub fn split_group<'a>(grps: &Vec<&'a GroupedPTIR>) -> Vec<&'a GroupedPTIR>{
-   
-        let mut plus_strand_grp_event = Vec::with_capacity(grps.len() * 2);
-
-        for grp in grps {
-            plus_strand_grp_event.push((grp.start(), grp.tx_id(), 1));
-            plus_strand_grp_event.push((grp.end(), grp.tx_id(), -1));
-        }
-
-        plus_strand_grp_event.sort_by_key(|event| (event.0, -1 * event.2));
-
-        let mut plus_profile = Vec::new();
-        let mut cov = 0;
-        let mut i = 0;
-        let mut tmp_txids = AHashSet::default();
-        while i < plus_strand_grp_event.len() {
-            let pos = plus_strand_grp_event[i].0;
-
-            while i < plus_strand_grp_event.len() && plus_strand_grp_event[i].0 == pos {
-                cov += plus_strand_grp_event[i].2;
-                dbg!(&cov);
-                tmp_txids.insert(plus_strand_grp_event[i].1);
-                i += 1;
-            }
-            plus_profile.push((pos, tmp_txids.clone(), cov));
-            tmp_txids.clear();
-        }
-        // detect read throught 
-
-        plus_profile.sort_by_key(|x| x.0);
-
-        for item_idx in 00..plus_profile.len() {
-            if item_idx  == 0 {
-                let left_idx = 0;
-                let right_idx = item_idx +1;
-            }else if item_idx == plus_profile.len() -1 {
-                let left_idx = item_idx -1 
-                let right_idx = plus_profile.len() -1
-            }else {
-                let left_idx = item_idx -1 ;
-                let right_idx = item_idx +1;
-            }
-        }
 }

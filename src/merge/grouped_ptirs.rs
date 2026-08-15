@@ -471,7 +471,7 @@ impl GroupedPTIR {
         }
     }
 
-    fn exons_from_repr(&self) -> Vec<(u32, u32)> {
+    pub(crate) fn exons_from_repr(&self) -> Vec<(u32, u32)> {
         if self.repr_junction.is_empty() {
             return vec![(self.repr_left, self.repr_right)];
         }
