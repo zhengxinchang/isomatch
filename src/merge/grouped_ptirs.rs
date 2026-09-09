@@ -579,9 +579,10 @@ impl GroupedPTIR {
                 };
 
                 let gtf_str = format!(
-                    "S{}:{}:{}:{}:{}:{}:{}:{}",
+                    "S{}:{}:{}:{}:{}:{}:{}:{}:{}",
                     ptir.source_file_id + 1,
                     ptir.source_txid,
+                    ptir.source_geneid,
                     ptir.start,
                     ptir.end,
                     ptir.tx_type,

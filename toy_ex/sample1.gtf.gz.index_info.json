@@ -1,0 +1,20 @@
+{
+  "transcript_count": 4,
+  "gene_count": 4,
+  "skipped_transcript_cnt": 0,
+  "skipped_gene_cnt": 0,
+  "missing_seqid_cnt": 0,
+  "missing_seqids": [],
+  "plus_strand_tx_cnt": 3,
+  "minus_strand_tx_cnt": 1,
+  "unknown_strand_tx_cnt": 0,
+  "mono_exon_tx_cnt": 2,
+  "multi_exon_tx_cnt": 2,
+  "all_canonical_tx_cnt": 2,
+  "partial_canonical_tx_cnt": 0,
+  "non_canonical_tx_cnt": 0,
+  "junction_cnt": 3,
+  "canonical_junction_cnt": 3,
+  "non_canonical_junction_cnt": 0,
+  "canonical_junction_ratio": 1.0
+}

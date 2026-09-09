@@ -1,0 +1,8 @@
+{
+  "input": "/ssd2/projects/isomatch-dev/toy_ex/sample3.gtf.gz",
+  "ref_fa": "/ssd2/projects/isomatch-dev/toy_ex/ref.fa.gz",
+  "seqfa": null,
+  "out": null,
+  "skip_missing_ref_chr": false,
+  "quiet": true
+}

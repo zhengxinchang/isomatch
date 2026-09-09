@@ -516,7 +516,7 @@ pub fn add_output_header(bufwriter: &mut dyn Write, args: &MergeArgs) -> AnyResu
     )?;
     writeln!(
         bufwriter,
-        "##ISOM <FORMAT> ID=\"ISOM_SRC\"; Description=\"vertical line separated source transcript records in the form S#:tx_id:start:end:tx_type:donor_diff:acceptor_diff:(junction_number,left_offset,right_offset),(junction_number,left_offset,right_offset)... Only junctions with coordinate differences will be shown.\";"
+        "##ISOM <FORMAT> ID=\"ISOM_SRC\"; Description=\"vertical line separated source transcript records in the form S#:tx_id:gene_id:start:end:tx_type:donor_diff:acceptor_diff:(junction_number,left_offset,right_offset),(junction_number,left_offset,right_offset)... Only junctions with coordinate differences will be shown.\";"
     )?;
     writeln!(
         bufwriter,

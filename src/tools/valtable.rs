@@ -146,7 +146,7 @@ pub fn run_valtable(args: &ValTableArgs) -> Result<(), ToolError> {
         let tx_index = isomatch_txids.len();
         isomatch_txids.push(tx_id);
 
-        // ISOM_SRC: "S1:src_tx_id:start:end:...|S2:src_tx_id:..."
+        // ISOM_SRC: "S1:src_tx_id:src_gene_id:start:end:...|S2:src_tx_id:..."
         let isom_src = extract_gtf_attr(attrs, "ISOM_SRC");
         for src_record in isom_src.split('|') {
             if src_record.is_empty() {

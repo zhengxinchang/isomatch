@@ -514,8 +514,8 @@ fn write_reverted_batch(
 fn parse_sources(isom_src: &str, line_no: usize) -> Result<Vec<SourceRecord>, ToolError> {
     let mut out = Vec::new();
     for record in isom_src.split('|') {
-        let parts: Vec<&str> = record.splitn(8, ':').collect();
-        if parts.len() != 8 {
+        let parts: Vec<&str> = record.splitn(9, ':').collect();
+        if parts.len() != 9 {
             return Err(ToolError::ReadMergedGTFFailed {
                 reason: format!("Malformed ISOM_SRC record at line {line_no}: {record}"),
             });
@@ -523,9 +523,9 @@ fn parse_sources(isom_src: &str, line_no: usize) -> Result<Vec<SourceRecord>, To
         out.push(SourceRecord {
             file_id: parse_source_file_id(parts[0])?,
             tx_id: parts[1].to_string(),
-            start: parts[2].parse::<u32>()?,
-            end: parts[3].parse::<u32>()?,
-            junction_diffs: parts[7].to_string(),
+            start: parts[3].parse::<u32>()?,
+            end: parts[4].parse::<u32>()?,
+            junction_diffs: parts[8].to_string(),
         });
     }
     Ok(out)
