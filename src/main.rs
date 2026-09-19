@@ -193,7 +193,7 @@ pub struct MergeArgs {
         long = "wob-u",
         help_heading = "Canonical Transcript Merge",
         help = "Canonical unstranded splice wobble in bp",
-        default_value_t = 3,
+        default_value_t = 0,
         value_name = "BP"
     )]
     pub wob_u: u32,
