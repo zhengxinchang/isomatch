@@ -37,7 +37,9 @@ Expected output files:
 ```text
 toy_ex/out/toy_merge.merged.gtf.gz
 toy_ex/out/toy_merge.track.tsv.gz
+toy_ex/out/toy_merge.present_absent.tsv.gz
 toy_ex/out/toy_merge.merged_info.json
+toy_ex/out/toy_merge.merged_params.json
 ```
 
 Expected merge summary:
@@ -50,10 +52,16 @@ Expected merge summary:
   "merged_multi_exons_tx_cnt": 5,
   "merged_mono_exon_tx_cnt": 5,
   "tss_guide_cnt": 0,
+  "tss_guide_pct": 0.0,
   "tes_guide_cnt": 0,
-  "merged_tx_by_source_cnt": {
+  "tes_guide_pct": 0.0,
+  "source_tx_cnt_per_merged_tx": {
     "1": 7,
     "2": 3
+  },
+  "sample_cnt_per_merged_tx": {
+    "1": 8,
+    "2": 2
   }
 }
 ```
@@ -63,7 +71,7 @@ Expected merge summary:
 Classify the merged output:
 
 ```bash
-./target/debug/isomatch classify \
+./target/release/isomatch classify \
   --ref-fa toy_ex/ref.fa.gz \
   --ref-gtf toy_ex/ref.gtf.gz \
   -o toy_ex/out/toy_classify \
@@ -76,18 +84,21 @@ Expected output files:
 toy_ex/out/toy_classify.classification.txt.gz
 toy_ex/out/toy_classify.annotated.gtf.gz
 toy_ex/out/toy_classify.classify_info.json
+toy_ex/out/toy_classify.classify_params.json
 ```
 
 Expected classify category counts:
 
 ```json
 {
-  "antisense": 1,
-  "full-splice_match": 3,
-  "incomplete-splice_match": 2,
-  "intergenic": 1,
-  "novel_in_catalog": 2,
-  "novel_not_in_catalog": 1
+  "structural_category_cnt": {
+    "antisense": 1,
+    "full-splice_match": 3,
+    "incomplete-splice_match": 2,
+    "intergenic": 1,
+    "novel_in_catalog": 2,
+    "novel_not_in_catalog": 1
+  }
 }
 ```
 
@@ -95,5 +106,4 @@ Expected classify category counts:
 
 ```bash
 rm -rf toy_ex/out
-rm -f toy_ex/*.gtf.gz.isomx toy_ex/*.gtf.gz.isoms toy_ex/*.gtf.gz.isomx.info.json
 ```
