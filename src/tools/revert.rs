@@ -8,12 +8,13 @@ use std::{
 };
 
 use flate2::{Compression, write::GzEncoder};
+use libgtf::gtf::attribute;
 use log::{info, warn};
 use serde::Serialize;
 
 use crate::{
     RevertArgs,
-    index::gtf::parse_gtf_attr_value,
+    // index::gtf::parse_gtf_attr_value,
     tools::tools_error::ToolError,
     traits::ArgValidate,
     utils::{
@@ -225,18 +226,18 @@ struct MergedBlock {
 }
 
 impl MergedBlock {
-    fn from_gtf_cols(cols: &[&str], line_no: usize) -> Result<Self, ToolError> {
+    fn from_gtf_cols(cols: & [& str], line_no: usize) -> Result<Self, ToolError> {
         let attrs = cols[8];
-        let merged_tx_id = require_attr(attrs, "transcript_id", line_no)?;
-        let merged_gene_id = require_attr(attrs, "gene_id", line_no)?;
-        let isom_src = require_attr(attrs, "ISOM_SRC", line_no)?;
+        let merged_tx_id = require_attr(&attrs, "transcript_id", line_no)?;
+        let merged_gene_id = require_attr(&attrs, "gene_id", line_no)?;
+        let isom_src = require_attr(&attrs, "ISOM_SRC", line_no)?;
 
         Ok(Self {
             chrom: cols[0].to_string(),
             strand: cols[6].to_string(),
-            merged_tx_id,
-            merged_gene_id,
-            sources: parse_sources(&isom_src, line_no)?,
+            merged_tx_id:merged_tx_id.to_string(),
+            merged_gene_id:merged_gene_id.to_string(),
+            sources: parse_sources(isom_src, line_no)?,
             exons: Vec::new(),
         })
     }
@@ -262,7 +263,7 @@ impl MergedBlock {
                 Some(gene_ids) => gene_ids
                     .get(&(
                         source.file_id,
-                        self.merged_tx_id.clone(),
+                        self.merged_tx_id.to_string(),
                         source.tx_id.clone(),
                     ))
                     .map(String::as_str)
@@ -272,9 +273,9 @@ impl MergedBlock {
                             source.file_id, source.tx_id, self.merged_tx_id
                         );
                         stats.observe_missing_track_gene_id(source.file_id);
-                        self.merged_gene_id.as_str()
+                        &self.merged_gene_id
                     }),
-                None => self.merged_gene_id.as_str(),
+                None => &self.merged_gene_id,
             };
 
             let source_exons = source.exons_from_repr(&self.exons)?;
@@ -639,8 +640,8 @@ fn write_attr(writer: &mut dyn Write, key: &str, value: &str) -> Result<(), Tool
     Ok(())
 }
 
-fn require_attr(attrs: &str, key: &str, line_no: usize) -> Result<String, ToolError> {
-    parse_gtf_attr_value(attrs, key).ok_or_else(|| ToolError::ReadMergedGTFFailed {
+fn require_attr<'a>(attrs: &'a str, key: &str, line_no: usize) -> Result<&'a str, ToolError> {
+    attribute(attrs, key).ok_or_else(|| ToolError::ReadMergedGTFFailed {
         reason: format!("Can not find {key} in line {line_no}"),
     })
 }

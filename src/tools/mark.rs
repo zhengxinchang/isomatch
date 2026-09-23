@@ -7,13 +7,13 @@ use std::{
 };
 
 use flate2::{Compression, write::GzEncoder};
+use libgtf::gtf::attribute;
 use log::info;
 use serde::Serialize;
 
 use crate::{
     MarkArgs,
     core::tx_strand::ISOMSTRAND,
-    index::gtf::parse_gtf_attr_value,
     region::{RegionDb, RegionType},
     tools::tools_error::ToolError,
     traits::ArgValidate,
@@ -91,13 +91,13 @@ pub fn run_mark(args: &MarkArgs) -> Result<(), ToolError> {
         tx_count += 1;
         let start = fields[3].parse::<u32>()?;
         let end = fields[4].parse::<u32>()?;
-        let tx_id = parse_gtf_attr_value(fields[8], "transcript_id").ok_or_else(|| {
+        let tx_id = attribute(fields[8], "transcript_id").ok_or_else(|| {
             ToolError::FailedParseGTF {
                 reason: format!("line {line_no}: missing transcript_id"),
             }
         })?;
-        let gene_id = parse_gtf_attr_value(fields[8], "gene_id").unwrap_or_default();
-        let n_exons = parse_gtf_attr_value(fields[8], "ISOM_EXONS").unwrap_or("NA".to_string());
+        let gene_id = attribute(fields[8], "gene_id").unwrap_or_default();
+        let n_exons = attribute(fields[8], "ISOM_EXONS").unwrap_or("NA");
 
         let hits = gene_db.query_overlaps_range_all_strands(fields[0], start, end);
         let mut gene_hits = BTreeSet::new();

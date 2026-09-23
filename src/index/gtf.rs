@@ -8,6 +8,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use libgtf::gtf::attribute;
+
 use log::{error, warn};
 use rustc_hash::{FxHashMap, FxHashSet};
 use thiserror::Error;
@@ -897,49 +899,15 @@ pub fn process_gtf_line(
     Ok((chrom, feature_type, start, end, strand, tx_id, gene_id))
 }
 
-/// Take the attributes column of a GTF line and extract one value, supporting
-/// both quoted and unquoted formats.
-pub(crate) fn parse_gtf_attr_value(attrs: &str, key: &str) -> Option<String> {
-    let mut saw_empty_match = false;
 
-    for attr in attrs.split(';') {
-        let attr = attr.trim();
-
-        let mut parts = attr.splitn(2, char::is_whitespace);
-    
-
-        if parts.next() != Some(key) {
-            continue;
-        }
-
-        let value = extract_attr_value(attr);
-        if !value.is_empty() {
-            return Some(value);
-        }
-        saw_empty_match = true;
-    }
-
-    saw_empty_match.then(String::new)
-}
 
 fn parse_gtf_attributes(attrs: &str) -> (String, String) {
     (
-        parse_gtf_attr_value(attrs, "transcript_id").unwrap_or_default(),
-        parse_gtf_attr_value(attrs, "gene_id").unwrap_or_default(),
+        attribute(attrs, "transcript_id").unwrap_or_default().to_owned(),   
+        attribute(attrs, "gene_id").unwrap_or_default().to_owned(),
     )
 }
 
-fn extract_attr_value(attr: &str) -> String {
-    if let Some(q_start) = attr.find('"') {
-        if let Some(q_len) = attr[q_start + 1..].find('"') {
-            return attr[q_start + 1..q_start + 1 + q_len].to_string();
-        }
-    }
-    attr.split_ascii_whitespace()
-        .nth(1)
-        .unwrap_or("")
-        .to_string()
-}
 
 fn write_u8<W: Write>(writer: &mut W, value: u8) -> io::Result<()> {
     writer.write_all(&[value])

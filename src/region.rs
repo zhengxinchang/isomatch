@@ -1,6 +1,7 @@
 use crate::core::tx_strand::ISOMSTRAND;
-use crate::index::gtf::parse_gtf_attr_value;
+// use crate::index::gtf::parse_gtf_attr_value;
 use crate::utils::open_file_bufread;
+use libgtf::gtf::attribute;
 use rustc_hash::FxHashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -212,8 +213,9 @@ impl RegionDb {
             let start = parse_gtf_u32_field(fields[3], line_no, "start")?;
             let end = parse_gtf_u32_field(fields[4], line_no, "end")?;
             let strand = parse_gtf_strand_field(fields[6], line_no)?;
-            let id = parse_gtf_attr_value(fields[8], "gene_id").unwrap_or_default();
-            let name = parse_gtf_attr_value(fields[8], "gene_name").unwrap_or_else(|| id.clone());
+            let id = attribute(fields[8], "gene_id").unwrap_or_default();
+            let name = attribute(fields[8], "gene_name").to_owned().unwrap_or_else(|| id);
+
 
             grouped
                 .entry((fields[0].to_string(), strand))
@@ -222,8 +224,8 @@ impl RegionDb {
                     start,
                     end,
                     score: 0.0,
-                    id,
-                    name,
+                    id:id.to_owned(),
+                    name:name.to_owned(),
                     strand,
                 });
             line.clear();
