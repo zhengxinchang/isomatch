@@ -48,3 +48,4 @@ paper/
 .snakemake/
 GTF_LIBRARY_DESIGN.md
 TODO.md
+PLAN.md

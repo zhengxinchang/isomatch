@@ -158,8 +158,8 @@ impl IndexBuilder {
         })
     }
 
-    pub fn add_chrom(&mut self, mut entry: ChromBlockBuilder) -> std::io::Result<()> {
-        entry.finalize();
+    pub fn add_chrom(&mut self, entry: ChromBlockBuilder) -> std::io::Result<()> {
+        // entry.finalize();
 
         let (chrom_name_offset, chrom_name_len) =
             self.chrom_name_offsets[(entry.chrom_id - 1) as usize];
@@ -213,9 +213,9 @@ impl IndexBuilder {
             global_tx_count: tx_count,
             global_tx_offset: tx_offset,
             global_junction_pool_offset: junction_pool_offset,
-            global_junction_count: u64_from_usize(junction_pool_len, "junction pool length")?,
+            global_junction_pool_len: u64_from_usize(junction_pool_len, "junction pool length")?,
             global_string_pool_offset: string_pool_offset,
-            global_string_len: u64_from_usize(string_pool_len, "string pool length")?,
+            global_string_pool_len: u64_from_usize(string_pool_len, "string pool length")?,
             global_splice_site_pool_offset: splice_site_pool_offset,
             global_splice_site_pool_len: u64_from_usize(
                 splice_site_pool_len,

@@ -273,9 +273,9 @@ pub struct ChromDirectoryEntry {
     pub global_tx_offset: u64,
     pub global_tx_count: u64,
     pub global_junction_pool_offset: u64,
-    pub global_junction_count: u64,
+    pub global_junction_pool_len: u64,
     pub global_string_pool_offset: u64,
-    pub global_string_len: u64,
+    pub global_string_pool_len: u64,
     pub global_splice_site_pool_offset: u64,
     pub global_splice_site_pool_len: u64,
 }
@@ -294,9 +294,9 @@ impl Encodable for ChromDirectoryEntry {
         writer.write_all(&self.global_tx_offset.to_le_bytes())?;
         writer.write_all(&self.global_tx_count.to_le_bytes())?;
         writer.write_all(&self.global_junction_pool_offset.to_le_bytes())?;
-        writer.write_all(&self.global_junction_count.to_le_bytes())?;
+        writer.write_all(&self.global_junction_pool_len.to_le_bytes())?;
         writer.write_all(&self.global_string_pool_offset.to_le_bytes())?;
-        writer.write_all(&self.global_string_len.to_le_bytes())?;
+        writer.write_all(&self.global_string_pool_len.to_le_bytes())?;
         writer.write_all(&self.global_splice_site_pool_offset.to_le_bytes())?;
         writer.write_all(&self.global_splice_site_pool_len.to_le_bytes())?;
         Ok(Self::DISK_SIZE)
@@ -318,9 +318,9 @@ impl Decodable for ChromDirectoryEntry {
             global_tx_offset: u64::from_le_bytes(buf[10..18].try_into().unwrap()),
             global_tx_count: u64::from_le_bytes(buf[18..26].try_into().unwrap()),
             global_junction_pool_offset: u64::from_le_bytes(buf[26..34].try_into().unwrap()),
-            global_junction_count: u64::from_le_bytes(buf[34..42].try_into().unwrap()),
+            global_junction_pool_len: u64::from_le_bytes(buf[34..42].try_into().unwrap()),
             global_string_pool_offset: u64::from_le_bytes(buf[42..50].try_into().unwrap()),
-            global_string_len: u64::from_le_bytes(buf[50..58].try_into().unwrap()),
+            global_string_pool_len: u64::from_le_bytes(buf[50..58].try_into().unwrap()),
             global_splice_site_pool_offset: u64::from_le_bytes(buf[58..66].try_into().unwrap()),
             global_splice_site_pool_len: u64::from_le_bytes(buf[66..74].try_into().unwrap()),
         })
@@ -588,7 +588,7 @@ impl ChromBlockBuilder {
         Ok(())
     }
 
-    pub fn finalize(&mut self) {
-        self.txs.sort_unstable();
-    }
+    // pub fn finalize(&mut self) {
+    //     // self.txs.sort_unstable();
+    // }
 }

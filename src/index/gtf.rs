@@ -904,7 +904,11 @@ pub(crate) fn parse_gtf_attr_value(attrs: &str, key: &str) -> Option<String> {
 
     for attr in attrs.split(';') {
         let attr = attr.trim();
-        if attr.is_empty() || !attr.starts_with(key) {
+
+        let mut parts = attr.splitn(2, char::is_whitespace);
+    
+
+        if parts.next() != Some(key) {
             continue;
         }
 

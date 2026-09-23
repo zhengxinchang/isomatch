@@ -37,7 +37,7 @@ pub trait TxBaseTrait {
 
 /// core data stucture for transcript
 /// for persistance on disk.
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy)]
 pub struct TxBase {
     pub tx_idx: u64,
     pub boundary: TxBoundary,

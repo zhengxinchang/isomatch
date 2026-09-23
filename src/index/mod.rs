@@ -323,7 +323,8 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     if !args.quiet {
         info!("Initializing Builder");
     }
-    let missing_seqids_vec: Vec<String> = missing_ref_seqid_set.iter().cloned().collect();
+    let mut missing_seqids_vec: Vec<String> = missing_ref_seqid_set.iter().cloned().collect();
+    missing_seqids_vec.sort();
     let isomx_file = File::create(&isomx_path)
         .with_context(|| format!("Can not create output file: {}", isomx_path.display()))?;
     output_cleanup.track(isomx_path.clone());

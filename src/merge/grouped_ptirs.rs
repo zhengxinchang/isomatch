@@ -538,8 +538,6 @@ impl GroupedPTIR {
             self.all_canonical_ptir_counts + self.no_all_canonical_ptir_counts
         )?;
 
-
-
         let mut source_txs = tx_type_members;
         source_txs.sort_by(|left, right| {
             (
