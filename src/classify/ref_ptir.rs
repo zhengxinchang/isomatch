@@ -1,4 +1,5 @@
-use crate::core::{ptir::PTIR, string_pool::StringSpan, tx_strand::ISOMSTRAND, tx_type::TxType};
+use crate::core::{ptir::PTIR, string_pool::StringSpan, tx_type::TxType};
+use libgtf::gtf::Strand;
 
 #[derive(Debug, Clone)]
 pub struct RefPTIR {
@@ -21,7 +22,7 @@ impl RefPTIR {
         self.base.end
     }
 
-    pub fn standard(&self) -> &ISOMSTRAND {
+    pub fn standard(&self) -> &Strand {
         &self.base.strand
     }
 

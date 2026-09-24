@@ -4,22 +4,20 @@
 //! it is used in the merge and annotate command.
 
 use crate::core::{
-    junction_pool::JunctionPool,
-    splice_site_pair::SpliceSitePair,
-    splice_site_pool::SpliceSitePool,
-    string_pool::StringPool,
-    tx_base::{TxBase, TxBaseTrait},
-    tx_boundary::TxBoundary,
-    tx_strand::ISOMSTRAND,
-    tx_type::TxType,
+    junction_pool::JunctionPool, splice_site_pair::SpliceSitePair,
+    splice_site_pool::SpliceSitePool, string_pool::StringPool, tx_base::TxBase,
+    tx_boundary::TxBoundary, tx_type::TxType,
 };
+
+use libgtf::gtf::Strand;
+
 #[derive(Debug, Clone)]
 /// core data structure for transcript that loaded from index file, used for merge and annotate.
 pub struct PTIR {
     pub tx_boundary: TxBoundary,
     pub start: u32,
     pub end: u32,
-    pub strand: ISOMSTRAND,
+    pub strand: Strand,
     pub n_exons: u16,
     pub refhash: u128,
     pub seqhash: Option<u128>,
@@ -91,17 +89,17 @@ impl PTIR {
 
     pub fn tss(&self) -> u32 {
         match self.strand {
-            ISOMSTRAND::Plus => self.start,
-            ISOMSTRAND::Minus => self.end,
-            ISOMSTRAND::Unknown => self.start,
+            Strand::Plus => self.start,
+            Strand::Minus => self.end,
+            Strand::Unknown => self.start,
         }
     }
 
     pub fn tes(&self) -> u32 {
         match self.strand {
-            ISOMSTRAND::Plus => self.end,
-            ISOMSTRAND::Minus => self.start,
-            ISOMSTRAND::Unknown => self.end,
+            Strand::Plus => self.end,
+            Strand::Minus => self.start,
+            Strand::Unknown => self.end,
         }
     }
 }

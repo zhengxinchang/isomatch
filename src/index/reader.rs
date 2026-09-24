@@ -7,10 +7,8 @@ use std::{
 
 use log::{error, warn};
 
-use crate::{
-    constants::ISOMX_VERSION,
-    traits::{Decodable, DiskSize, PartialLoad},
-};
+use crate::traits::{Decodable, DiskSize, PartialLoad};
+
 use crate::{
     core::{
         junction_pool::JunctionPool, splice_site_pool::SpliceSitePool, string_pool::StringPool,
@@ -18,8 +16,10 @@ use crate::{
     },
     index::index_error::IndexError,
 };
+use libgtf::index::ISOMX_VERSION;
 
-use super::format::{ChromDirectoryEntry, IndexHeader};
+// use super::format::{ChromDirectoryEntry, IndexHeader};
+use libgtf::index::{ChromDirectoryEntry, IndexHeader};
 
 pub struct IndexReader {
     pub file_id: usize,

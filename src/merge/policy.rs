@@ -1,8 +1,6 @@
-use core::fmt;
-
 use crate::{
     MergeArgs,
-    core::{ptir::PTIR, tx_strand::ISOMSTRAND, tx_type::TxType},
+    core::{ptir::PTIR, tx_type::TxType},
     merge::{
         grouped_ptirs::{GroupedPTIR, GroupedPTIREntry},
         merge_error::MergeError,
@@ -10,6 +8,8 @@ use crate::{
     region::RegionDb,
 };
 use clap::ValueEnum;
+use core::fmt;
+use libgtf::gtf::Strand;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 
@@ -72,7 +72,7 @@ pub enum TerminalRefineMode {
 pub fn merge_tx_cluster(
     chrom: &str,
     n_exon: u16,
-    strand: ISOMSTRAND,
+    strand: Strand,
     cluster_idx: &Vec<usize>,
     scluster: &[PTIR],
     args: &MergeArgs,
@@ -162,7 +162,7 @@ pub fn merge_canonical(
     canonical_vec: Vec<&usize>,
     super_cluster: &[PTIR],
     args: &MergeArgs,
-    strand: &ISOMSTRAND,
+    strand: &Strand,
     n_exon: u16,
 ) -> Result<Vec<GroupedPTIR>, MergeError> {
     // the ptir has same strand, same exons and all canonical
@@ -240,7 +240,7 @@ pub fn merge_canonical(
 
 pub fn refine_canonical_grouped_ptir(
     grouped_ptirs: Vec<GroupedPTIR>,
-    _strand: &ISOMSTRAND,
+    _strand: &Strand,
     args: &MergeArgs,
 ) -> Vec<GroupedPTIR> {
     if matches!(args.terminal_refine, TerminalRefineMode::None) {
@@ -271,7 +271,7 @@ pub fn refine_canonical_grouped_ptir(
 
 pub fn refine_non_canonical_grouped_ptir(
     grouped_ptirs: Vec<GroupedPTIR>,
-    _strand: &ISOMSTRAND,
+    _strand: &Strand,
     args: &MergeArgs,
 ) -> Vec<GroupedPTIR> {
     if matches!(args.terminal_refine_nc, TerminalRefineMode::None) {
@@ -302,7 +302,7 @@ pub fn refine_non_canonical_grouped_ptir(
 
 fn split_grouped_entries_by_terminals(
     mut entries: Vec<GroupedPTIREntry>,
-    strand: ISOMSTRAND,
+    strand: Strand,
     tss_wob: u32,
     tes_wob: u32,
     mode: TerminalRefineMode,
@@ -350,11 +350,11 @@ fn split_grouped_entries_by_terminals(
     groups
 }
 
-fn entry_terminals(left: u32, right: u32, strand: ISOMSTRAND) -> (u32, u32) {
+fn entry_terminals(left: u32, right: u32, strand: Strand) -> (u32, u32) {
     match strand {
-        ISOMSTRAND::Plus => (left, right),
-        ISOMSTRAND::Minus => (right, left),
-        ISOMSTRAND::Unknown => (left, right),
+        Strand::Plus => (left, right),
+        Strand::Minus => (right, left),
+        Strand::Unknown => (left, right),
     }
 }
 
@@ -381,7 +381,7 @@ pub fn noncannonical_to_canonical(
     grpptirs: &mut [GroupedPTIR],
     super_cluster: &[PTIR],
     noncanonical_vec: Vec<usize>,
-    strand: &ISOMSTRAND,
+    strand: &Strand,
     args: &MergeArgs,
 ) -> Result<Option<Vec<usize>>, MergeError> {
     if grpptirs.is_empty() {
@@ -467,7 +467,7 @@ fn should_replace_noncanonical_match(
 pub fn merge_rest_noncanonical(
     rest_non_canonical_ptirs: Vec<usize>,
     scluster: &[PTIR],
-    strand: &ISOMSTRAND,
+    strand: &Strand,
     args: &MergeArgs,
 ) -> Result<Vec<GroupedPTIR>, MergeError> {
     if rest_non_canonical_ptirs.is_empty() {
@@ -548,7 +548,7 @@ pub fn merge_mono_exon(
     chrom: &str,
     scluster_idxs: &[usize],
     scluster: &[PTIR],
-    strand: &ISOMSTRAND,
+    strand: &Strand,
     args: &MergeArgs,
     guide_tss: &Option<RegionDb>,
     guide_tes: &Option<RegionDb>,
@@ -648,7 +648,7 @@ fn uf_union(parent: &mut [usize], size: &mut [usize], left: usize, right: usize)
 pub fn is_splice_junctions_match(
     curr: &[(u32, u32)],
     other: &[(u32, u32)],
-    strand: &ISOMSTRAND,
+    strand: &Strand,
     // args: &MergeArgs,
     awob: u32,
     dwob: u32,
@@ -668,7 +668,7 @@ pub fn is_splice_junctions_match(
     curr.iter()
         .zip(other.iter())
         .for_each(|(curr_junc, other_junc)| match strand {
-            ISOMSTRAND::Plus => {
+            Strand::Plus => {
                 let donor_diff = curr_junc.0.abs_diff(other_junc.0);
                 let acceptor_diff = curr_junc.1.abs_diff(other_junc.1);
                 bp_diff_a += acceptor_diff;
@@ -677,7 +677,7 @@ pub fn is_splice_junctions_match(
                     in_wobble = false
                 }
             }
-            ISOMSTRAND::Minus => {
+            Strand::Minus => {
                 let donor_diff = curr_junc.1.abs_diff(other_junc.1);
                 let acceptor_diff = curr_junc.0.abs_diff(other_junc.0);
                 bp_diff_a += acceptor_diff;
@@ -686,7 +686,7 @@ pub fn is_splice_junctions_match(
                     in_wobble = false
                 }
             }
-            ISOMSTRAND::Unknown => {
+            Strand::Unknown => {
                 let left_diff = curr_junc.0.abs_diff(other_junc.0);
                 let right_diff = curr_junc.1.abs_diff(other_junc.1);
                 // For unknown strand we keep a stable left/right convention:

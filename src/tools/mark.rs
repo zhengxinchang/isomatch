@@ -13,12 +13,12 @@ use serde::Serialize;
 
 use crate::{
     MarkArgs,
-    core::tx_strand::ISOMSTRAND,
     region::{RegionDb, RegionType},
     tools::tools_error::ToolError,
     traits::ArgValidate,
     utils::{greetings2, open_file_bufread, print_json_block, require_file},
 };
+use libgtf::gtf::Strand;
 
 impl ArgValidate for MarkArgs {
     fn validate(&self) {
@@ -91,11 +91,10 @@ pub fn run_mark(args: &MarkArgs) -> Result<(), ToolError> {
         tx_count += 1;
         let start = fields[3].parse::<u32>()?;
         let end = fields[4].parse::<u32>()?;
-        let tx_id = attribute(fields[8], "transcript_id").ok_or_else(|| {
-            ToolError::FailedParseGTF {
+        let tx_id =
+            attribute(fields[8], "transcript_id").ok_or_else(|| ToolError::FailedParseGTF {
                 reason: format!("line {line_no}: missing transcript_id"),
-            }
-        })?;
+            })?;
         let gene_id = attribute(fields[8], "gene_id").unwrap_or_default();
         let n_exons = attribute(fields[8], "ISOM_EXONS").unwrap_or("NA");
 
@@ -164,11 +163,11 @@ struct MarkStats {
     overlapped_transcript_count: usize,
 }
 
-fn strand_label(strand: ISOMSTRAND) -> &'static str {
+fn strand_label(strand: Strand) -> &'static str {
     match strand {
-        ISOMSTRAND::Plus => "+",
-        ISOMSTRAND::Minus => "-",
-        ISOMSTRAND::Unknown => "Unk",
+        Strand::Plus => "+",
+        Strand::Minus => "-",
+        Strand::Unknown => "Unk",
     }
 }
 

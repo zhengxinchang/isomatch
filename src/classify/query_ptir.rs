@@ -7,12 +7,14 @@ use std::{
 
 use crate::{
     classify::classify_error::ClassifyError,
-    core::{ptir::PTIR, tx_strand::ISOMSTRAND, tx_type::TxType},
+    core::{ptir::PTIR, tx_type::TxType},
     index::{
         attributes_index::AttrIndexReader,
         reader::{ChromBlockReader, IndexReader},
     },
 };
+
+use libgtf::gtf::Strand;
 
 #[derive(Debug, Clone)]
 pub struct QueryPTIR {
@@ -43,7 +45,7 @@ impl QueryPTIR {
         self.base.end
     }
 
-    pub fn strand(&self) -> &ISOMSTRAND {
+    pub fn strand(&self) -> &Strand {
         &self.base.strand
     }
 

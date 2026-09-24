@@ -10,10 +10,12 @@ use rust_lapper::{Interval, Lapper};
 
 use crate::{
     classify::{classify_error::ClassifyError, ref_ptir::RefPTIR},
-    core::{ptir::PTIR, string_pool::StringPool, tx_strand::ISOMSTRAND},
+    core::{ptir::PTIR, string_pool::StringPool},
     index::reader::IndexReader,
     traits::LogMemSize,
 };
+
+use libgtf::gtf::Strand;
 
 type ChromId = u32;
 type GeneId = u32;
@@ -140,17 +142,17 @@ impl ChromIndex {
         }
     }
 
-    pub fn has_junction(&self, junction: &Junction, strand: &ISOMSTRAND) -> bool {
+    pub fn has_junction(&self, junction: &Junction, strand: &Strand) -> bool {
         match strand {
-            ISOMSTRAND::Minus => match self.junctions_minus.binary_search(junction) {
+            Strand::Minus => match self.junctions_minus.binary_search(junction) {
                 Ok(_) => return true,
                 Err(_) => return false,
             },
-            ISOMSTRAND::Plus => match self.junctions_plus.binary_search(junction) {
+            Strand::Plus => match self.junctions_plus.binary_search(junction) {
                 Ok(_) => return true,
                 Err(_) => return false,
             },
-            ISOMSTRAND::Unknown => {
+            Strand::Unknown => {
                 panic!("This should not happen as it only acccept stranded transcript in new().");
             }
         }
@@ -162,11 +164,11 @@ impl ChromIndex {
         (has_start.is_ok(), has_end.is_ok())
     }
 
-    pub fn with_in_junction(&self, txboundary: &Junction, strand: &ISOMSTRAND) -> bool {
+    pub fn with_in_junction(&self, txboundary: &Junction, strand: &Strand) -> bool {
         let (junctions, prefix_max_ends) = match strand {
-            ISOMSTRAND::Plus => (&self.junctions_plus, &self.prefix_max_starts_plus),
-            ISOMSTRAND::Minus => (&self.junctions_minus, &self.prefix_max_starts_minus),
-            ISOMSTRAND::Unknown => {
+            Strand::Plus => (&self.junctions_plus, &self.prefix_max_starts_plus),
+            Strand::Minus => (&self.junctions_minus, &self.prefix_max_starts_minus),
+            Strand::Unknown => {
                 panic!("This should not happen as it only acccept stranded transcript in new().");
             }
         };
@@ -184,11 +186,11 @@ impl ChromIndex {
             .any(|junction| junction.start <= txboundary.start && txboundary.end <= junction.end)
     }
 
-    pub fn junction_inside_boundary(&self, txboundary: &Junction, strand: &ISOMSTRAND) -> bool {
+    pub fn junction_inside_boundary(&self, txboundary: &Junction, strand: &Strand) -> bool {
         let junctions = match strand {
-            ISOMSTRAND::Plus => &self.junctions_plus,
-            ISOMSTRAND::Minus => &self.junctions_minus,
-            ISOMSTRAND::Unknown => {
+            Strand::Plus => &self.junctions_plus,
+            Strand::Minus => &self.junctions_minus,
+            Strand::Unknown => {
                 panic!("This should not happen as it only acccept stranded transcript in new().");
             }
         };
@@ -322,7 +324,7 @@ impl RefPTIRManager {
                     &chrom_block_builder.string_pool,
                 );
 
-                if matches!(ptir.strand, ISOMSTRAND::Unknown) {
+                if matches!(ptir.strand, Strand::Unknown) {
                     warn!(
                         "Reference GTF contains unstranded transcript: {}, not used in classify.",
                         &ptir.source_txid
@@ -368,7 +370,7 @@ impl RefPTIRManager {
                 }
 
                 if let Some(juncs) = ptir.junctions() {
-                    if matches!(ptir.strand, ISOMSTRAND::Plus) {
+                    if matches!(ptir.strand, Strand::Plus) {
                         for j in juncs {
                             junction_plus.push(Junction {
                                 start: j.0,
@@ -518,7 +520,7 @@ impl RefPTIRManager {
         &self,
         chr_name: &str,
         junctions: &[(u32, u32)],
-        strand: &ISOMSTRAND,
+        strand: &Strand,
     ) -> (bool, Vec<bool>) {
         let chrid = self.stringids.chrom_id(chr_name).unwrap();
 
@@ -566,7 +568,7 @@ impl RefPTIRManager {
     pub fn contained_in_known_intron(
         &self,
         chr_name: &str,
-        strand: &ISOMSTRAND,
+        strand: &Strand,
         start: u32,
         end: u32,
     ) -> bool {
@@ -578,7 +580,7 @@ impl RefPTIRManager {
     pub fn has_intron_retention_against_catalog(
         &self,
         chr_name: &str,
-        strand: &ISOMSTRAND,
+        strand: &Strand,
         exons: &[(u32, u32)],
     ) -> bool {
         let chrid = self.stringids.chrom_id(chr_name).unwrap();

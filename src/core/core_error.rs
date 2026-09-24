@@ -1,60 +1,62 @@
 use thiserror::Error;
 
-#[derive(Debug, Error, Clone, PartialEq, Eq)]
-pub enum TxBaseError {
-    #[error("strand must be 0 (+), 1 (-), or 2 (unknown), got {strand}")]
-    InvalidStrand { strand: u8 },
+pub use libgtf::error::IndexDataError as TxBaseError;
 
-    #[error("tx start {start} is greater than end {end}")]
-    InvalidBounds { start: u32, end: u32 },
+// #[derive(Debug, Error, Clone, PartialEq, Eq)]
+// pub enum TxBaseError {
+//     #[error("strand must be 0 (+), 1 (-), or 2 (unknown), got {strand}")]
+//     InvalidStrand { strand: u8 },
 
-    #[error("n_exons must be at least 1, got {n_exons}")]
-    InvalidExonCount { n_exons: u16 },
+//     #[error("tx start {start} is greater than end {end}")]
+//     InvalidBounds { start: u32, end: u32 },
 
-    #[error("junction coordinates must be strictly increasing")]
-    JunctionsNotStrictlyIncreasing,
+//     #[error("n_exons must be at least 1, got {n_exons}")]
+//     InvalidExonCount { n_exons: u16 },
 
-    #[error("too many junction coordinates for one transcript: {count}")]
-    TooManyJunctions { count: usize },
+//     #[error("junction coordinates must be strictly increasing")]
+//     JunctionsNotStrictlyIncreasing,
 
-    #[error("junction pool is too large to address with u64 offsets")]
-    PoolTooLarge,
+//     #[error("too many junction coordinates for one transcript: {count}")]
+//     TooManyJunctions { count: usize },
 
-    #[error("junction pool mismatch: pool chrom = ({pool_chrom_id}), tx chrom = ({tx_chrom_id})")]
-    PoolMismatch {
-        pool_chrom_id: u16,
-        tx_chrom_id: u16,
-        tx_strand: u8,
-    },
+//     #[error("junction pool is too large to address with u64 offsets")]
+//     PoolTooLarge,
 
-    #[error("invalid junction span offset={offset} count={count} for pool length {pool_len}")]
-    InvalidSpan {
-        offset: u32,
-        count: u16,
-        pool_len: usize,
-    },
+//     #[error("junction pool mismatch: pool chrom = ({pool_chrom_id}), tx chrom = ({tx_chrom_id})")]
+//     PoolMismatch {
+//         pool_chrom_id: u16,
+//         tx_chrom_id: u16,
+//         tx_strand: u8,
+//     },
 
-    #[error("invalid intern id {id} not found in string pool")]
-    InvalidInternId { id: u64 },
+//     #[error("invalid junction span offset={offset} count={count} for pool length {pool_len}")]
+//     InvalidSpan {
+//         offset: u32,
+//         count: u16,
+//         pool_len: usize,
+//     },
 
-    #[error("invalid splice site: {site}")]
-    InvalidSpliceSite { site: String },
+//     #[error("invalid intern id {id} not found in string pool")]
+//     InvalidInternId { id: u64 },
 
-    #[error("string pool exceeded u32-addressable size")]
-    StringPoolTooLarge,
+//     #[error("invalid splice site: {site}")]
+//     InvalidSpliceSite { site: String },
 
-    #[error("IO error: {0}")]
-    Io(String),
+//     #[error("string pool exceeded u32-addressable size")]
+//     StringPoolTooLarge,
 
-    #[error("invalid encoding: {msg}")]
-    InvalidEncoding { msg: String },
-}
+//     #[error("IO error: {0}")]
+//     Io(String),
 
-impl TxBaseError {
-    pub fn io(err: std::io::Error) -> Self {
-        Self::Io(err.to_string())
-    }
-}
+//     #[error("invalid encoding: {msg}")]
+//     InvalidEncoding { msg: String },
+// }
+
+// impl TxBaseError {
+//     pub fn io(err: std::io::Error) -> Self {
+//         Self::Io(err.to_string())
+//     }
+// }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum PTIRError {

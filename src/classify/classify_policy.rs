@@ -18,11 +18,13 @@ use crate::{
         ref_ptir_manager::RefPTIRManager,
     },
     constants::MOTIFS,
-    core::{tx_strand::ISOMSTRAND, tx_type::TxType},
+    core::tx_type::TxType,
     index::fasta::FastaReader,
     region::{MyRegion, RegionDb},
     utils::rev_comp,
 };
+
+use libgtf::gtf::Strand;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PreClass {
@@ -67,7 +69,7 @@ struct CandidateHit {
     ref_end: u32,
     ref_length: u32,
     ref_exons: u16,
-    ref_strand: ISOMSTRAND,
+    ref_strand: Strand,
     diff_tss: Option<i32>,
     diff_tes: Option<i32>,
     splice_site_hits: usize,
@@ -188,7 +190,7 @@ pub struct ClassifyRecord {
 
     query_length: u32,
     query_exon_n: u16,
-    query_strand: ISOMSTRAND,
+    query_strand: Strand,
 
     has_chr_in_ref_gtf: bool,
     per_junction_known_vec: Vec<bool>,
@@ -209,7 +211,7 @@ pub struct ClassifyRecord {
     ref_tx_id: String,
     ref_length: Option<u32>,
     ref_exon_n: Option<u16>,
-    ref_strand: Option<ISOMSTRAND>,
+    ref_strand: Option<Strand>,
     diff_to_tss: Option<i32>,
     diff_to_tes: Option<i32>,
     query_to_ref_matched_junctions: usize,
@@ -356,7 +358,7 @@ impl ClassifyRecord {
 
         self.has_chr_in_ref_gtf = true;
 
-        if matches!(query_ptir.strand(), ISOMSTRAND::Unknown) {
+        if matches!(query_ptir.strand(), Strand::Unknown) {
             return;
         }
 
@@ -482,7 +484,7 @@ impl ClassifyRecord {
     }
 
     fn apply_no_same_strand_hit(&mut self, query_ptir: &QueryPTIR) {
-        if matches!(query_ptir.strand(), ISOMSTRAND::Unknown) {
+        if matches!(query_ptir.strand(), Strand::Unknown) {
             self.cc = ClassCode::BadQueryTranscript(SubBadQueryTx::UnstrandedTx);
             self.ref_gene_id = "novel".to_string();
             self.ref_gene_name = "novel".to_string();
@@ -534,11 +536,11 @@ impl ClassifyRecord {
         }
 
         match query_ptir.strand() {
-            ISOMSTRAND::Plus | ISOMSTRAND::Unknown => {
+            Strand::Plus | Strand::Unknown => {
                 self.diff_to_gene_tss = nearest_start;
                 self.diff_to_gene_tes = nearest_end;
             }
-            ISOMSTRAND::Minus => {
+            Strand::Minus => {
                 self.diff_to_gene_tss = nearest_end;
                 self.diff_to_gene_tes = nearest_start;
             }
@@ -550,7 +552,7 @@ impl ClassifyRecord {
         table_writer: &mut dyn Write,
         gtf_writer: &mut dyn Write,
     ) -> Result<(), io::Error> {
-        let strand = |s: Option<ISOMSTRAND>| {
+        let strand = |s: Option<Strand>| {
             s.map(char::from)
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "NA".to_string())
@@ -864,10 +866,10 @@ fn ism_subtype(query: &QueryPTIR, reference: &RefPTIR) -> SubISM {
     let agree_end = offset + q_junctions.len() == r_junctions.len();
     match (agree_front, agree_end, query.strand()) {
         (true, true, _) => SubISM::Complete,
-        (true, false, ISOMSTRAND::Plus | ISOMSTRAND::Unknown) => SubISM::FivePrimeFragment,
-        (true, false, ISOMSTRAND::Minus) => SubISM::ThreePrimeFragment,
-        (false, true, ISOMSTRAND::Plus | ISOMSTRAND::Unknown) => SubISM::ThreePrimeFragment,
-        (false, true, ISOMSTRAND::Minus) => SubISM::FivePrimeFragment,
+        (true, false, Strand::Plus | Strand::Unknown) => SubISM::FivePrimeFragment,
+        (true, false, Strand::Minus) => SubISM::ThreePrimeFragment,
+        (false, true, Strand::Plus | Strand::Unknown) => SubISM::ThreePrimeFragment,
+        (false, true, Strand::Minus) => SubISM::FivePrimeFragment,
         (false, false, _) => SubISM::InternalFragment,
     }
 }
@@ -929,14 +931,14 @@ pub fn update_group3_seq_context(
     let chr_len = ref_fa.seq_len(chr).unwrap_or(0);
 
     let downstream_seq: Option<Vec<u8>> = match strand {
-        ISOMSTRAND::Plus => {
+        Strand::Plus => {
             let start = tes as usize;
             let end = start + args.downstream_len;
             (end <= chr_len)
                 .then(|| ref_fa.fetch(chr, start, end, false).ok())
                 .flatten()
         }
-        ISOMSTRAND::Minus => {
+        Strand::Minus => {
             let end = tes as usize;
             (end >= args.downstream_len)
                 .then(|| {
@@ -947,7 +949,7 @@ pub fn update_group3_seq_context(
                 .flatten()
                 .map(|seq| rev_comp(&seq))
         }
-        ISOMSTRAND::Unknown => None,
+        Strand::Unknown => None,
     };
 
     if let Some(seq) = downstream_seq {
@@ -960,7 +962,7 @@ pub fn update_group3_seq_context(
     }
 
     let upstream_seq: Option<Vec<u8>> = match strand {
-        ISOMSTRAND::Plus => {
+        Strand::Plus => {
             let end = tes as usize;
             (end >= args.motif_search_window)
                 .then(|| {
@@ -970,7 +972,7 @@ pub fn update_group3_seq_context(
                 })
                 .flatten()
         }
-        ISOMSTRAND::Minus => {
+        Strand::Minus => {
             let start = tes as usize;
             let end = start + args.motif_search_window;
             (end <= chr_len)
@@ -978,7 +980,7 @@ pub fn update_group3_seq_context(
                 .flatten()
                 .map(|seq| rev_comp(&seq))
         }
-        ISOMSTRAND::Unknown => None,
+        Strand::Unknown => None,
     };
 
     if let Some(seq) = upstream_seq {
@@ -1014,8 +1016,8 @@ pub fn update_group4_regions(
 
     if let Some(cage_db) = ref_tss {
         let query = match strand {
-            ISOMSTRAND::Minus => tss as i64,
-            ISOMSTRAND::Plus | ISOMSTRAND::Unknown => tss.saturating_sub(1) as i64,
+            Strand::Minus => tss as i64,
+            Strand::Plus | Strand::Unknown => tss.saturating_sub(1) as i64,
         };
         let mut best: Option<(bool, i32)> = None;
 
@@ -1096,21 +1098,17 @@ fn bed_overlaps_window(peak: &MyRegion, query: i64, search_window: u32) -> bool 
     start0 < query + window && end1 > query - window
 }
 
-fn cage_peak_is_downstream(peak: &MyRegion, strand: ISOMSTRAND, tss: u32) -> bool {
+fn cage_peak_is_downstream(peak: &MyRegion, strand: Strand, tss: u32) -> bool {
     match strand {
-        ISOMSTRAND::Minus => peak.end < tss,
-        ISOMSTRAND::Plus | ISOMSTRAND::Unknown => peak.start > tss,
+        Strand::Minus => peak.end < tss,
+        Strand::Plus | Strand::Unknown => peak.start > tss,
     }
 }
 
-fn cage_dist(peak: &MyRegion, strand: ISOMSTRAND, tss: u32) -> i32 {
+fn cage_dist(peak: &MyRegion, strand: Strand, tss: u32) -> i32 {
     let peak_tss = cage_tss(peak) as i32;
     let dist = peak_tss - tss as i32;
-    if strand == ISOMSTRAND::Minus {
-        -dist
-    } else {
-        dist
-    }
+    if strand == Strand::Minus { -dist } else { dist }
 }
 /// calcualte the TSS sites, with expection on 1bp interval.
 fn cage_tss(peak: &MyRegion) -> u32 {
@@ -1121,28 +1119,28 @@ fn cage_tss(peak: &MyRegion) -> u32 {
     }
 }
 
-fn polya_query(tes: u32, strand: ISOMSTRAND) -> i64 {
+fn polya_query(tes: u32, strand: Strand) -> i64 {
     match strand {
-        ISOMSTRAND::Minus => tes.saturating_sub(1) as i64,
-        ISOMSTRAND::Plus | ISOMSTRAND::Unknown => tes as i64,
+        Strand::Minus => tes.saturating_sub(1) as i64,
+        Strand::Plus | Strand::Unknown => tes as i64,
     }
 }
 
-fn polya_within(peak: &MyRegion, strand: ISOMSTRAND, query: i64) -> bool {
+fn polya_within(peak: &MyRegion, strand: Strand, query: i64) -> bool {
     let start0 = peak.start as i64 - 1;
     let end1 = peak.end as i64;
     match strand {
-        ISOMSTRAND::Minus => start0 < query && query <= end1,
-        ISOMSTRAND::Plus | ISOMSTRAND::Unknown => start0 <= query && query < end1,
+        Strand::Minus => start0 < query && query <= end1,
+        Strand::Plus | Strand::Unknown => start0 <= query && query < end1,
     }
 }
 
-fn polya_dist(peak: &MyRegion, strand: ISOMSTRAND, query: i64) -> i32 {
+fn polya_dist(peak: &MyRegion, strand: Strand, query: i64) -> i32 {
     let start0 = peak.start as i64 - 1;
     let end1 = peak.end as i64;
     let dist = match strand {
-        ISOMSTRAND::Minus => query - end1,
-        ISOMSTRAND::Plus | ISOMSTRAND::Unknown => start0 - query,
+        Strand::Minus => query - end1,
+        Strand::Plus | Strand::Unknown => start0 - query,
     };
     dist as i32
 }

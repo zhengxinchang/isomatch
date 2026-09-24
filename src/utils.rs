@@ -1,5 +1,6 @@
 use ahash::RandomState;
 use flate2::bufread::MultiGzDecoder;
+use libgtf::index::ISOMX_VERSION;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::format;
@@ -13,9 +14,11 @@ use xxhash_rust::xxh3::xxh3_128;
 
 use crate::constants;
 use crate::{
-    core::tx_strand::ISOMSTRAND,
+    // core::tx_strand::Strand,
     index::{attributes_index::AttrIndexReader, reader::IndexReader},
 };
+
+use libgtf::gtf::Strand;
 
 const BUFREADER_CAPACITY: usize = 128 * 1024;
 
@@ -175,9 +178,9 @@ fn upper_nuc(b: u8) -> u8 {
 }
 /// reverse site acoording to strand
 /// also convert bases to upaer cases
-pub fn normalized_site(site: &[u8], strand: &ISOMSTRAND) -> Vec<u8> {
+pub fn normalized_site(site: &[u8], strand: &Strand) -> Vec<u8> {
     match strand {
-        ISOMSTRAND::Minus => rev_comp(site),
+        Strand::Minus => rev_comp(site),
         _ => site.iter().map(|&b| upper_nuc(b)).collect(),
     }
 }
@@ -277,9 +280,7 @@ pub fn check_index_ready<P: AsRef<Path>>(gtf_path: P) -> bool {
         Ok(header) => header,
         Err(_) => return false,
     };
-    if index_header.version != constants::ISOMX_VERSION
-        || index_header.gtf_file_size != metadata.len()
-    {
+    if index_header.version != ISOMX_VERSION || index_header.gtf_file_size != metadata.len() {
         return false;
     }
 

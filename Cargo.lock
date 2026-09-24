@@ -373,7 +373,17 @@ checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 name = "libgtf"
 version = "0.1.0"
 dependencies = [
+ "flate2",
+ "log",
+ "noodles-gtf",
+ "num-format",
+ "rust-lapper",
+ "rustc-hash",
+ "serde",
+ "serde_json",
  "thiserror",
+ "xxhash-rust",
+ "zstd",
 ]
 
 [[package]]

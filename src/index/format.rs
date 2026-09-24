@@ -1,4 +1,3 @@
-use crate::constants::ISOMX_VERSION;
 use crate::core::core_error::TxBaseError;
 use crate::core::junction_pool::JunctionPool;
 use crate::core::splice_site_pair::SpliceSitePair;
@@ -6,326 +5,77 @@ use crate::core::splice_site_pool::SpliceSitePool;
 use crate::core::splice_site_span::SpliceSiteSpan;
 use crate::core::string_pool::StringPool;
 use crate::core::tx_base::TxBase;
-use crate::core::tx_strand::ISOMSTRAND;
 use crate::index::IndexStats;
 use crate::index::fasta::FastaReader;
-use crate::index::gtf::TxStructure;
+use crate::index::gtf::Transcript;
 use crate::index::index_error::IndexError;
-use crate::traits::{Decodable, DiskSize, Encodable};
 use crate::utils;
-use std::io::{Error, ErrorKind, Read, Seek, SeekFrom, Write};
 
-// Flag for index status
-// bit 0, sequence from reference genome (0) or tx sequence (1)
-// bit 1, gtf format, 0: plan text, 1: bgzipped
-pub struct Flags {
-    pub bits: u64,
-}
+use libgtf::gtf::Strand;
 
-impl Flags {
-    // bit 0: 0 = gtf format, 1 = bgzipped
-    const GTF_FORMAT_BIT: u64 = 1 << 0;
-    // bit 1: index has ref hash
-    const REF_HASH_BIT: u64 = 1 << 1;
-    // bit 2: index has seq length
-    const SEQ_HASH_BIT: u64 = 1 << 2;
+// // Flag for index status
+// // bit 0, sequence from reference genome (0) or tx sequence (1)
+// // bit 1, gtf format, 0: plan text, 1: bgzipped
+// pub struct Flags {
+//     pub bits: u64,
+// }
 
-    pub fn new() -> Self {
-        Self { bits: 0 }
-    }
+// impl Flags {
+//     // bit 0: 0 = gtf format, 1 = bgzipped
+//     const GTF_FORMAT_BIT: u64 = 1 << 0;
+//     // bit 1: index has ref hash
+//     const REF_HASH_BIT: u64 = 1 << 1;
+//     // bit 2: index has seq length
+//     const SEQ_HASH_BIT: u64 = 1 << 2;
 
-    /// true = ref genome sequence hash is valid
-    pub fn set_ref_hash(&mut self, has_ref_hash: bool) {
-        if has_ref_hash {
-            self.bits &= !Self::REF_HASH_BIT; // clear → ref
-        } else {
-            self.bits |= Self::REF_HASH_BIT; // set → tx seq
-        }
-    }
+//     pub fn new() -> Self {
+//         Self { bits: 0 }
+//     }
 
-    /// Returns true if sequence is from reference genome
-    pub fn get_ref_hash(&self) -> bool {
-        self.bits & Self::REF_HASH_BIT == 0
-    }
+//     /// true = ref genome sequence hash is valid
+//     pub fn set_ref_hash(&mut self, has_ref_hash: bool) {
+//         if has_ref_hash {
+//             self.bits &= !Self::REF_HASH_BIT; // clear → ref
+//         } else {
+//             self.bits |= Self::REF_HASH_BIT; // set → tx seq
+//         }
+//     }
 
-    /// true = seq hash is valid
-    pub fn set_seq_hash(&mut self, has_seq_hash: bool) {
-        if has_seq_hash {
-            self.bits &= !Self::SEQ_HASH_BIT; //
-        } else {
-            self.bits |= Self::SEQ_HASH_BIT; //
-        }
-    }
+//     /// Returns true if sequence is from reference genome
+//     pub fn get_ref_hash(&self) -> bool {
+//         self.bits & Self::REF_HASH_BIT == 0
+//     }
 
-    /// Returns true if sequence hash is valid
-    /// true = valid, false = invalid
-    pub fn get_seq_hash(&self) -> bool {
-        self.bits & Self::SEQ_HASH_BIT == 0
-    }
+//     /// true = seq hash is valid
+//     pub fn set_seq_hash(&mut self, has_seq_hash: bool) {
+//         if has_seq_hash {
+//             self.bits &= !Self::SEQ_HASH_BIT; //
+//         } else {
+//             self.bits |= Self::SEQ_HASH_BIT; //
+//         }
+//     }
 
-    /// true = gtf format, false = bgzipped
-    pub fn set_gtf_format(&mut self, is_bgzipped: bool) {
-        if is_bgzipped {
-            self.bits |= Self::GTF_FORMAT_BIT; // set → bgzipped
-        } else {
-            self.bits &= !Self::GTF_FORMAT_BIT; // clear → plain text
-        }
-    }
+//     /// Returns true if sequence hash is valid
+//     /// true = valid, false = invalid
+//     pub fn get_seq_hash(&self) -> bool {
+//         self.bits & Self::SEQ_HASH_BIT == 0
+//     }
 
-    /// Returns true if GTF is bgzipped
-    /// true = bgzipped, false = plain text
-    pub fn get_gtf_format(&self) -> bool {
-        self.bits & Self::GTF_FORMAT_BIT != 0
-    }
-}
+//     /// true = gtf format, false = bgzipped
+//     pub fn set_gtf_format(&mut self, is_bgzipped: bool) {
+//         if is_bgzipped {
+//             self.bits |= Self::GTF_FORMAT_BIT; // set → bgzipped
+//         } else {
+//             self.bits &= !Self::GTF_FORMAT_BIT; // clear → plain text
+//         }
+//     }
 
-pub struct IndexHeader {
-    pub magic: [u8; 4],
-    pub version: u32,
-    pub flags: Flags,
-    pub chrom_count: u32,
-    // gtf
-    pub gtf_file_size: u64,
-    pub index_file_size: u64,
-    pub md5: [u8; 16],
-    /// Byte length of the chrom name table that immediately follows the directory.
-    pub chrom_name_table_len: u32,
-    /// Total number of transcripts written into this index.
-    pub total_tx_n: u64,
-    /// Number of seqids in the GTF that were absent from the reference FASTA.
-    pub missing_seqid_count: u32,
-    /// Byte length of the missing seqid table that follows the chrom name table.
-    pub missing_seqid_table_len: u32,
-    pub reserved_to_4k: [u8; 4096 - 4 - 4 - 8 - 4 - 8 - 8 - 16 - 4 - 8 - 4 - 4], // 4024 bytes
-}
-
-impl IndexHeader {
-    pub fn new(
-        chrom_count: u32,
-        gtf_file_size: u64,
-        index_file_size: u64,
-        md5: [u8; 16],
-        has_ref_hash: bool,
-        has_seq_hash: bool,
-        chrom_name_table_len: u32,
-        missing_seqid_count: u32,
-        missing_seqid_table_len: u32,
-    ) -> Self {
-        let mut flags = Flags::new();
-        flags.set_ref_hash(has_ref_hash);
-        flags.set_seq_hash(has_seq_hash);
-        Self {
-            magic: *b"ISOM",
-            version: ISOMX_VERSION,
-            flags,
-            chrom_count,
-            gtf_file_size,
-            index_file_size,
-            md5,
-            chrom_name_table_len,
-            total_tx_n: 0,
-            missing_seqid_count,
-            missing_seqid_table_len,
-            reserved_to_4k: [0u8; 4096 - 4 - 4 - 8 - 4 - 8 - 8 - 16 - 4 - 8 - 4 - 4],
-        }
-    }
-}
-
-impl DiskSize for IndexHeader {
-    const DISK_SIZE: usize = 4096; // 固定 4KB 大小
-}
-
-impl Encodable for IndexHeader {
-    type Error = std::io::Error;
-
-    fn encode_to<W: Write>(&self, writer: &mut W) -> Result<usize, Self::Error> {
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&self.magic);
-        buf.extend_from_slice(&self.version.to_le_bytes());
-        buf.extend_from_slice(&self.flags.bits.to_le_bytes());
-        buf.extend_from_slice(&self.chrom_count.to_le_bytes());
-        buf.extend_from_slice(&self.gtf_file_size.to_le_bytes());
-        buf.extend_from_slice(&self.index_file_size.to_le_bytes());
-        buf.extend_from_slice(&self.md5);
-        buf.extend_from_slice(&self.chrom_name_table_len.to_le_bytes());
-        buf.extend_from_slice(&self.total_tx_n.to_le_bytes());
-        buf.extend_from_slice(&self.missing_seqid_count.to_le_bytes());
-        buf.extend_from_slice(&self.missing_seqid_table_len.to_le_bytes());
-        buf.extend_from_slice(&self.reserved_to_4k);
-        writer.write_all(&buf)?;
-        Ok(buf.len())
-    }
-}
-
-impl Decodable for IndexHeader {
-    type Error = std::io::Error;
-    type Args = ();
-
-    fn decode_from<R: Read + Seek>(reader: &mut R, _args: Self::Args) -> Result<Self, Self::Error> {
-        let mut magic = [0u8; 4];
-        reader.read_exact(&mut magic)?;
-        if magic != *b"ISOM" {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "Verify index file completeness failed. The index may be corrupted. Please rerun `isomatch index`",
-            ));
-        }
-
-        let mut version_buf = [0u8; 4];
-        reader.read_exact(&mut version_buf)?;
-        let version = u32::from_le_bytes(version_buf);
-        if version != ISOMX_VERSION {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "unsupported index version: expected {}, got {}",
-                    ISOMX_VERSION, version
-                ),
-            ));
-        }
-
-        let mut flags_buf = [0u8; 8];
-        reader.read_exact(&mut flags_buf)?;
-        let flags = u64::from_le_bytes(flags_buf);
-        let flags = Flags { bits: flags };
-
-        let mut chrom_count_buf = [0u8; 4];
-        reader.read_exact(&mut chrom_count_buf)?;
-        let chrom_count = u32::from_le_bytes(chrom_count_buf);
-
-        let mut gtf_size_buf = [0u8; 8];
-        reader.read_exact(&mut gtf_size_buf)?;
-        let gtf_size = u64::from_le_bytes(gtf_size_buf);
-
-        let mut index_size_buf = [0u8; 8];
-        reader.read_exact(&mut index_size_buf)?;
-        let index_size = u64::from_le_bytes(index_size_buf);
-
-        let mut md5 = [0u8; 16];
-        reader.read_exact(&mut md5)?;
-
-        let mut chrom_name_table_len_buf = [0u8; 4];
-        reader.read_exact(&mut chrom_name_table_len_buf)?;
-        let chrom_name_table_len = u32::from_le_bytes(chrom_name_table_len_buf);
-
-        let mut total_tx_n_buf = [0u8; 8];
-        reader.read_exact(&mut total_tx_n_buf)?;
-        let total_tx_n = u64::from_le_bytes(total_tx_n_buf);
-
-        let mut missing_seqid_count_buf = [0u8; 4];
-        reader.read_exact(&mut missing_seqid_count_buf)?;
-        let missing_seqid_count = u32::from_le_bytes(missing_seqid_count_buf);
-
-        let mut missing_seqid_table_len_buf = [0u8; 4];
-        reader.read_exact(&mut missing_seqid_table_len_buf)?;
-        let missing_seqid_table_len = u32::from_le_bytes(missing_seqid_table_len_buf);
-
-        // consume remaining reserved bytes to stay at 4 KB boundary
-        let mut reserved_to_4k = [0u8; 4096 - 4 - 4 - 8 - 4 - 8 - 8 - 16 - 4 - 8 - 4 - 4]; // 4024 bytes
-        reader.read_exact(&mut reserved_to_4k)?;
-
-        if index_size < Self::DISK_SIZE as u64 {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "invalid index size in header: {} is smaller than header size {}",
-                    index_size,
-                    Self::DISK_SIZE
-                ),
-            ));
-        }
-
-        let next_pos = reader.stream_position()?;
-        let actual_index_size = reader.seek(SeekFrom::End(0))?;
-        reader.seek(SeekFrom::Start(next_pos))?;
-
-        if actual_index_size != index_size {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "index size mismatch: header says {}, actual file size is {}",
-                    index_size, actual_index_size
-                ),
-            ));
-        }
-
-        Ok(Self {
-            magic,
-            version,
-            flags,
-            chrom_count,
-            gtf_file_size: gtf_size,
-            index_file_size: index_size,
-            md5,
-            chrom_name_table_len,
-            total_tx_n,
-            missing_seqid_count,
-            missing_seqid_table_len,
-            reserved_to_4k,
-        })
-    }
-}
-
-pub struct ChromDirectoryEntry {
-    pub chrom_id: u16,
-    pub chrom_name_offset: u32,
-    pub chrom_name_len: u32,
-    pub global_tx_offset: u64,
-    pub global_tx_count: u64,
-    pub global_junction_pool_offset: u64,
-    pub global_junction_pool_len: u64,
-    pub global_string_pool_offset: u64,
-    pub global_string_pool_len: u64,
-    pub global_splice_site_pool_offset: u64,
-    pub global_splice_site_pool_len: u64,
-}
-
-impl DiskSize for ChromDirectoryEntry {
-    const DISK_SIZE: usize = 74;
-}
-
-impl Encodable for ChromDirectoryEntry {
-    type Error = std::io::Error;
-
-    fn encode_to<W: Write>(&self, writer: &mut W) -> Result<usize, Self::Error> {
-        writer.write_all(&self.chrom_id.to_le_bytes())?;
-        writer.write_all(&self.chrom_name_offset.to_le_bytes())?;
-        writer.write_all(&self.chrom_name_len.to_le_bytes())?;
-        writer.write_all(&self.global_tx_offset.to_le_bytes())?;
-        writer.write_all(&self.global_tx_count.to_le_bytes())?;
-        writer.write_all(&self.global_junction_pool_offset.to_le_bytes())?;
-        writer.write_all(&self.global_junction_pool_len.to_le_bytes())?;
-        writer.write_all(&self.global_string_pool_offset.to_le_bytes())?;
-        writer.write_all(&self.global_string_pool_len.to_le_bytes())?;
-        writer.write_all(&self.global_splice_site_pool_offset.to_le_bytes())?;
-        writer.write_all(&self.global_splice_site_pool_len.to_le_bytes())?;
-        Ok(Self::DISK_SIZE)
-    }
-}
-
-impl Decodable for ChromDirectoryEntry {
-    type Error = std::io::Error;
-    type Args = ();
-
-    fn decode_from<R: Read + Seek>(reader: &mut R, _args: Self::Args) -> Result<Self, Self::Error> {
-        let mut buf = [0u8; ChromDirectoryEntry::DISK_SIZE];
-        reader.read_exact(&mut buf)?;
-
-        Ok(Self {
-            chrom_id: u16::from_le_bytes(buf[0..2].try_into().unwrap()),
-            chrom_name_offset: u32::from_le_bytes(buf[2..6].try_into().unwrap()),
-            chrom_name_len: u32::from_le_bytes(buf[6..10].try_into().unwrap()),
-            global_tx_offset: u64::from_le_bytes(buf[10..18].try_into().unwrap()),
-            global_tx_count: u64::from_le_bytes(buf[18..26].try_into().unwrap()),
-            global_junction_pool_offset: u64::from_le_bytes(buf[26..34].try_into().unwrap()),
-            global_junction_pool_len: u64::from_le_bytes(buf[34..42].try_into().unwrap()),
-            global_string_pool_offset: u64::from_le_bytes(buf[42..50].try_into().unwrap()),
-            global_string_pool_len: u64::from_le_bytes(buf[50..58].try_into().unwrap()),
-            global_splice_site_pool_offset: u64::from_le_bytes(buf[58..66].try_into().unwrap()),
-            global_splice_site_pool_len: u64::from_le_bytes(buf[66..74].try_into().unwrap()),
-        })
-    }
-}
+//     /// Returns true if GTF is bgzipped
+//     /// true = bgzipped, false = plain text
+//     pub fn get_gtf_format(&self) -> bool {
+//         self.bits & Self::GTF_FORMAT_BIT != 0
+//     }
+// }
 
 /// Builder for constructing a single chrom's data block.
 pub struct ChromBlockBuilder {
@@ -349,7 +99,7 @@ impl ChromBlockBuilder {
 
     pub fn add_tx(
         &mut self,
-        gtf_tx: TxStructure,
+        gtf_tx: Transcript,
         chrom_name: &str,
         refr: &mut FastaReader,
         seqr: &mut Option<FastaReader>,
@@ -498,7 +248,7 @@ impl ChromBlockBuilder {
                     // exons are sorted by genomic position.
                     // For minus strand the RNA 5'-terminal exon is genomically last,
                     // and the RNA 3'-terminal exon is genomically first.
-                    let (tss_exon_len, tes_exon_len) = if gtf_tx.strand == ISOMSTRAND::Minus {
+                    let (tss_exon_len, tes_exon_len) = if gtf_tx.strand == Strand::Minus {
                         (last_exon_len, first_exon_len)
                     } else {
                         (first_exon_len, last_exon_len)

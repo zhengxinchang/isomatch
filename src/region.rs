@@ -1,6 +1,7 @@
-use crate::core::tx_strand::ISOMSTRAND;
+// use crate::core::tx_strand::Strand;
 // use crate::index::gtf::parse_gtf_attr_value;
 use crate::utils::open_file_bufread;
+use libgtf::gtf::Strand;
 use libgtf::gtf::attribute;
 use rustc_hash::FxHashMap;
 use std::fs::File;
@@ -27,7 +28,7 @@ pub struct MyRegion {
     pub score: f32,
     pub id: String,
     pub name: String,
-    pub strand: ISOMSTRAND,
+    pub strand: Strand,
 }
 
 impl MyRegion {
@@ -100,7 +101,7 @@ impl ChromGuideIndex {
 pub struct RegionDb {
     guide_type: RegionType,
     // bed_chroms: HashSet<String>,
-    by_chrom_strand: FxHashMap<(String, ISOMSTRAND), ChromGuideIndex>,
+    by_chrom_strand: FxHashMap<(String, Strand), ChromGuideIndex>,
     chrmap: Option<ChromMap>,
 }
 
@@ -119,7 +120,7 @@ impl RegionDb {
         // Self::from_bed_reader(reader, guide_type)
         // let mut bed_chroms = HashSet::default();
 
-        let mut grouped: FxHashMap<(String, ISOMSTRAND), Vec<MyRegion>> = FxHashMap::default();
+        let mut grouped: FxHashMap<(String, Strand), Vec<MyRegion>> = FxHashMap::default();
 
         for (line_no, line_result) in reader.lines().enumerate() {
             let raw_line = line_result.map_err(|err| RegionError::Io {
@@ -182,7 +183,7 @@ impl RegionDb {
             path: path.to_path_buf(),
             source: err,
         })?;
-        let mut grouped: FxHashMap<(String, ISOMSTRAND), Vec<MyRegion>> = FxHashMap::default();
+        let mut grouped: FxHashMap<(String, Strand), Vec<MyRegion>> = FxHashMap::default();
         let mut line = String::new();
         let mut line_no = 0usize;
 
@@ -214,8 +215,9 @@ impl RegionDb {
             let end = parse_gtf_u32_field(fields[4], line_no, "end")?;
             let strand = parse_gtf_strand_field(fields[6], line_no)?;
             let id = attribute(fields[8], "gene_id").unwrap_or_default();
-            let name = attribute(fields[8], "gene_name").to_owned().unwrap_or_else(|| id);
-
+            let name = attribute(fields[8], "gene_name")
+                .to_owned()
+                .unwrap_or_else(|| id);
 
             grouped
                 .entry((fields[0].to_string(), strand))
@@ -224,8 +226,8 @@ impl RegionDb {
                     start,
                     end,
                     score: 0.0,
-                    id:id.to_owned(),
-                    name:name.to_owned(),
+                    id: id.to_owned(),
+                    name: name.to_owned(),
                     strand,
                 });
             line.clear();
@@ -257,7 +259,7 @@ impl RegionDb {
         self.guide_type
     }
 
-    pub fn get_index(&self, chrom: &str, strand: ISOMSTRAND) -> Option<&ChromGuideIndex> {
+    pub fn get_index(&self, chrom: &str, strand: Strand) -> Option<&ChromGuideIndex> {
         if let Some(index) = self.by_chrom_strand.get(&(chrom.to_string(), strand)) {
             return Some(index);
         }
@@ -269,7 +271,7 @@ impl RegionDb {
         None
     }
 
-    pub fn query_overlaps(&self, chrom: &str, strand: ISOMSTRAND, pos: u32) -> Vec<&MyRegion> {
+    pub fn query_overlaps(&self, chrom: &str, strand: Strand, pos: u32) -> Vec<&MyRegion> {
         self.get_index(chrom, strand)
             .map(|index| index.query_overlaps(pos))
             .unwrap_or_default()
@@ -281,7 +283,7 @@ impl RegionDb {
         start: u32,
         end: u32,
     ) -> Vec<&MyRegion> {
-        [ISOMSTRAND::Plus, ISOMSTRAND::Minus, ISOMSTRAND::Unknown]
+        [Strand::Plus, Strand::Minus, Strand::Unknown]
             .into_iter()
             .flat_map(|strand| {
                 self.get_index(chrom, strand)
@@ -294,7 +296,7 @@ impl RegionDb {
     pub fn query_overlaps_with_flank(
         &self,
         chrom: &str,
-        strand: &ISOMSTRAND,
+        strand: &Strand,
         pos: u32,
         flank: u32,
     ) -> Vec<&MyRegion> {
@@ -375,7 +377,7 @@ pub fn load_chrmap_path<P: AsRef<Path>>(path: P) -> Result<ChromMap, RegionError
 #[derive(Debug)]
 struct ParsedBedRecord {
     chrom: String,
-    strand: ISOMSTRAND,
+    strand: Strand,
     interval: MyRegion,
 }
 
@@ -464,11 +466,11 @@ fn parse_gtf_u32_field(raw: &str, line_no: usize, field_name: &str) -> Result<u3
     })
 }
 
-fn parse_gtf_strand_field(raw: &str, line_no: usize) -> Result<ISOMSTRAND, RegionError> {
+fn parse_gtf_strand_field(raw: &str, line_no: usize) -> Result<Strand, RegionError> {
     match raw {
-        "+" => Ok(ISOMSTRAND::Plus),
-        "-" => Ok(ISOMSTRAND::Minus),
-        "." => Ok(ISOMSTRAND::Unknown),
+        "+" => Ok(Strand::Plus),
+        "-" => Ok(Strand::Minus),
+        "." => Ok(Strand::Unknown),
         _ => Err(RegionError::InvalidGtfLine {
             line_no,
             reason: format!("invalid strand: {raw}"),
@@ -490,11 +492,11 @@ fn parse_f32_field(raw: &str, line_no: usize, field_name: &str) -> Result<f32, R
     })
 }
 
-fn parse_strand_field(raw: &str, line_no: usize) -> Result<ISOMSTRAND, RegionError> {
+fn parse_strand_field(raw: &str, line_no: usize) -> Result<Strand, RegionError> {
     match raw {
-        "+" => Ok(ISOMSTRAND::Plus),
-        "-" => Ok(ISOMSTRAND::Minus),
-        "." => Ok(ISOMSTRAND::Unknown),
+        "+" => Ok(Strand::Plus),
+        "-" => Ok(Strand::Minus),
+        "." => Ok(Strand::Unknown),
         _ => Err(RegionError::InvalidBedLine {
             line_no,
             reason: format!("invalid strand: {raw}"),

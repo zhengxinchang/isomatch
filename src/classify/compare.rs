@@ -2,8 +2,10 @@ use std::collections::HashSet;
 
 use crate::{
     classify::{query_ptir::QueryPTIR, ref_ptir::RefPTIR},
-    core::tx_strand::ISOMSTRAND,
+    // core::tx_strand::Strand,
 };
+
+use libgtf::gtf::Strand;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JunctionMatch {
@@ -131,11 +133,11 @@ pub fn same_strand_transcript_space_tss_tes_diffs(
     let relative_r_end = relative_r_start + reference.transcript_len();
 
     match query.strand() {
-        ISOMSTRAND::Plus | ISOMSTRAND::Unknown => (
+        Strand::Plus | Strand::Unknown => (
             relative_r_start as i32 - relative_q_start as i32,
             relative_q_end as i32 - relative_r_end as i32,
         ),
-        ISOMSTRAND::Minus => (
+        Strand::Minus => (
             relative_q_end as i32 - relative_r_end as i32,
             relative_r_start as i32 - relative_q_start as i32,
         ),

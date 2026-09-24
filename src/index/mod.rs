@@ -11,7 +11,6 @@ use serde::Serialize;
 
 use crate::{
     IndexArgs,
-    core::tx_strand::ISOMSTRAND,
     // fasta::{self, FastaReader},
     index::format::ChromBlockBuilder,
     traits::ArgValidate,
@@ -19,11 +18,13 @@ use crate::{
 };
 pub use anyhow::Result as AnyResult;
 use fasta::FastaReader;
+use libgtf::gtf::Strand;
 pub mod attributes_index;
 pub mod builder;
 pub mod fasta;
 pub mod format;
-pub mod gtf;
+// pub mod gtf;
+pub use libgtf::gtf;
 pub mod index_error;
 pub mod reader;
 
@@ -88,7 +89,7 @@ impl Drop for OutputCleanup {
 impl IndexStats {
     pub fn observe_tx(
         &mut self,
-        strand: ISOMSTRAND,
+        strand: Strand,
         exon_count: usize,
         canonical_junction_count: usize,
         gene_id: &str,
@@ -97,9 +98,9 @@ impl IndexStats {
         self.gene_ids.insert(gene_id.to_string());
 
         match strand {
-            ISOMSTRAND::Minus => self.minus_strand_tx_cnt += 1,
-            ISOMSTRAND::Plus => self.plus_strand_tx_cnt += 1,
-            ISOMSTRAND::Unknown => self.unknown_strand_tx_cnt += 1,
+            Strand::Minus => self.minus_strand_tx_cnt += 1,
+            Strand::Plus => self.plus_strand_tx_cnt += 1,
+            Strand::Unknown => self.unknown_strand_tx_cnt += 1,
         }
 
         if exon_count <= 1 {
@@ -253,7 +254,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         info!("Indexing GTF");
     }
 
-    let mut gtf_reader = gtf::MyGTFReader::new(&args.input)
+    let mut gtf_reader = gtf::GtfReader::new(&args.input)
         .with_context(|| format!("Can not open GTF file: {}", args.input.display()))?;
     let profile = gtf_reader.profile().clone();
 

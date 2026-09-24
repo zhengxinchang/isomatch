@@ -2,7 +2,6 @@ use crate::IndexArgs;
 use crate::constants::ISOM_GTF_SCHEMA;
 use crate::core::ptir::PTIR;
 use crate::core::tx_base::TxBase;
-use crate::core::tx_strand::ISOMSTRAND;
 use crate::index::reader::ChromBlockReader;
 use crate::index::run_index;
 use crate::merge::grouped_ptirs::GroupedPTIR;
@@ -15,6 +14,7 @@ use crate::utils::print_json_block;
 use crate::utils::require_file;
 use crate::utils::save_json_block;
 use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
+use libgtf::gtf::Strand;
 
 use ids::assign_global_ids;
 use serde::Serialize;
@@ -335,12 +335,12 @@ pub fn process_super_cluster(
     // build junc cluster
     // cluter has same strand and junction number, which is the merge unit
     let mut clusters: std::collections::HashMap<
-        (ISOMSTRAND, u16),
+        (Strand, u16),
         Vec<usize>,
         rustc_hash::FxBuildHasher,
     > = FxHashMap::default();
     for (ptir_idx, ptir) in super_cluster.iter().enumerate() {
-        let key: (ISOMSTRAND, u16) = (ptir.strand, ptir.n_exons);
+        let key: (Strand, u16) = (ptir.strand, ptir.n_exons);
         let cluster = clusters.entry(key).or_insert(Vec::new());
         cluster.push(ptir_idx);
     }

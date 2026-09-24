@@ -2,7 +2,7 @@ use std::io::Write;
 
 use crate::{
     MergeArgs,
-    core::{ptir::PTIR, tx_strand::ISOMSTRAND, tx_type::TxType},
+    core::{ptir::PTIR, tx_type::TxType},
     merge::{
         MergeStats,
         merge_error::MergeError,
@@ -11,6 +11,7 @@ use crate::{
     region::RegionDb,
 };
 use ahash::HashSet;
+use libgtf::gtf::Strand;
 use rustc_hash::FxHashMap;
 
 #[derive(Clone, Debug)]
@@ -22,17 +23,17 @@ pub struct GroupedPTIREntry {
     pub tx_type: TxType,
 }
 impl GroupedPTIREntry {
-    pub fn tss(&self, strand: &ISOMSTRAND) -> u32 {
+    pub fn tss(&self, strand: &Strand) -> u32 {
         match strand {
-            ISOMSTRAND::Plus | ISOMSTRAND::Unknown => self.left,
-            ISOMSTRAND::Minus => self.right,
+            Strand::Plus | Strand::Unknown => self.left,
+            Strand::Minus => self.right,
         }
     }
 
-    pub fn tes(&self, strand: &ISOMSTRAND) -> u32 {
+    pub fn tes(&self, strand: &Strand) -> u32 {
         match strand {
-            ISOMSTRAND::Plus | ISOMSTRAND::Unknown => self.right,
-            ISOMSTRAND::Minus => self.left,
+            Strand::Plus | Strand::Unknown => self.right,
+            Strand::Minus => self.left,
         }
     }
 }
@@ -41,7 +42,7 @@ pub struct GroupedPTIR {
     // status:MPTIRTYPE,
     gene_id: u32,
     tx_id: u32,
-    strand: ISOMSTRAND,
+    strand: Strand,
     n_exon: u16,
     all_canonical_ptir_counts: u32,
     all_canonical_ptir_list: Vec<GroupedPTIREntry>,
@@ -59,7 +60,7 @@ pub struct GroupedPTIR {
 }
 
 impl GroupedPTIR {
-    pub fn new(strand: &ISOMSTRAND, n_exon: u16) -> GroupedPTIR {
+    pub fn new(strand: &Strand, n_exon: u16) -> GroupedPTIR {
         GroupedPTIR {
             gene_id: 0,
             tx_id: 0,
@@ -105,7 +106,7 @@ impl GroupedPTIR {
         self.repr_right
     }
 
-    pub fn strand(&self) -> ISOMSTRAND {
+    pub fn strand(&self) -> Strand {
         self.strand
     }
 
@@ -130,7 +131,7 @@ impl GroupedPTIR {
     }
 
     pub fn from_canonical_entries(
-        strand: &ISOMSTRAND,
+        strand: &Strand,
         n_exon: u16,
         entries: Vec<GroupedPTIREntry>,
     ) -> GroupedPTIR {
@@ -156,7 +157,7 @@ impl GroupedPTIR {
     }
 
     pub fn from_non_canonical_entries(
-        strand: &ISOMSTRAND,
+        strand: &Strand,
         n_exon: u16,
         entries: Vec<GroupedPTIREntry>,
     ) -> GroupedPTIR {
@@ -183,9 +184,9 @@ impl GroupedPTIR {
 
     fn set_repr_from_terminals(&mut self, tss: u32, tes: u32) {
         let (repr_left, repr_right) = match self.strand {
-            ISOMSTRAND::Plus => (tss, tes),
-            ISOMSTRAND::Minus => (tes, tss),
-            ISOMSTRAND::Unknown => (tss, tes),
+            Strand::Plus => (tss, tes),
+            Strand::Minus => (tes, tss),
+            Strand::Unknown => (tss, tes),
         };
         self.repr_left = repr_left;
         self.repr_right = repr_right;
@@ -624,7 +625,7 @@ impl GroupedPTIR {
         write!(gtf_bufwriter, "{:.2}", sample_freq)?;
 
         let (used_tss_policy, used_tes_policy) = match self.strand {
-            ISOMSTRAND::Minus => (self.used_repr_right_policy, self.used_repr_left_policy),
+            Strand::Minus => (self.used_repr_right_policy, self.used_repr_left_policy),
             _ => (self.used_repr_left_policy, self.used_repr_right_policy),
         };
 
@@ -822,30 +823,30 @@ fn select_splice_pair(
     Ok(out)
 }
 
-fn tss_is_left_boundary(strand: &ISOMSTRAND) -> bool {
+fn tss_is_left_boundary(strand: &Strand) -> bool {
     match strand {
-        ISOMSTRAND::Plus => true,
-        ISOMSTRAND::Minus => false,
-        ISOMSTRAND::Unknown => true,
+        Strand::Plus => true,
+        Strand::Minus => false,
+        Strand::Unknown => true,
     }
 }
 
-fn boundaries_to_terminals(left: u32, right: u32, strand: ISOMSTRAND) -> (u32, u32) {
+fn boundaries_to_terminals(left: u32, right: u32, strand: Strand) -> (u32, u32) {
     match strand {
-        ISOMSTRAND::Plus => (left, right),
-        ISOMSTRAND::Minus => (right, left),
-        ISOMSTRAND::Unknown => (left, right),
+        Strand::Plus => (left, right),
+        Strand::Minus => (right, left),
+        Strand::Unknown => (left, right),
     }
 }
 
-fn collect_tss_positions(entries: &[GroupedPTIREntry], strand: &ISOMSTRAND) -> Vec<u32> {
+fn collect_tss_positions(entries: &[GroupedPTIREntry], strand: &Strand) -> Vec<u32> {
     entries
         .iter()
         .map(|entry| boundaries_to_terminals(entry.left, entry.right, *strand).0)
         .collect()
 }
 
-fn collect_tes_positions(entries: &[GroupedPTIREntry], strand: &ISOMSTRAND) -> Vec<u32> {
+fn collect_tes_positions(entries: &[GroupedPTIREntry], strand: &Strand) -> Vec<u32> {
     entries
         .iter()
         .map(|entry| boundaries_to_terminals(entry.left, entry.right, *strand).1)
@@ -924,7 +925,7 @@ fn select_terminal_by_policy(
 fn select_terminal(
     chrom: &str,
     positions: &[u32],
-    strand: &ISOMSTRAND,
+    strand: &Strand,
     is_left_boundary: bool,
     policy: MergePolicyArg,
     guide: &Option<RegionDb>,
@@ -991,7 +992,7 @@ fn select_terminal(
 fn select_repr_terminals(
     chrom: &str,
     entries: &[GroupedPTIREntry],
-    strand: &ISOMSTRAND,
+    strand: &Strand,
     tss_policy: MergePolicyArg,
     tes_policy: MergePolicyArg,
     guide_tss: &Option<RegionDb>,
@@ -1024,7 +1025,7 @@ fn select_repr_terminals(
 }
 
 /// calculate the sum of junction difference between current transcript and repr.
-fn junction_diff_sums(curr: &[(u32, u32)], repr: &[(u32, u32)], strand: ISOMSTRAND) -> (u32, u32) {
+fn junction_diff_sums(curr: &[(u32, u32)], repr: &[(u32, u32)], strand: Strand) -> (u32, u32) {
     if curr.len() != repr.len() {
         return (u32::MAX, u32::MAX);
     }
@@ -1033,15 +1034,15 @@ fn junction_diff_sums(curr: &[(u32, u32)], repr: &[(u32, u32)], strand: ISOMSTRA
     let mut acceptor_sum = 0;
     for (curr_junc, repr_junc) in curr.iter().zip(repr.iter()) {
         match strand {
-            ISOMSTRAND::Plus => {
+            Strand::Plus => {
                 donor_sum += curr_junc.0.abs_diff(repr_junc.0);
                 acceptor_sum += curr_junc.1.abs_diff(repr_junc.1);
             }
-            ISOMSTRAND::Minus => {
+            Strand::Minus => {
                 donor_sum += curr_junc.1.abs_diff(repr_junc.1);
                 acceptor_sum += curr_junc.0.abs_diff(repr_junc.0);
             }
-            ISOMSTRAND::Unknown => {
+            Strand::Unknown => {
                 donor_sum += curr_junc.0.abs_diff(repr_junc.0);
                 acceptor_sum += curr_junc.1.abs_diff(repr_junc.1);
             }

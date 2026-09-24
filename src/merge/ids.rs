@@ -1,6 +1,6 @@
 use super::grouped_ptirs::GroupedPTIR;
 use crate::MergeArgs;
-use crate::core::tx_strand::ISOMSTRAND;
+use libgtf::gtf::Strand;
 use rustc_hash::{FxHashMap, FxHashSet};
 pub fn assign_global_ids(
     all_grouped_ptirs: &mut [GroupedPTIR],
@@ -15,7 +15,7 @@ pub fn assign_global_ids(
 
     all_grouped_ptirs.sort_by_key(|grp| (grp.strand(), grp.start(), grp.end()));
 
-    for strand in [ISOMSTRAND::Plus, ISOMSTRAND::Minus, ISOMSTRAND::Unknown] {
+    for strand in [Strand::Plus, Strand::Minus, Strand::Unknown] {
         let strand_idxs = strand_indices(all_grouped_ptirs, strand);
         for overlap_group in split_by_overlap(all_grouped_ptirs, &strand_idxs) {
             let (connected_groups, unassigned_idxs) =
@@ -55,7 +55,7 @@ pub fn assign_global_ids(
     }
 }
 
-fn strand_indices(grps: &[GroupedPTIR], strand: ISOMSTRAND) -> Vec<usize> {
+fn strand_indices(grps: &[GroupedPTIR], strand: Strand) -> Vec<usize> {
     grps.iter()
         .enumerate()
         .filter_map(|(idx, grp)| (grp.strand() == strand).then_some(idx))

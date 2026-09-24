@@ -226,7 +226,7 @@ struct MergedBlock {
 }
 
 impl MergedBlock {
-    fn from_gtf_cols(cols: & [& str], line_no: usize) -> Result<Self, ToolError> {
+    fn from_gtf_cols(cols: &[&str], line_no: usize) -> Result<Self, ToolError> {
         let attrs = cols[8];
         let merged_tx_id = require_attr(&attrs, "transcript_id", line_no)?;
         let merged_gene_id = require_attr(&attrs, "gene_id", line_no)?;
@@ -235,8 +235,8 @@ impl MergedBlock {
         Ok(Self {
             chrom: cols[0].to_string(),
             strand: cols[6].to_string(),
-            merged_tx_id:merged_tx_id.to_string(),
-            merged_gene_id:merged_gene_id.to_string(),
+            merged_tx_id: merged_tx_id.to_string(),
+            merged_gene_id: merged_gene_id.to_string(),
             sources: parse_sources(isom_src, line_no)?,
             exons: Vec::new(),
         })

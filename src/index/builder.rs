@@ -38,8 +38,9 @@ fn encode_compressed<T: crate::traits::Encodable<Error = crate::core::core_error
 }
 
 use crate::core::tx_base::TxBase;
-use crate::index::format::{ChromBlockBuilder, ChromDirectoryEntry, IndexHeader};
+use crate::index::format::ChromBlockBuilder;
 use crate::traits::{DiskSize, Encodable};
+use libgtf::index::{ChromDirectoryEntry, IndexHeader};
 
 pub struct IndexBuilder {
     header: IndexHeader,
