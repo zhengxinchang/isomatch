@@ -381,8 +381,6 @@ dependencies = [
  "num-format",
  "rust-lapper",
  "rustc-hash",
- "serde",
- "serde_json",
  "thiserror",
  "xxhash-rust",
  "zstd",

@@ -1,5 +1,4 @@
 use std::{
-    collections::{HashMap, HashSet},
     fs::{self, File},
     io::Write,
     path::PathBuf,
@@ -15,19 +14,12 @@ use crate::{
     utils::{greetings2, print_json_block, require_file, save_json_block},
 };
 pub use anyhow::Result as AnyResult;
-use libgtf::{fasta::{FaType, FastaReader}, index::builder::IndexBuilder};
-use libgtf::gtf::Strand;
-// pub mod attributes_index;
-// pub mod builder;
-// pub mod gtf;
+use libgtf::{BuildConfig, BuildEvent, BuildReport, build_index_with_events};
 
 pub use libgtf::gtf;
 pub mod index_error;
-pub use libgtf::index::{AttrIndexBuilder, ChromBlockBuilder};
-// pub mod reader;
 
-
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct IndexStats {
     pub transcript_count: u64,
     pub gene_count: u64,
@@ -47,10 +39,6 @@ pub struct IndexStats {
     pub canonical_junction_cnt: u64,
     pub non_canonical_junction_cnt: u64,
     pub canonical_junction_ratio: f64,
-    #[serde(skip_serializing)]
-    gene_ids: HashSet<String>,
-    #[serde(skip_serializing)]
-    skipped_gene_ids: HashSet<String>,
 }
 
 struct OutputCleanup {
@@ -85,64 +73,28 @@ impl Drop for OutputCleanup {
     }
 }
 
-impl IndexStats {
-    pub fn observe_tx(
-        &mut self,
-        strand: Strand,
-        exon_count: usize,
-        canonical_junction_count: usize,
-        gene_id: &str,
-    ) {
-        self.transcript_count += 1;
-        self.gene_ids.insert(gene_id.to_string());
-
-        match strand {
-            Strand::Minus => self.minus_strand_tx_cnt += 1,
-            Strand::Plus => self.plus_strand_tx_cnt += 1,
-            Strand::Unknown => self.unknown_strand_tx_cnt += 1,
+impl From<BuildReport> for IndexStats {
+    fn from(report: BuildReport) -> Self {
+        Self {
+            transcript_count: report.transcript_count,
+            gene_count: report.gene_count,
+            skipped_transcript_cnt: report.skipped_transcript_count,
+            skipped_gene_cnt: report.skipped_gene_count,
+            missing_seqid_cnt: report.missing_seqid_count,
+            missing_seqids: report.missing_seqids,
+            plus_strand_tx_cnt: report.plus_strand_transcript_count,
+            minus_strand_tx_cnt: report.minus_strand_transcript_count,
+            unknown_strand_tx_cnt: report.unknown_strand_transcript_count,
+            mono_exon_tx_cnt: report.mono_exon_transcript_count,
+            multi_exon_tx_cnt: report.multi_exon_transcript_count,
+            all_canonical_tx_cnt: report.all_canonical_transcript_count,
+            partial_canonical_tx_cnt: report.partial_canonical_transcript_count,
+            non_canonical_tx_cnt: report.non_canonical_transcript_count,
+            junction_cnt: report.junction_count,
+            canonical_junction_cnt: report.canonical_junction_count,
+            non_canonical_junction_cnt: report.non_canonical_junction_count,
+            canonical_junction_ratio: report.canonical_junction_ratio,
         }
-
-        if exon_count <= 1 {
-            self.mono_exon_tx_cnt += 1;
-            return;
-        }
-
-        self.multi_exon_tx_cnt += 1;
-
-        let junction_count = (exon_count - 1) as u64;
-        let canonical_junction_count = canonical_junction_count as u64;
-
-        if canonical_junction_count == junction_count {
-            self.all_canonical_tx_cnt += 1;
-        } else if canonical_junction_count == 0 {
-            self.non_canonical_tx_cnt += 1;
-        } else {
-            self.partial_canonical_tx_cnt += 1;
-        }
-
-        self.junction_cnt += junction_count;
-        self.canonical_junction_cnt += canonical_junction_count;
-        self.non_canonical_junction_cnt += junction_count - canonical_junction_count;
-    }
-
-    pub fn observe_skipped_tx(&mut self, gene_id: &str) {
-        self.skipped_transcript_cnt += 1;
-        self.skipped_gene_ids.insert(gene_id.to_string());
-    }
-
-    pub fn note_skipped_ref_seqids(&mut self, seqids: Vec<String>) {
-        self.missing_seqid_cnt = seqids.len() as u64;
-        self.missing_seqids = seqids;
-    }
-
-    pub fn finalize(&mut self) {
-        self.gene_count = self.gene_ids.len() as u64;
-        self.skipped_gene_cnt = self.skipped_gene_ids.len() as u64;
-        self.canonical_junction_ratio = if self.junction_cnt == 0 {
-            0.0
-        } else {
-            self.canonical_junction_cnt as f64 / self.junction_cnt as f64
-        };
     }
 }
 
@@ -225,89 +177,8 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     save_json_block(&param_path, &args)?;
     output_cleanup.track(param_path);
 
-    let mut stats = IndexStats::default();
-
     if !args.quiet {
         info!("Creating isomatch index for {}", args.input.display());
-
-        info!("Loading Reference and/or Sequence FASTA...");
-    }
-
-    let mut ref_far = FastaReader::open(args.ref_fa.clone(), FaType::Ref)
-        .with_context(|| format!("Can not load reference sequence: {}", args.ref_fa.display()))?;
-
-    let mut seq_far = if let Some(seqfa) = &args.seqfa {
-        Some(
-            FastaReader::open(seqfa.clone(), FaType::Seq).with_context(|| {
-                format!(
-                    "Can not load sequence from reference genome: {}",
-                    seqfa.display()
-                )
-            })?,
-        )
-    } else {
-        None
-    };
-
-    if !args.quiet {
-        info!("Indexing GTF");
-    }
-
-    let mut gtf_reader = gtf::GtfReader::new(&args.input)
-        .with_context(|| format!("Can not open GTF file: {}", args.input.display()))?;
-    let profile = gtf_reader.profile().clone();
-
-    let missing_ref_seqids: Vec<String> = profile
-        .chrom_names
-        .iter()
-        .filter(|chrom| !ref_far.contains(chrom))
-        .cloned()
-        .collect();
-
-    if !missing_ref_seqids.is_empty() {
-        if args.skip_missing_ref_chr {
-            for seqid in &missing_ref_seqids {
-                warn!(
-                    "Reference FASTA is missing seqid '{}'; transcripts on this seqid will be skipped",
-                    seqid
-                );
-            }
-            stats.note_skipped_ref_seqids(missing_ref_seqids.clone());
-        } else {
-            bail!(
-                "Reference FASTA is missing {} seqid(s) required by the GTF: {}. Rerun with --skip-missing-ref-chr to warn and skip these transcripts. ",
-                missing_ref_seqids.len(),
-                missing_ref_seqids.join(", ")
-            );
-        }
-    }
-
-    let missing_ref_seqid_set: HashSet<String> = missing_ref_seqids.into_iter().collect();
-    let missing_ref_chrom_ids: HashSet<gtf::ChromID> = missing_ref_seqid_set
-        .iter()
-        .filter_map(|chrom| profile.chrom_name_to_id.get(chrom).copied())
-        .collect();
-    let chrom_names: Vec<String> = profile
-        .chrom_names
-        .iter()
-        .filter(|chrom| !missing_ref_seqid_set.contains(*chrom))
-        .cloned()
-        .collect();
-    let output_chrom_ids: HashMap<gtf::ChromID, u16> = profile
-        .chrom_names
-        .iter()
-        .filter(|chrom| !missing_ref_seqid_set.contains(*chrom))
-        .enumerate()
-        .filter_map(|(out_idx, chrom)| {
-            profile
-                .chrom_name_to_id
-                .get(chrom)
-                .map(|profile_id| (*profile_id, (out_idx + 1) as u16))
-        })
-        .collect();
-
-    if chrom_names.is_empty() {
-        bail!("No indexable seqids remain after filtering against the reference FASTA");
     }
 
     let isomx_path = if let Some(out) = &args.out {
@@ -320,116 +191,64 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         default_out
     };
 
-    if !args.quiet {
-        info!("Initializing Builder");
-    }
-    let mut missing_seqids_vec: Vec<String> = missing_ref_seqid_set.iter().cloned().collect();
-    missing_seqids_vec.sort();
-    let isomx_file = File::create(&isomx_path)
-        .with_context(|| format!("Can not create output file: {}", isomx_path.display()))?;
-    output_cleanup.track(isomx_path.clone());
-    let mut builder = IndexBuilder::new(
-        isomx_file,
-        chrom_names,
-        profile.file_size,
-        profile.md5,
-        true,
-        args.seqfa.is_some(),
-        missing_seqids_vec,
-    )
-    .with_context(|| format!("Can not init index builder at {}", isomx_path.display()))?;
+    let mut isoms_path = out_base.clone();
+    isoms_path.add_extension("isoms");
 
-    let mut isoms_path = isomx_path.clone();
-    isoms_path.set_extension("isoms");
-    let total_indexable_tx = gtf_reader.transcript_count_excluding(&missing_ref_chrom_ids);
-    let isoms_file = File::create(&isoms_path)
-        .with_context(|| format!("cannot create isoms at {}", isoms_path.display()))?;
-    output_cleanup.track(isoms_path.clone());
-    let mut attr_builder =
-        AttrIndexBuilder::new(isoms_file, total_indexable_tx, &profile.md5)
-            .with_context(|| format!("cannot init AttrIndexBuilder at {}", isoms_path.display()))?;
+    let config = BuildConfig {
+        gtf_path: args.input.clone(),
+        reference_fasta: args.ref_fa.clone(),
+        transcript_fasta: args.seqfa.clone(),
+        isomx_output: isomx_path.clone(),
+        isoms_output: isoms_path.clone(),
+        skip_missing_reference_seqids: args.skip_missing_ref_chr,
+        temp_dir: None,
+    };
 
-    let mut current_chrom_id = 0u16;
-    let mut chrom_block: Option<ChromBlockBuilder> = None;
-    let mut next_written_tx_idx = 0u64;
-    loop {
-        let Some(mut tx_structure) = gtf_reader.next()? else {
-            break;
-        };
-
-        let chrom_name = gtf_reader
-            .chrom_name(tx_structure.chrom_id)
-            .with_context(|| format!("invalid chrom_id {}", tx_structure.chrom_id))?
-            .to_string();
-
-        if current_chrom_id != tx_structure.chrom_id {
-            if let Some(cb) = chrom_block.take() {
-                builder.add_chrom(cb)?;
-            }
-            current_chrom_id = tx_structure.chrom_id;
-            if missing_ref_chrom_ids.contains(&current_chrom_id) {
-                if !args.quiet {
-                    info!(
-                        "Skipping chromosome {} because it is absent from the reference FASTA",
-                        chrom_name
-                    );
-                }
-                chrom_block = None;
-            } else {
-                let output_chrom_id = *output_chrom_ids
-                    .get(&current_chrom_id)
-                    .with_context(|| format!("missing output chrom_id for {chrom_name}"))?;
-                chrom_block = Some(ChromBlockBuilder::init(output_chrom_id));
-                if !args.quiet {
-                    info!("Processing chromosome {}", chrom_name);
-                }
+    let quiet = args.quiet;
+    let result = build_index_with_events(&config, |event| match event {
+        BuildEvent::LoadingFasta if !quiet => {
+            info!("Loading Reference and/or Sequence FASTA...");
+        }
+        BuildEvent::IndexingGtf if !quiet => info!("Indexing GTF"),
+        BuildEvent::InitializingBuilders => {
+            output_cleanup.track(isomx_path.clone());
+            output_cleanup.track(isoms_path.clone());
+            if !quiet {
+                info!("Initializing Builder");
             }
         }
-        if missing_ref_chrom_ids.contains(&tx_structure.chrom_id) {
-            stats.observe_skipped_tx(&tx_structure.gene_id);
-            continue;
+        BuildEvent::MissingReferenceSequence { seqid } => warn!(
+            "Reference FASTA is missing seqid '{}'; transcripts on this seqid will be skipped",
+            seqid
+        ),
+        BuildEvent::ProcessingChromosome { name } if !quiet => {
+            info!("Processing chromosome {}", name);
         }
-
-        tx_structure.set_gidx(next_written_tx_idx);
-        let attr_string = tx_structure.attr_string.clone();
-        let gene_id = tx_structure.gene_id.clone();
-        let summary = chrom_block
-            .as_mut()
-            .context("Can not access chromblock")?
-            .add_tx(
-                tx_structure,
-                &chrom_name,
-                &mut ref_far,
-                &mut seq_far,
-            )?;
-        stats.observe_tx(
-            summary.strand,
-            summary.exon_count,
-            summary.canonical_junction_count,
-            &gene_id,
-        );
-
-        if let Some(attr_string) = attr_string {
-            attr_builder
-                .dump_attr(attr_string, next_written_tx_idx)
-                .with_context(|| format!("dump_attr failed for tx_idx {}", next_written_tx_idx))?;
+        BuildEvent::SkippingChromosome { name } if !quiet => {
+            info!(
+                "Skipping chromosome {} because it is absent from the reference FASTA",
+                name
+            );
         }
+        BuildEvent::Finalizing => {}
+        _ => {}
+    });
 
-        next_written_tx_idx = next_written_tx_idx
-            .checked_add(1)
-            .context("written transcript index exceeded u64")?;
-    }
-
-    if let Some(cb) = chrom_block.take() {
-        builder.add_chrom(cb)?;
-    }
-    // isom_src_cache_builder.finalize()?;
-    builder.finalize()?;
-    stats.finalize();
-
-    attr_builder
-        .finish()
-        .with_context(|| format!("cannot finalize isoms at {}", isoms_path.display()))?;
+    let report = match result {
+        Ok(report) => report,
+        Err(libgtf::error::Error::MissingReferenceSequences { seqids }) => {
+            bail!(
+                "Reference FASTA is missing {} seqid(s) required by the GTF: {}. Rerun with --skip-missing-ref-chr to warn and skip these transcripts. ",
+                seqids.len(),
+                seqids.join(", ")
+            );
+        }
+        Err(libgtf::error::Error::NoIndexableSequences) => {
+            bail!("No indexable seqids remain after filtering against the reference FASTA");
+        }
+        Err(err) => return Err(err).context("cannot build index"),
+    };
+    let stats = IndexStats::from(report);
 
     if !args.quiet {
         info!("Index isomx saved to {:?}", isomx_path);
