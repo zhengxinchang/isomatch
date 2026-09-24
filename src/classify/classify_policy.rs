@@ -19,10 +19,10 @@ use crate::{
     },
     constants::MOTIFS,
     core::tx_type::TxType,
-    index::fasta::FastaReader,
     region::{MyRegion, RegionDb},
     utils::rev_comp,
 };
+use libgtf::fasta::FastaReader;
 
 use libgtf::gtf::Strand;
 

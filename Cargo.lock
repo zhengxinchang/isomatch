@@ -375,6 +375,8 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "log",
+ "noodles-core",
+ "noodles-fasta",
  "noodles-gtf",
  "num-format",
  "rust-lapper",

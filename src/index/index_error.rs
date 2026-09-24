@@ -1,7 +1,7 @@
 use libgtf::error::IndexDataError;
 use thiserror::Error;
 
-use crate::index::fasta::FastaError;
+use libgtf::error::FastaError;
 
 #[derive(Error, Debug)]
 pub enum IndexError {

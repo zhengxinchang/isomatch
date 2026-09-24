@@ -11,21 +11,19 @@ use serde::Serialize;
 
 use crate::{
     IndexArgs,
-    // fasta::{self, FastaReader},
-    index::format::ChromBlockBuilder,
     traits::ArgValidate,
     utils::{greetings2, print_json_block, require_file, save_json_block},
 };
 pub use anyhow::Result as AnyResult;
-use fasta::FastaReader;
+use libgtf::{fasta::{FaType, FastaReader}, index::builder::IndexBuilder};
 use libgtf::gtf::Strand;
-pub mod attributes_index;
-pub mod builder;
-pub mod fasta;
-pub mod format;
+// pub mod attributes_index;
+// pub mod builder;
 // pub mod gtf;
+
 pub use libgtf::gtf;
 pub mod index_error;
+pub use libgtf::index::{AttrIndexBuilder, ChromBlockBuilder};
 // pub mod reader;
 
 
@@ -235,12 +233,12 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         info!("Loading Reference and/or Sequence FASTA...");
     }
 
-    let mut ref_far = FastaReader::open(args.ref_fa.clone(), fasta::FaType::Ref)
+    let mut ref_far = FastaReader::open(args.ref_fa.clone(), FaType::Ref)
         .with_context(|| format!("Can not load reference sequence: {}", args.ref_fa.display()))?;
 
     let mut seq_far = if let Some(seqfa) = &args.seqfa {
         Some(
-            FastaReader::open(seqfa.clone(), fasta::FaType::Seq).with_context(|| {
+            FastaReader::open(seqfa.clone(), FaType::Seq).with_context(|| {
                 format!(
                     "Can not load sequence from reference genome: {}",
                     seqfa.display()
@@ -330,7 +328,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
     let isomx_file = File::create(&isomx_path)
         .with_context(|| format!("Can not create output file: {}", isomx_path.display()))?;
     output_cleanup.track(isomx_path.clone());
-    let mut builder = builder::IndexBuilder::new(
+    let mut builder = IndexBuilder::new(
         isomx_file,
         chrom_names,
         profile.file_size,
@@ -348,7 +346,7 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
         .with_context(|| format!("cannot create isoms at {}", isoms_path.display()))?;
     output_cleanup.track(isoms_path.clone());
     let mut attr_builder =
-        attributes_index::AttrIndexBuilder::new(isoms_file, total_indexable_tx, &profile.md5)
+        AttrIndexBuilder::new(isoms_file, total_indexable_tx, &profile.md5)
             .with_context(|| format!("cannot init AttrIndexBuilder at {}", isoms_path.display()))?;
 
     let mut current_chrom_id = 0u16;
@@ -394,7 +392,8 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
 
         tx_structure.set_gidx(next_written_tx_idx);
         let attr_string = tx_structure.attr_string.clone();
-        chrom_block
+        let gene_id = tx_structure.gene_id.clone();
+        let summary = chrom_block
             .as_mut()
             .context("Can not access chromblock")?
             .add_tx(
@@ -402,8 +401,13 @@ pub fn run_index(args: &mut IndexArgs) -> AnyResult<()> {
                 &chrom_name,
                 &mut ref_far,
                 &mut seq_far,
-                &mut stats,
             )?;
+        stats.observe_tx(
+            summary.strand,
+            summary.exon_count,
+            summary.canonical_junction_count,
+            &gene_id,
+        );
 
         if let Some(attr_string) = attr_string {
             attr_builder

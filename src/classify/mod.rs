@@ -18,13 +18,16 @@ use crate::{
         ref_ptir_manager::RefPTIRManager,
     },
     index::{
-        fasta::{FaType, FastaReader},
+      
         run_index,
     },
+    
     region::{RegionDb, RegionType},
     traits::ArgValidate,
     utils::{check_index_ready, greetings2, print_json_block, require_file, save_json_block},
 };
+
+use libgtf::fasta::{FaType, FastaReader};
 
 pub mod class_code;
 pub mod classify_error;
