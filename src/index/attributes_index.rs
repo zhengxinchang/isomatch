@@ -1,13 +1,13 @@
 use std::{
     fs::File,
-    io::{BufWriter, Read, Seek, SeekFrom, Write},
-    path::Path,
+    io::{BufWriter, Seek, SeekFrom, Write},
+
 };
 
-use log::error;
 
-use crate::{constants::ISOMS_VERSION, index::index_error::IndexError};
+use crate::{ index::index_error::IndexError};
 
+use libgtf::index::ISOMS_VERSION;
 /// Sidecar file layout (.isomattr):
 ///   [Header:     41 bytes - magic(5) + version(4) + md5(16) + total_tx_n(8) + span_table_off(8)]
 ///   [Blob:       variable  — per-tx zstd-compressed attr bytes, written in tx_gidx order]
@@ -131,136 +131,3 @@ impl AttrIndexBuilder {
     }
 }
 
-pub struct AttrIndexHeader {
-    pub magic: [u8; 5],
-    pub version: u32,
-    pub md5: [u8; 16],
-    pub total_tx_n: u64,
-    pub span_table_off: u64,
-}
-
-pub struct AttrIndexReader {
-    file: File,
-    header: AttrIndexHeader,
-    // total_tx_n: u32,
-    // span_table_off: u64,
-}
-
-impl AttrIndexReader {
-    fn read_header(file: &mut File) -> Result<AttrIndexHeader, IndexError> {
-        let mut magic = [0u8; 5];
-        file.read_exact(&mut magic)
-            .map_err(|e| IndexError::FailReadIndex {
-                reason: format!("Can not read magic in AttrIndex file: {}", e),
-            })?;
-        if magic != MAGIC {
-            return Err(IndexError::FailReadIndex {
-                reason: format!("invalid magic: expected ISOMS, got {:?}", magic),
-            });
-        }
-
-        let mut version = [0u8; 4];
-        file.read_exact(&mut version)
-            .map_err(|e| IndexError::FailReadIndex {
-                reason: format!("Can not read version in AttrIndex file: {}", e),
-            })?;
-        let version = u32::from_le_bytes(version);
-        if version != ISOMS_VERSION {
-            error!(
-                "The isomx version ({}) is outdated, please rebuild the index.",
-                version
-            );
-            return Err(IndexError::FailReadIndex {
-                reason: format!("Index version does not match, please rebuild index"),
-            });
-        }
-
-        let mut md5 = [0u8; 16];
-        file.read_exact(&mut md5)
-            .map_err(|e| IndexError::FailReadIndex {
-                reason: format!("Can not read version in AttrIndex file: {}", e),
-            })?;
-
-        let mut buf8 = [0u8; 8];
-        file.read_exact(&mut buf8)
-            .map_err(|e| IndexError::FailReadIndex {
-                reason: format!("Can not read total tx number in AttrIndex file: {}", e),
-            })?;
-        let total_tx_n = u64::from_le_bytes(buf8);
-
-        let mut buf8 = [0u8; 8];
-        file.read_exact(&mut buf8)
-            .map_err(|e| IndexError::FailReadIndex {
-                reason: format!("Can not read span table offset in AttrIndex file: {}", e),
-            })?;
-        let span_table_off = u64::from_le_bytes(buf8);
-
-        Ok(AttrIndexHeader {
-            magic,
-            version,
-            md5,
-            total_tx_n,
-            span_table_off,
-        })
-    }
-
-    pub fn load_header<P: AsRef<Path>>(path: P) -> Result<AttrIndexHeader, IndexError> {
-        let mut file = File::open(path).map_err(|e| IndexError::FailReadIndex {
-            reason: format!("Can not read AttrIndex file: {}", e),
-        })?;
-        Self::read_header(&mut file)
-    }
-
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, IndexError> {
-        let mut file = File::open(path).map_err(|e| IndexError::FailReadIndex {
-            reason: format!("Can not read AttrIndex file: {}", e),
-        })?;
-
-        let header = Self::read_header(&mut file)?;
-        Ok(Self { file, header })
-    }
-
-    pub fn md5(&self) -> [u8; 16] {
-        self.header.md5
-    }
-
-    pub fn version(&self) -> u32 {
-        self.header.version
-    }
-
-    /// Returns the decompressed attr bytes for `tx_idx`, or `None` if not set.
-    pub fn get_attr(&mut self, tx_idx: u64) -> Result<Option<Vec<u8>>, IndexError> {
-        if tx_idx >= self.header.total_tx_n {
-            return Ok(None);
-        }
-        let e: fn(std::io::Error) -> IndexError = |err| IndexError::FailReadIndex {
-            reason: err.to_string(),
-        };
-
-        // Read the RawStringSpan for this tx_idx from the span table.
-        let span_entry_off = self.header.span_table_off + tx_idx * 12;
-        self.file.seek(SeekFrom::Start(span_entry_off)).map_err(e)?;
-        let mut buf8 = [0u8; 8];
-        self.file.read_exact(&mut buf8).map_err(e)?;
-        let offset = u64::from_le_bytes(buf8);
-        let mut buf4 = [0u8; 4];
-        self.file.read_exact(&mut buf4).map_err(e)?;
-        let length = u32::from_le_bytes(buf4);
-
-        if length == 0 {
-            return Ok(None);
-        }
-
-        // Read and decompress the blob.
-        self.file.seek(SeekFrom::Start(offset)).map_err(e)?;
-        let compressed_len = length as usize;
-        let mut compressed = vec![0u8; compressed_len];
-        self.file.read_exact(&mut compressed).map_err(e)?;
-        let data =
-            zstd::decode_all(compressed.as_slice()).map_err(|err| IndexError::FailReadIndex {
-                reason: err.to_string(),
-            })?;
-
-        Ok(Some(data))
-    }
-}

@@ -34,4 +34,7 @@ pub enum MergeError {
         source_file_id: usize,
         input_count: usize,
     },
+
+    #[error(transparent)]
+    LibGtf(#[from] libgtf::error::Error)
 }

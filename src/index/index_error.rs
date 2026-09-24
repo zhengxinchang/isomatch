@@ -1,3 +1,4 @@
+use libgtf::error::IndexDataError;
 use thiserror::Error;
 
 use crate::index::fasta::FastaError;
@@ -24,4 +25,7 @@ pub enum IndexError {
 
     #[error(transparent)]
     IO(#[from] std::io::Error),
+
+    #[error(transparent)]
+    IndexData(#[from] IndexDataError),
 }

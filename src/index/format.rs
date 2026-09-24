@@ -7,12 +7,12 @@ use crate::core::string_pool::StringPool;
 use crate::core::tx_base::TxBase;
 use crate::index::IndexStats;
 use crate::index::fasta::FastaReader;
-use crate::index::gtf::Transcript;
+
 use crate::index::index_error::IndexError;
 use crate::utils;
 
 use libgtf::gtf::Strand;
-
+use libgtf::gtf::Transcript;
 // // Flag for index status
 // // bit 0, sequence from reference genome (0) or tx sequence (1)
 // // bit 1, gtf format, 0: plan text, 1: bgzipped

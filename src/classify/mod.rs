@@ -276,7 +276,7 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
             }
         }
 
-        let Some(query_ptir) = query_ptir_manager.next_record() else {
+        let Some(query_ptir) = query_ptir_manager.next_record()? else {
             break;
         };
 

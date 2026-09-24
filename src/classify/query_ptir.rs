@@ -7,12 +7,10 @@ use std::{
 
 use crate::{
     classify::classify_error::ClassifyError,
-    core::{ptir::PTIR, tx_type::TxType},
-    index::{
-        attributes_index::AttrIndexReader,
-        reader::{ChromBlockReader, IndexReader},
-    },
+    core::{ptir::PTIR, tx_type::TxType}, utils::warn_missing_seqids,
 };
+
+use libgtf::index::{attributes_index::AttrIndexReader, reader::{ChromBlockReader, IndexReader}};
 
 use libgtf::gtf::Strand;
 
@@ -113,6 +111,12 @@ impl QueryPTIRManager {
         attr_file_name.add_extension("isoms");
 
         let mut index_reader = IndexReader::open(File::open(&index_file_name)?, 0)?;
+        
+        if !index_reader.missing_seqids.is_empty() {
+            warn_missing_seqids(&index_reader);
+        }
+
+        
         let attr_index_reader = AttrIndexReader::open(&attr_file_name)?;
 
         let total_tx_n = usize::try_from(index_reader.header.total_tx_n).map_err(|_| {
@@ -147,28 +151,22 @@ impl QueryPTIRManager {
         self.total_tx_n
     }
 
-    pub fn next_record(&mut self) -> Option<QueryPTIR> {
+    pub fn next_record(&mut self) -> Result<Option<QueryPTIR>, ClassifyError> {
         loop {
-            let txbase = match self.current_reader.next_record() {
-                Ok(Some(tb)) => tb,
-                Ok(None) => {
+            let txbase = match self.current_reader.next_record()? {
+                Some(txbase) => txbase,
+                None => {
                     if self.chrom_idx >= self.index_chrnames.len() {
-                        return None;
+                        return Ok(None);
                     }
-                    let next_chrom = self.index_chrnames[self.chrom_idx].clone();
+
+                    let next_chrom = &self.index_chrnames[self.chrom_idx];
                     self.current_reader = self
                         .index_reader
-                        .get_chromosome_reader(&next_chrom)
-                        .unwrap_or_else(|e| {
-                            eprintln!("error loading chromosome {}: {}", next_chrom, e);
-                            std::process::exit(1);
-                        });
+                        .get_chromosome_reader(next_chrom)?;
+
                     self.chrom_idx += 1;
                     continue;
-                }
-                Err(e) => {
-                    eprintln!("error reading next transcript from query index: {}", e);
-                    std::process::exit(1);
                 }
             };
             let tx_gidx = txbase.tx_idx;
@@ -181,14 +179,13 @@ impl QueryPTIRManager {
             );
             let attr_bytes = self
                 .attr_index_reader
-                .get_attr(tx_gidx)
-                .unwrap_or(None)
+                .get_attr(tx_gidx)?
                 .unwrap_or_default();
-            return Some(QueryPTIR::new(
-                &self.current_reader.chrom_name,
-                ptir,
-                attr_bytes,
-            ));
+        return Ok(Some(QueryPTIR::new(
+            &self.current_reader.chrom_name,
+            ptir,
+            attr_bytes,
+        )));
         }
     }
 }

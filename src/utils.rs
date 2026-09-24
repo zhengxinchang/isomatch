@@ -1,6 +1,7 @@
 use ahash::RandomState;
 use flate2::bufread::MultiGzDecoder;
 use libgtf::index::ISOMX_VERSION;
+use log::warn;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::format;
@@ -13,10 +14,13 @@ use thiserror::Error;
 use xxhash_rust::xxh3::xxh3_128;
 
 use crate::constants;
-use crate::{
-    // core::tx_strand::Strand,
-    index::{attributes_index::AttrIndexReader, reader::IndexReader},
-};
+// use crate::{
+//     // core::tx_strand::Strand,
+//     index::{attributes_index::AttrIndexReader, reader::IndexReader},
+// };
+
+use libgtf::index::IndexReader;
+use libgtf::index::AttrIndexReader;
 
 use libgtf::gtf::Strand;
 
@@ -290,7 +294,7 @@ pub fn check_index_ready<P: AsRef<Path>>(gtf_path: P) -> bool {
         Ok(header) => header,
         Err(_) => return false,
     };
-    if attr_header.version != constants::ISOMS_VERSION || attr_header.md5 != index_header.md5 {
+    if attr_header.version != libgtf::index::ISOMS_VERSION || attr_header.md5 != index_header.md5 {
         return false;
     }
 
@@ -312,4 +316,13 @@ pub fn check_index_ready<P: AsRef<Path>>(gtf_path: P) -> bool {
     }
 
     index_header.md5 == hasher.digest128().to_le_bytes()
+}
+
+
+pub fn warn_missing_seqids(reader: &IndexReader) {
+                warn!("Index skipped transcripts on missing reference seqid(s):",);
+            warn!("{}", reader.missing_seqids.join(","));
+            warn!(
+                "Those transcripts will not be processed. You may consider redo index step with proper reference genome FASTA."
+            );
 }

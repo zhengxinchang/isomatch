@@ -26,7 +26,8 @@ pub mod format;
 // pub mod gtf;
 pub use libgtf::gtf;
 pub mod index_error;
-pub mod reader;
+// pub mod reader;
+
 
 #[derive(Debug, Default, Serialize)]
 pub struct IndexStats {

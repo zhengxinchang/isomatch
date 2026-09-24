@@ -10,10 +10,13 @@ use rust_lapper::{Interval, Lapper};
 
 use crate::{
     classify::{classify_error::ClassifyError, ref_ptir::RefPTIR},
-    core::{ptir::PTIR, string_pool::StringPool},
-    index::reader::IndexReader,
-    traits::LogMemSize,
+    core::ptir::PTIR,
+    // index::reader::IndexReader,
+    traits::LogMemSize, utils::warn_missing_seqids,
 };
+
+use libgtf::index::IndexReader;
+use libgtf::index::StringPool;
 
 use libgtf::gtf::Strand;
 
@@ -296,6 +299,11 @@ impl RefPTIRManager {
         })?;
 
         let mut index_reader = IndexReader::open(f, 0)?;
+
+
+        if !index_reader.missing_seqids.is_empty() {
+            warn_missing_seqids(&index_reader);
+        }
 
         let mut attr_string_pool = StringPool::new();
 

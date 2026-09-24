@@ -29,4 +29,7 @@ pub enum ClassifyError {
 
     #[error(transparent)]
     IndexError(#[from] crate::index::index_error::IndexError),
+
+    #[error(transparent)]
+    LibGtf(#[from] libgtf::error::Error),
 }

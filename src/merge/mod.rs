@@ -2,7 +2,8 @@ use crate::IndexArgs;
 use crate::constants::ISOM_GTF_SCHEMA;
 use crate::core::ptir::PTIR;
 use crate::core::tx_base::TxBase;
-use crate::index::reader::ChromBlockReader;
+use crate::utils::warn_missing_seqids;
+use libgtf::index::{ChromBlockReader, IndexReader};
 use crate::index::run_index;
 use crate::merge::grouped_ptirs::GroupedPTIR;
 use crate::merge::policy::MergePolicyUsed;
@@ -13,7 +14,7 @@ use crate::utils::greetings2;
 use crate::utils::print_json_block;
 use crate::utils::require_file;
 use crate::utils::save_json_block;
-use crate::{MergeArgs, index::reader::IndexReader, traits::ArgValidate};
+use crate::{MergeArgs, traits::ArgValidate};
 use libgtf::gtf::Strand;
 
 use ids::assign_global_ids;
@@ -143,12 +144,17 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             Ok(reader) => reader,
             Err(e) => {
                 return Err(anyhow!(
-                    "Can not load index {}: {}",
+                    "Can not load index {}: {}, please rebuild the index.",
                     index_path.display(),
                     e
                 ));
             }
         };
+
+
+        if !reader.missing_seqids.is_empty() {
+            warn_missing_seqids(&reader);
+        }
 
         fhs.push(reader);
     }
@@ -223,9 +229,11 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         info!("Merging chromosome {}", chrom_name);
         let mut chrom_block_readers: Vec<ChromBlockReader> = Vec::new();
         for reader in &mut fhs {
-            if let Ok(chrom_block_reader) = reader.get_chromosome_reader(chrom_name) {
-                chrom_block_readers.push(chrom_block_reader);
-            }
+
+            if !reader.chrom_name_to_id.contains_key(chrom_name) { continue; }
+            chrom_block_readers.push(reader.get_chromosome_reader(chrom_name)?);
+
+
         }
 
         // k-way merge, build super cluster
@@ -242,13 +250,13 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         let mut cluster_max_end = first_ptir.end;
         super_cluster.push(first_ptir);
 
-        for ptir in kway_merger {
+        while let Some(ptir) = kway_merger.try_next()? {
             if ptir.start <= cluster_max_end {
                 cluster_max_end = cluster_max_end.max(ptir.end);
                 super_cluster.push(ptir);
                 continue;
             }
-            // global_scluster_id += 1;
+
             process_super_cluster(
                 chrom_name,
                 &mut super_cluster,
@@ -263,10 +271,12 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
                 &guide_tss_index,
                 &guide_tes_index,
             )?;
+
             super_cluster.clear();
             cluster_max_end = ptir.end;
-            super_cluster.push(ptir); // first ptir for next super cluster
+            super_cluster.push(ptir);
         }
+
 
         // process the last super cluster
         // global_scluster_id += 1;
@@ -458,18 +468,7 @@ fn os_str_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
     value.to_string_lossy().as_bytes().to_vec()
 }
 
-impl Iterator for KwayMerger {
-    type Item = PTIR;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.try_next() {
-            Ok(item) => item,
-            Err(e) => {
-                panic!("Can not read next ptir because: {}", e);
-            }
-        }
-    }
-}
 pub fn add_output_header(bufwriter: &mut dyn Write, args: &MergeArgs) -> AnyResult<()> {
     // ##ISOM <VERSION> version = 1.0; link = "github.."
     // ##ISOM <SAMPLE> ID="S1"; Name="xxx.gtf.gz"
