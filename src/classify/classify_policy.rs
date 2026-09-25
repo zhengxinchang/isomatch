@@ -146,7 +146,7 @@ impl CandidateHit {
                     PreClass::Fsm(_) | PreClass::Ism(_) => {
                         self.endpoint_total_diff() < other.endpoint_total_diff()
                     }
-                    _ => return true,
+                    _ => true,
                 }
             }
             PreClass::AnyKnownJunction => {
@@ -896,7 +896,7 @@ fn has_junction_shared_by_multiple_genes(
 }
 
 fn update_nearest(current: &mut Option<i32>, value: i32) {
-    if current.map_or(true, |existing| value.abs() < existing.abs()) {
+    if current.is_none_or(|existing| value.abs() < existing.abs()) {
         *current = Some(value);
     }
 }
@@ -1081,7 +1081,7 @@ pub fn update_group4_regions(
             }
 
             let peak_dist = polya_dist(peak, strand, query);
-            if dist.map_or(true, |current| peak_dist.abs() < current.abs()) {
+            if dist.is_none_or(|current| peak_dist.abs() < current.abs()) {
                 dist = Some(peak_dist);
             }
         }

@@ -1,4 +1,4 @@
-use crate::core::core_error::TxBaseError;
+use libgtf::error::IndexDataError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -13,7 +13,7 @@ pub enum MergeError {
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    Core(#[from] TxBaseError),
+    Core(#[from] IndexDataError),
 
     #[error("Strand is not correct:{reason}")]
     InvaidStrand { reason: String },
@@ -36,5 +36,5 @@ pub enum MergeError {
     },
 
     #[error(transparent)]
-    LibGtf(#[from] libgtf::error::Error)
+    LibGtf(#[from] libgtf::error::Error),
 }

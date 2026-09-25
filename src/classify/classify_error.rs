@@ -1,4 +1,4 @@
-use crate::core::core_error::TxBaseError;
+use libgtf::error::IndexDataError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -13,7 +13,7 @@ pub enum ClassifyError {
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    Core(#[from] TxBaseError),
+    Core(#[from] IndexDataError),
 
     #[error("Strand is not correct:{reason}")]
     InvaidStrand { reason: String },
@@ -26,9 +26,6 @@ pub enum ClassifyError {
 
     #[error("Failed to parse ISOM_SRC record: {reason}")]
     ParseSrcRecord { reason: String },
-
-    #[error(transparent)]
-    IndexError(#[from] crate::index::index_error::IndexError),
 
     #[error(transparent)]
     LibGtf(#[from] libgtf::error::Error),

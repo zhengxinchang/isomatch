@@ -1,0 +1,111 @@
+use std::collections::HashMap;
+
+use crate::traits::{Encodable, PartialLoad};
+
+use crate::error::IndexDataError;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct StringSpan {
+    /// Byte offset within the string-data section of the index file.
+    pub offset: u64,
+    /// Length in bytes of the UTF-8 encoded string.
+    pub byte_len: u64,
+}
+
+impl StringSpan {
+    pub const EMPTY: Self = Self {
+        offset: 0,
+        byte_len: 0,
+    };
+
+    pub fn is_empty(self) -> bool {
+        self.byte_len == 0
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct StringPool {
+    strings: Vec<u8>,
+    index: HashMap<String, StringSpan>,
+}
+
+impl StringPool {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add(&mut self, s: &str) -> Result<StringSpan, IndexDataError> {
+        if self.index.len() >= u64::MAX as usize {
+            return Err(IndexDataError::StringPoolTooLarge);
+        }
+        if let Some(span) = self.index.get(s) {
+            return Ok(*span);
+        }
+
+        let offset =
+            u64::try_from(self.strings.len()).map_err(|_| IndexDataError::StringPoolTooLarge)?;
+        let byte_len = u64::try_from(s.len()).map_err(|_| IndexDataError::StringPoolTooLarge)?;
+        self.strings.extend_from_slice(s.as_bytes());
+        let span = StringSpan { offset, byte_len };
+        self.index.insert(s.to_string(), span);
+        Ok(span)
+    }
+
+    /// Drop the dedup index after building; only the raw byte buffer is needed for reads.
+    pub fn shrink_to_read_only(&mut self) {
+        self.index = HashMap::new();
+    }
+
+    /// Heap bytes consumed by this pool (strings buffer + index table).
+    pub fn heap_bytes(&self) -> usize {
+        self.strings.capacity()
+            + self.index.capacity()
+                * (std::mem::size_of::<String>() + std::mem::size_of::<StringSpan>())
+    }
+
+    pub fn get(&self, span: StringSpan) -> Result<&str, IndexDataError> {
+        let offset = usize::try_from(span.offset)
+            .map_err(|_| IndexDataError::InvalidInternId { id: span.offset })?;
+        let end = offset
+            + usize::try_from(span.byte_len)
+                .map_err(|_| IndexDataError::InvalidInternId { id: span.offset })?;
+        let bytes = self
+            .strings
+            .get(offset..end)
+            .ok_or(IndexDataError::InvalidInternId { id: span.offset })?;
+        std::str::from_utf8(bytes).map_err(|_| IndexDataError::InvalidInternId { id: span.offset })
+    }
+}
+
+impl Encodable for StringPool {
+    type Error = IndexDataError;
+    fn encode_to<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, Self::Error> {
+        writer
+            .write_all(&self.strings)
+            .map_err(|e| IndexDataError::Io(e.to_string()))?;
+        Ok(self.strings.len())
+    }
+}
+
+impl PartialLoad for StringPool {
+    type Error = IndexDataError;
+    type Args = ();
+    fn load_range<R: std::io::Read + std::io::Seek>(
+        reader: &mut R,
+        offset: u64,
+        len: usize,
+        _args: Self::Args,
+    ) -> Result<Self, Self::Error> {
+        let mut buf = vec![0; len];
+        reader
+            .seek(std::io::SeekFrom::Start(offset))
+            .map_err(|e| IndexDataError::Io(e.to_string()))?;
+        reader
+            .read_exact(&mut buf)
+            .map_err(|e| IndexDataError::Io(e.to_string()))?;
+        Ok(Self {
+            strings: buf,
+            index: HashMap::new(), // Index is not needed for partial loads
+        })
+    }
+}

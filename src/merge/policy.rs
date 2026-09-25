@@ -69,6 +69,7 @@ pub enum TerminalRefineMode {
     Both,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn merge_tx_cluster(
     chrom: &str,
     n_exon: u16,
@@ -139,10 +140,10 @@ pub fn merge_tx_cluster(
             grpptir.profile_non_canonical_ptirs(chrom, args, guide_tss, guide_tes)?;
         }
 
-        grpptirs.extend(rest_grpptirs.into_iter());
-        return Ok(grpptirs);
+        grpptirs.extend(rest_grpptirs);
+        Ok(grpptirs)
     } else {
-        return merge_mono_exon(
+        merge_mono_exon(
             chrom,
             cluster_idx,
             scluster,
@@ -150,7 +151,7 @@ pub fn merge_tx_cluster(
             args,
             guide_tss,
             guide_tes,
-        );
+        )
     }
 }
 
@@ -436,7 +437,7 @@ pub fn noncannonical_to_canonical(
     }
     let mut rest = Vec::new();
     for (ptir_idx, (flag, grptir_idx, _, _)) in marked_ptirs.into_iter() {
-        if flag == true {
+        if flag {
             // absorbton
             grpptirs[grptir_idx].add_non_canonical_ptir(&super_cluster[ptir_idx], ptir_idx)?;
         } else {
@@ -474,7 +475,7 @@ pub fn merge_rest_noncanonical(
         return Ok(Vec::new());
     }
 
-    let mut sorted_tx_indice: Vec<usize> = rest_non_canonical_ptirs.iter().copied().collect();
+    let mut sorted_tx_indice: Vec<usize> = rest_non_canonical_ptirs.to_vec();
 
     sorted_tx_indice.sort_by(|&a, &b| {
         let ja = scluster[a].junction_vec_ref();

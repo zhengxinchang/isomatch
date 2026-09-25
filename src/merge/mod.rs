@@ -1,9 +1,6 @@
 use crate::IndexArgs;
 use crate::constants::ISOM_GTF_SCHEMA;
 use crate::core::ptir::PTIR;
-use crate::core::tx_base::TxBase;
-use crate::utils::warn_missing_seqids;
-use libgtf::index::{ChromBlockReader, IndexReader};
 use crate::index::run_index;
 use crate::merge::grouped_ptirs::GroupedPTIR;
 use crate::merge::policy::MergePolicyUsed;
@@ -14,8 +11,10 @@ use crate::utils::greetings2;
 use crate::utils::print_json_block;
 use crate::utils::require_file;
 use crate::utils::save_json_block;
+use crate::utils::warn_missing_seqids;
 use crate::{MergeArgs, traits::ArgValidate};
 use libgtf::gtf::Strand;
+use libgtf::index::{ChromBlockReader, IndexReader, TxBase};
 
 use ids::assign_global_ids;
 use serde::Serialize;
@@ -151,8 +150,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             }
         };
 
-
-        if !reader.missing_seqids.is_empty() {
+        if !reader.missing_seqids().is_empty() {
             warn_missing_seqids(&reader);
         }
 
@@ -164,7 +162,7 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     let mut chrom_names = Vec::new();
     let mut seen_chroms = HashSet::new();
     for reader in &fhs {
-        for chrom_name in &reader.chrom_names {
+        for chrom_name in reader.chromosome_names() {
             if seen_chroms.insert(chrom_name.clone()) {
                 chrom_names.push(chrom_name.clone());
             }
@@ -229,11 +227,10 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         info!("Merging chromosome {}", chrom_name);
         let mut chrom_block_readers: Vec<ChromBlockReader> = Vec::new();
         for reader in &mut fhs {
-
-            if !reader.chrom_name_to_id.contains_key(chrom_name) { continue; }
+            if !reader.contains_chromosome(chrom_name) {
+                continue;
+            }
             chrom_block_readers.push(reader.get_chromosome_reader(chrom_name)?);
-
-
         }
 
         // k-way merge, build super cluster
@@ -277,7 +274,6 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
             super_cluster.push(ptir);
         }
 
-
         // process the last super cluster
         // global_scluster_id += 1;
         process_super_cluster(
@@ -318,16 +314,17 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
 
     let msg = serde_json::to_string_pretty(&stats)?;
 
-    merge_info_writer.write(msg.as_bytes())?;
+    merge_info_writer.write_all(msg.as_bytes())?;
     merge_info_writer.flush()?;
 
     info!("Finished!");
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn process_super_cluster(
     chrom_name: &str,
-    super_cluster: &mut Vec<PTIR>,
+    super_cluster: &mut [PTIR],
     global_gene_id: &mut u32,
     global_tx_id: &mut u32,
     stats: &mut MergeStats,
@@ -351,7 +348,7 @@ pub fn process_super_cluster(
     > = FxHashMap::default();
     for (ptir_idx, ptir) in super_cluster.iter().enumerate() {
         let key: (Strand, u16) = (ptir.strand, ptir.n_exons);
-        let cluster = clusters.entry(key).or_insert(Vec::new());
+        let cluster = clusters.entry(key).or_default();
         cluster.push(ptir_idx);
     }
 
@@ -411,7 +408,7 @@ impl KwayMerger {
         let mut heap: BinaryHeap<Reverse<(TxBase, usize, usize)>> = BinaryHeap::new();
 
         for (idx, reader) in readers.iter_mut().enumerate() {
-            let file_id = reader.file_id;
+            let file_id = reader.file_id();
             if let Some(tx_base) = reader.next_record()? {
                 heap.push(Reverse((tx_base, file_id, idx)));
             }
@@ -427,7 +424,7 @@ impl KwayMerger {
 
         let (next_tx_base, file_id) = {
             let state = &mut self.readers[vec_idx];
-            (state.next_record()?, state.file_id)
+            (state.next_record()?, state.file_id())
         };
 
         if let Some(next_tx_base) = next_tx_base {
@@ -437,9 +434,9 @@ impl KwayMerger {
         let ptir = PTIR::from_tx_base(
             tx_base,
             file_id,
-            &self.readers[vec_idx].junction_pool,
-            &self.readers[vec_idx].splice_site_pool,
-            &self.readers[vec_idx].string_pool,
+            self.readers[vec_idx].junction_pool(),
+            self.readers[vec_idx].splice_site_pool(),
+            self.readers[vec_idx].string_pool(),
         );
 
         Ok(Some(ptir))
@@ -467,7 +464,6 @@ fn os_str_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
 fn os_str_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
     value.to_string_lossy().as_bytes().to_vec()
 }
-
 
 pub fn add_output_header(bufwriter: &mut dyn Write, args: &MergeArgs) -> AnyResult<()> {
     // ##ISOM <VERSION> version = 1.0; link = "github.."

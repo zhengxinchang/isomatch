@@ -1,5 +1,6 @@
-use crate::core::{ptir::PTIR, string_pool::StringSpan, tx_type::TxType};
+use crate::core::{ptir::PTIR, tx_type::TxType};
 use libgtf::gtf::Strand;
+use libgtf::index::StringSpan;
 
 #[derive(Debug, Clone)]
 pub struct RefPTIR {
@@ -62,7 +63,7 @@ impl RefPTIR {
             .collect()
     }
 
-    pub fn reference_gene_name<'a>(&'a self) -> &'a str {
+    pub fn reference_gene_name(&self) -> &str {
         if self.gene_name.is_empty() {
             self.base.source_geneid.as_str()
         } else {

@@ -64,8 +64,8 @@ impl GroupedPTIR {
         GroupedPTIR {
             gene_id: 0,
             tx_id: 0,
-            strand: strand.clone(),
-            n_exon: n_exon,
+            strand: *strand,
+            n_exon,
             all_canonical_ptir_counts: 0,
             all_canonical_ptir_list: Vec::new(),
             canonical_junction_range: Vec::new(),
@@ -486,6 +486,7 @@ impl GroupedPTIR {
         exons
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn write_gtf_block(
         &self,
         chrom_name: &str,
@@ -989,6 +990,7 @@ fn select_terminal(
     ))
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn select_repr_terminals(
     chrom: &str,
     entries: &[GroupedPTIREntry],

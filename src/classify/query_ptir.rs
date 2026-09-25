@@ -7,10 +7,11 @@ use std::{
 
 use crate::{
     classify::classify_error::ClassifyError,
-    core::{ptir::PTIR, tx_type::TxType}, utils::warn_missing_seqids,
+    core::{ptir::PTIR, tx_type::TxType},
+    utils::warn_missing_seqids,
 };
 
-use libgtf::index::{attributes_index::AttrIndexReader, reader::{ChromBlockReader, IndexReader}};
+use libgtf::index::{AttrIndexReader, ChromBlockReader, IndexReader};
 
 use libgtf::gtf::Strand;
 
@@ -111,21 +112,20 @@ impl QueryPTIRManager {
         attr_file_name.add_extension("isoms");
 
         let mut index_reader = IndexReader::open(File::open(&index_file_name)?, 0)?;
-        
-        if !index_reader.missing_seqids.is_empty() {
+
+        if !index_reader.missing_seqids().is_empty() {
             warn_missing_seqids(&index_reader);
         }
 
-        
         let attr_index_reader = AttrIndexReader::open(&attr_file_name)?;
 
-        let total_tx_n = usize::try_from(index_reader.header.total_tx_n).map_err(|_| {
+        let total_tx_n = usize::try_from(index_reader.transcript_count()).map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "index total_tx_n exceeded usize",
             )
         })?;
-        let index_chrnames = index_reader.chrom_names.clone();
+        let index_chrnames = index_reader.chromosome_names().to_vec();
 
         let first_chrom = index_chrnames.first().ok_or_else(|| {
             ClassifyError::Io(std::io::Error::new(
@@ -161,31 +161,29 @@ impl QueryPTIRManager {
                     }
 
                     let next_chrom = &self.index_chrnames[self.chrom_idx];
-                    self.current_reader = self
-                        .index_reader
-                        .get_chromosome_reader(next_chrom)?;
+                    self.current_reader = self.index_reader.get_chromosome_reader(next_chrom)?;
 
                     self.chrom_idx += 1;
                     continue;
                 }
             };
-            let tx_gidx = txbase.tx_idx;
+            let tx_gidx = txbase.tx_idx();
             let ptir = PTIR::from_tx_base(
                 txbase,
                 0,
-                &self.current_reader.junction_pool,
-                &self.current_reader.splice_site_pool,
-                &self.current_reader.string_pool,
+                self.current_reader.junction_pool(),
+                self.current_reader.splice_site_pool(),
+                self.current_reader.string_pool(),
             );
             let attr_bytes = self
                 .attr_index_reader
                 .get_attr(tx_gidx)?
                 .unwrap_or_default();
-        return Ok(Some(QueryPTIR::new(
-            &self.current_reader.chrom_name,
-            ptir,
-            attr_bytes,
-        )));
+            return Ok(Some(QueryPTIR::new(
+                self.current_reader.chromosome_name(),
+                ptir,
+                attr_bytes,
+            )));
         }
     }
 }

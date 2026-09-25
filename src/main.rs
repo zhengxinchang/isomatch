@@ -15,8 +15,6 @@ use crate::{index::run_index, merge::run_merge};
 use clap::ValueEnum;
 pub mod classify;
 pub mod constants;
-// pub mod fasta;
-// pub mod gtf;
 pub mod index;
 pub mod merge;
 pub mod tools;

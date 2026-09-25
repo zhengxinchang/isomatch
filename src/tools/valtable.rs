@@ -393,10 +393,10 @@ fn extract_gtf_attr(attrs: &str, key: &str) -> String {
         if key_part != key {
             continue;
         }
-        if let Some(q_start) = attr.find('"') {
-            if let Some(q_len) = attr[q_start + 1..].find('"') {
-                return attr[q_start + 1..q_start + 1 + q_len].to_string();
-            }
+        if let Some(q_start) = attr.find('"')
+            && let Some(q_len) = attr[q_start + 1..].find('"')
+        {
+            return attr[q_start + 1..q_start + 1 + q_len].to_string();
         }
         if let Some(val) = attr.split_ascii_whitespace().nth(1) {
             return val.to_string();

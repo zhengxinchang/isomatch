@@ -16,9 +16,6 @@ use crate::{
 pub use anyhow::Result as AnyResult;
 use libgtf::{BuildConfig, BuildEvent, BuildReport, build_index_with_events};
 
-pub use libgtf::gtf;
-pub mod index_error;
-
 #[derive(Debug, Serialize)]
 pub struct IndexStats {
     pub transcript_count: u64,

@@ -17,11 +17,7 @@ use crate::{
         query_ptir::QueryPTIRManager,
         ref_ptir_manager::RefPTIRManager,
     },
-    index::{
-      
-        run_index,
-    },
-    
+    index::run_index,
     region::{RegionDb, RegionType},
     traits::ArgValidate,
     utils::{check_index_ready, greetings2, print_json_block, require_file, save_json_block},
@@ -271,7 +267,7 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
     loop {
         {
             processed_tx += 1;
-            if processed_tx % 10000 == 0 {
+            if processed_tx.is_multiple_of(10000) {
                 info!(
                     "Classified {} transcripts",
                     processed_tx.to_formatted_string(&Locale::en)
@@ -306,7 +302,7 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
 
     let mut classify_info_writer = File::create(&classify_info_path)?;
     let classify_info_json = serde_json::to_string_pretty(&stats)?;
-    classify_info_writer.write(classify_info_json.as_bytes())?;
+    classify_info_writer.write_all(classify_info_json.as_bytes())?;
     classify_info_writer.flush()?;
 
     info!(

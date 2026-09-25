@@ -1,0 +1,17 @@
+[package]
+name = "libgtf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thiserror = "2.0.18"
+noodles-gtf =  "0.35.0" 
+log = "0.4.27"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+rustc-hash = "2.1.2"
+flate2 = "1.1.5"
+zstd = "0.13"
+rust-lapper = "1.2.0"
+num-format = "0.4.4"
+noodles-fasta = "0.46.0" 
+noodles-core = "0.15.0"

@@ -14,13 +14,9 @@ use thiserror::Error;
 use xxhash_rust::xxh3::xxh3_128;
 
 use crate::constants;
-// use crate::{
-//     // core::tx_strand::Strand,
-//     index::{attributes_index::AttrIndexReader, reader::IndexReader},
-// };
 
-use libgtf::index::IndexReader;
 use libgtf::index::AttrIndexReader;
+use libgtf::index::IndexReader;
 
 use libgtf::gtf::Strand;
 
@@ -54,10 +50,11 @@ pub fn save_json_block<T: Serialize, P: AsRef<Path>>(path: &P, msg: &T) -> Resul
     let mut file = File::create(path)?;
     match serde_json::to_string_pretty(&msg) {
         Ok(json) => file.write_all(json.as_bytes()),
-        Err(e) => Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to save {:?}: {}", path.as_ref(), e),
-        )),
+        Err(e) => Err(io::Error::other(format!(
+            "Failed to save {:?}: {}",
+            path.as_ref(),
+            e
+        ))),
     }
 }
 
@@ -109,7 +106,7 @@ pub fn hash_str(s: &str) -> u128 {
     xxh3_128(s.as_bytes())
 }
 
-pub fn hash_u8_vec(v: &Vec<u8>) -> u128 {
+pub fn hash_u8_vec(v: &[u8]) -> u128 {
     xxh3_128(v)
 }
 
@@ -318,11 +315,10 @@ pub fn check_index_ready<P: AsRef<Path>>(gtf_path: P) -> bool {
     index_header.md5 == hasher.digest128().to_le_bytes()
 }
 
-
 pub fn warn_missing_seqids(reader: &IndexReader) {
-                warn!("Index skipped transcripts on missing reference seqid(s):",);
-            warn!("{}", reader.missing_seqids.join(","));
-            warn!(
-                "Those transcripts will not be processed. You may consider redo index step with proper reference genome FASTA."
-            );
+    warn!("Index skipped transcripts on missing reference seqid(s):",);
+    warn!("{}", reader.missing_seqids().join(","));
+    warn!(
+        "Those transcripts will not be processed. You may consider redo index step with proper reference genome FASTA."
+    );
 }

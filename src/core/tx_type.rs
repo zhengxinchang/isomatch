@@ -10,6 +10,7 @@ pub enum TxType {
 }
 
 impl TxType {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<TxType> {
         match s {
             "MONO" => Some(TxType::MONO),

@@ -11,8 +11,8 @@ use rust_lapper::{Interval, Lapper};
 use crate::{
     classify::{classify_error::ClassifyError, ref_ptir::RefPTIR},
     core::ptir::PTIR,
-    // index::reader::IndexReader,
-    traits::LogMemSize, utils::warn_missing_seqids,
+    traits::LogMemSize,
+    utils::warn_missing_seqids,
 };
 
 use libgtf::index::IndexReader;
@@ -147,14 +147,8 @@ impl ChromIndex {
 
     pub fn has_junction(&self, junction: &Junction, strand: &Strand) -> bool {
         match strand {
-            Strand::Minus => match self.junctions_minus.binary_search(junction) {
-                Ok(_) => return true,
-                Err(_) => return false,
-            },
-            Strand::Plus => match self.junctions_plus.binary_search(junction) {
-                Ok(_) => return true,
-                Err(_) => return false,
-            },
+            Strand::Minus => self.junctions_minus.binary_search(junction).is_ok(),
+            Strand::Plus => self.junctions_plus.binary_search(junction).is_ok(),
             Strand::Unknown => {
                 panic!("This should not happen as it only acccept stranded transcript in new().");
             }
@@ -294,14 +288,13 @@ impl RefPTIRManager {
             reason: format!(
                 "Can not read reference GTF {}, reason: {}",
                 &isomx_path.display(),
-                e.to_string()
+                e
             ),
         })?;
 
         let mut index_reader = IndexReader::open(f, 0)?;
 
-
-        if !index_reader.missing_seqids.is_empty() {
+        if !index_reader.missing_seqids().is_empty() {
             warn_missing_seqids(&index_reader);
         }
 
@@ -327,9 +320,9 @@ impl RefPTIRManager {
                 let ptir = PTIR::from_tx_base(
                     txbase,
                     0,
-                    &chrom_block_builder.junction_pool,
-                    &chrom_block_builder.splice_site_pool,
-                    &chrom_block_builder.string_pool,
+                    chrom_block_builder.junction_pool(),
+                    chrom_block_builder.splice_site_pool(),
+                    chrom_block_builder.string_pool(),
                 );
 
                 if matches!(ptir.strand, Strand::Unknown) {
@@ -366,7 +359,7 @@ impl RefPTIRManager {
 
                 let gene_id = &ptir.source_geneid;
 
-                let gene_idx = global_string_id.get_or_insert_gene(&gene_id);
+                let gene_idx = global_string_id.get_or_insert_gene(gene_id);
 
                 if (gene_idx as usize) == geneid_indexes.len() {
                     geneid_indexes.push(GeneIndex::new(ptir.junctions(), ptir.start, ptir.end))
@@ -445,10 +438,7 @@ impl RefPTIRManager {
     }
 
     pub fn has_chr(&self, chr_name: &str) -> bool {
-        match self.stringids.chrom_id(chr_name) {
-            Some(_) => true,
-            None => false,
-        }
+        self.stringids.chrom_id(chr_name).is_some()
     }
 
     pub fn find_ovlp_from_mono_refs(

@@ -14,7 +14,6 @@ use serde::Serialize;
 
 use crate::{
     RevertArgs,
-    // index::gtf::parse_gtf_attr_value,
     tools::tools_error::ToolError,
     traits::ArgValidate,
     utils::{
@@ -228,9 +227,9 @@ struct MergedBlock {
 impl MergedBlock {
     fn from_gtf_cols(cols: &[&str], line_no: usize) -> Result<Self, ToolError> {
         let attrs = cols[8];
-        let merged_tx_id = require_attr(&attrs, "transcript_id", line_no)?;
-        let merged_gene_id = require_attr(&attrs, "gene_id", line_no)?;
-        let isom_src = require_attr(&attrs, "ISOM_SRC", line_no)?;
+        let merged_tx_id = require_attr(attrs, "transcript_id", line_no)?;
+        let merged_gene_id = require_attr(attrs, "gene_id", line_no)?;
+        let isom_src = require_attr(attrs, "ISOM_SRC", line_no)?;
 
         Ok(Self {
             chrom: cols[0].to_string(),
@@ -598,6 +597,7 @@ fn shift_coordinate(repr_coord: u32, diff: i32) -> Result<u32, ToolError> {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_gtf_record(
     writer: &mut dyn Write,
     chrom: &str,

@@ -3,13 +3,10 @@
 //! index file.
 //! it is used in the merge and annotate command.
 
-use crate::core::{
-    junction_pool::JunctionPool, splice_site_pair::SpliceSitePair,
-    splice_site_pool::SpliceSitePool, string_pool::StringPool, tx_base::TxBase,
-    tx_boundary::TxBoundary, tx_type::TxType,
-};
+use crate::core::tx_type::TxType;
 
 use libgtf::gtf::Strand;
+use libgtf::index::{JunctionPool, SpliceSitePair, SpliceSitePool, StringPool, TxBase, TxBoundary};
 
 #[derive(Debug, Clone)]
 /// core data structure for transcript that loaded from index file, used for merge and annotate.
@@ -38,7 +35,7 @@ impl PTIR {
         string_pool: &StringPool,
     ) -> Self {
         let splice_site_vec: Option<Vec<SpliceSitePair>> = if tb.n_exons() > 1 {
-            Some(tb.splice_sites(spl_site_pool, string_pool))
+            Some(tb.splice_sites(spl_site_pool))
         } else {
             None
         };
@@ -57,7 +54,7 @@ impl PTIR {
             strand: tb.strand(),
             n_exons: tb.n_exons(),
             refhash: tb.ref_hash(),
-            seqhash: if tb.flags.get_seq_has_hash() {
+            seqhash: if tb.flags().get_seq_has_hash() {
                 Some(tb.seq_hash())
             } else {
                 None
@@ -67,8 +64,8 @@ impl PTIR {
             } else {
                 None
             },
-            splice_site_vec: splice_site_vec,
-            tx_type: tx_type,
+            splice_site_vec,
+            tx_type,
             source_file_id: file_id,
             source_txid: tb.source_tx_id(string_pool),
             source_geneid: tb.source_gene_id(string_pool),

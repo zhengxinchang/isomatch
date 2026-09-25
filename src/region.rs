@@ -1,5 +1,4 @@
 // use crate::core::tx_strand::Strand;
-// use crate::index::gtf::parse_gtf_attr_value;
 use crate::utils::open_file_bufread;
 use libgtf::gtf::Strand;
 use libgtf::gtf::attribute;
@@ -43,6 +42,7 @@ impl MyRegion {
     }
 
     #[inline]
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u32 {
         self.end - self.start + 1
     }
@@ -215,9 +215,7 @@ impl RegionDb {
             let end = parse_gtf_u32_field(fields[4], line_no, "end")?;
             let strand = parse_gtf_strand_field(fields[6], line_no)?;
             let id = attribute(fields[8], "gene_id").unwrap_or_default();
-            let name = attribute(fields[8], "gene_name")
-                .to_owned()
-                .unwrap_or_else(|| id);
+            let name = attribute(fields[8], "gene_name").to_owned().unwrap_or(id);
 
             grouped
                 .entry((fields[0].to_string(), strand))
