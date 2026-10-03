@@ -1,6 +1,7 @@
 name: Build and Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -18,6 +19,7 @@ jobs:
           fetch-depth: 0
 
       - name: Verify tag is on main
+        if: github.event_name == 'push'
         run: |
           git fetch origin main
           if ! git merge-base --is-ancestor ${{ github.sha }} origin/main; then
@@ -26,6 +28,7 @@ jobs:
           fi
 
       - name: Verify version matches tag
+        if: github.event_name == 'push'
         run: |
           CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
           TAG_VERSION="${GITHUB_REF_NAME#v}"
@@ -50,17 +53,20 @@ jobs:
           docker cp isomatch-builder:/linux_build ./linux_build
           docker rm isomatch-builder
 
+      - name: Smoke test binary
+        run: docker run --rm isomatch-build --version
+
       - name: Package
         run: |
           cp LICENSE linux_build/
           cd linux_build
-          tar czf ../isomatch-${{ github.ref_name }}-linux-x86_64.tar.gz *
+          tar czf ../isomatch-${{ github.event_name == 'workflow_dispatch' && format('test-{0}', github.run_id) || github.ref_name }}-linux-x86_64.tar.gz *
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-x86_64
-          path: isomatch-${{ github.ref_name }}-linux-x86_64.tar.gz
+          path: isomatch-${{ github.event_name == 'workflow_dispatch' && format('test-{0}', github.run_id) || github.ref_name }}-linux-x86_64.tar.gz
 
   build-macos:
     needs: verify
@@ -83,7 +89,10 @@ jobs:
           restore-keys: macos-cargo-
 
       - name: Build
-        run: cargo build --release
+        run: cargo build --release --locked
+
+      - name: Smoke test binary
+        run: ./target/release/isomatch --version
 
       - name: Package
         run: |
@@ -91,15 +100,16 @@ jobs:
           cp target/release/isomatch macos_build/
           cp LICENSE macos_build/
           cd macos_build
-          tar czf ../isomatch-${{ github.ref_name }}-macos-aarch64.tar.gz *
+          tar czf ../isomatch-${{ github.event_name == 'workflow_dispatch' && format('test-{0}', github.run_id) || github.ref_name }}-macos-aarch64.tar.gz *
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-aarch64
-          path: isomatch-${{ github.ref_name }}-macos-aarch64.tar.gz
+          path: isomatch-${{ github.event_name == 'workflow_dispatch' && format('test-{0}', github.run_id) || github.ref_name }}-macos-aarch64.tar.gz
 
   release:
+    if: github.event_name == 'push'
     needs: [build-linux, build-macos]
     runs-on: ubuntu-latest
     steps:

@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/libgtf"]
+members = ["."]
 resolver = "3"
 
 [package]
@@ -21,4 +21,4 @@ rustc-hash = "2.1.2"
 flate2 = "1.1.5"
 rust-lapper = "1.2.0"
 num-format = "0.4.4"
-libgtf = { path = "crates/libgtf" }
+libgtf = { git = "https://github.com/zhengxinchang/libgtf.git", rev = "01f9b91eb3c7dbdd6c9f7fb2ed3120e4ea0e1199" }

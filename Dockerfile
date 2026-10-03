@@ -17,8 +17,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY crates ./crates
-RUN cargo build --release
+RUN cargo build --release --locked
 
 FROM amazonlinux:2
 WORKDIR /linux_build
