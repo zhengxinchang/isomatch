@@ -1,4 +1,4 @@
-[![GitHub Downloads](https://img.shields.io/github/downloads/zhengxinchang/isomatch/total.svg?style=social&logo=github&label=Download)](https://github.com/zhengxinchang/isomatch/releases)
+<!-- [![GitHub Downloads](https://img.shields.io/github/downloads/zhengxinchang/isomatch/total.svg?style=social&logo=github&label=Download)](https://github.com/zhengxinchang/isomatch/releases) -->
 
 # IsoMatch  <img src="./img/logo.png" align="right" alt="" width=180 />
 
