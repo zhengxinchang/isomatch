@@ -12,6 +12,9 @@
 
 Check out the [examples](docs/examples.md) for usage scenarios.
 
+**Publication:** 
+Xinchang Zheng,  Sonia Garcia-Ruiz,  Yilei Fu,  Emil K Gustavsson,  Mina Ryten,  Fritz J Sedlazeck, IsoMatch enables population-scale transcript integration and reveals reference-dependent isoform novelty, Biorxiv, doi: https://doi.org/10.64898/2026.10.09.758114
+
 # Subcommands and workflow
 
 - `isomatch index`: Build indexes for reading GTF files and generate summary statistics.
