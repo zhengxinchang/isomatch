@@ -15,6 +15,22 @@ Check out the [examples](docs/examples.md) for usage scenarios.
 **Publication:** 
 Xinchang Zheng,  Sonia Garcia-Ruiz,  Yilei Fu,  Emil K Gustavsson,  Mina Ryten,  Fritz J Sedlazeck, IsoMatch enables population-scale transcript integration and reveals reference-dependent isoform novelty, Biorxiv, doi: https://doi.org/10.64898/2026.10.09.758114
 
+# Overview
+
+![](./img/isomatch-fig1.png)
+
+**Overview of IsoMatch.**
+A) Unified workflow for transcript integration, classification, and sample-support tracking.
+B) Per-GTF indexes store transcript structures (.isomx) and attributes (.isoms).
+C) Transcripts are merged by strand, splice-junction chain, and transcript ends using configurable tolerances and optional TSS/TES guides.
+D) Merged GTFs retain sample support and source-transcript provenance.
+
+![](./img/isomatch-perf.png)
+
+**IsoMatch scalability for transcript merging and classification.**
+(A, B) Peak memory and CPU runtime for merging 10–163 ENCODE GTF files using IsoMatch, StringTie, TAMA, and GffCompare on a 64-GB RAM workstation.
+(C, D) Corresponding classification benchmarks for IsoMatch and SQANTI3, shown on logarithmic scales. Parentheses indicate transcript counts in millions; missing points denote incomplete runs. RSS: resident set size.
+
 # Subcommands and workflow
 
 - `isomatch index`: Build indexes for reading GTF files and generate summary statistics.
@@ -26,7 +42,6 @@ Xinchang Zheng,  Sonia Garcia-Ruiz,  Yilei Fu,  Emil K Gustavsson,  Mina Ryten, 
   - `valtable`: Extract a per-transcript attribute value (e.g., TPM) from source GTFs and assemble it into a matrix aligned to the merged GTF transcript order.
   - `mark`: Mark transcripts with overlapping reference genes.
   - `revert`: Reconstruct per-sample source-like GTFs from an isomatch merged GTF.
-
 
 # Installation
 
