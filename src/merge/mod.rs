@@ -85,7 +85,9 @@ impl ArgValidate for MergeArgs {
 }
 
 pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
-    greetings2(&args);
+    if !args.quiet {
+        greetings2(&args);
+    }
     // open all files (isomx) into a vec
     args.validate();
 
@@ -95,8 +97,10 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
 
     let n_inputs = args.inputs.len();
     let input_file_names = input_file_name_bytes(&args.inputs);
-    info!("Loading {n_inputs} gtf(s)");
-    // auto indexing
+    if !args.quiet {
+        info!("Loading {n_inputs} gtf(s)");
+    }
+    // auto indexing (logged even with --quiet)
     info!(
         "Checking input GTF indexes; missing/corrupted/outdated indexes will be created automatically."
     );
@@ -157,7 +161,9 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
         fhs.push(reader);
     }
 
-    info!("Loading chromosome names");
+    if !args.quiet {
+        info!("Loading chromosome names");
+    }
     // collect all chromsome from all files and build a unique list
     let mut chrom_names = Vec::new();
     let mut seen_chroms = HashSet::new();
@@ -224,7 +230,9 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     let mut global_gene_id = 0u32;
     let mut global_tx_id = 0u32;
     for chrom_name in &chrom_names {
-        info!("Merging chromosome {}", chrom_name);
+        if !args.quiet {
+            info!("Merging chromosome {}", chrom_name);
+        }
         let mut chrom_block_readers: Vec<ChromBlockReader> = Vec::new();
         for reader in &mut fhs {
             if !reader.contains_chromosome(chrom_name) {
@@ -302,13 +310,15 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     drop(present_absent_writer);
 
     stats.finalize();
-    print_json_block("Merge summary", &stats);
-    info!("Output file saved to: {}", gtf_out_path.to_string_lossy());
-    info!("Track file saved to: {}", track_out_path.to_string_lossy());
-    info!(
-        "Present/absent matrix saved to: {}",
-        present_absent_path.to_string_lossy()
-    );
+    if !args.quiet {
+        print_json_block("Merge summary", &stats);
+        info!("Output file saved to: {}", gtf_out_path.to_string_lossy());
+        info!("Track file saved to: {}", track_out_path.to_string_lossy());
+        info!(
+            "Present/absent matrix saved to: {}",
+            present_absent_path.to_string_lossy()
+        );
+    }
 
     let mut merge_info_writer = File::create(&merge_info_path)?;
 
@@ -317,7 +327,9 @@ pub fn run_merge(args: MergeArgs) -> AnyResult<()> {
     merge_info_writer.write_all(msg.as_bytes())?;
     merge_info_writer.flush()?;
 
-    info!("Finished!");
+    if !args.quiet {
+        info!("Finished!");
+    }
     Ok(())
 }
 

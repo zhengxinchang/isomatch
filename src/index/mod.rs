@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Context, bail};
 use log::{error, info, warn};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     IndexArgs,
@@ -16,7 +16,7 @@ use crate::{
 pub use anyhow::Result as AnyResult;
 use libgtf::{BuildConfig, BuildEvent, BuildReport, build_index_with_events};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct IndexStats {
     pub transcript_count: u64,
     pub gene_count: u64,

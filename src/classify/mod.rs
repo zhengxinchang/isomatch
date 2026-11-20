@@ -182,7 +182,7 @@ pub fn run_classify(args: ClassifyArgs) -> AnyResult<()> {
     param_path.add_extension("classify_params.json");
     save_json_block(&param_path, &args)?;
 
-    info!("Loading 1 gtf(s)");
+    // info!("Loading 1 gtf(s)");
     // auto indexing
     info!(
         "Checking input GTF indexes; missing/corrupted/outdated indexes will be created automatically."

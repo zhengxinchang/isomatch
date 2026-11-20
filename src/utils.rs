@@ -261,11 +261,25 @@ fn parse_sample_id(id: &str) -> Result<u32, UtilsError> {
     }
 }
 
-fn parse_header_value(line: &str, key: &str) -> Option<String> {
+pub(crate) fn parse_header_value(line: &str, key: &str) -> Option<String> {
     let needle = format!("{key}=\"");
     let start = line.find(&needle)? + needle.len();
-    let end = line[start..].find('"')? + start;
-    Some(line[start..end].replace("\\\"", "\"").replace("\\\\", "\\"))
+    let mut value = String::new();
+    let mut chars = line[start..].chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => return Some(value),
+            '\\' => {
+                let escaped = chars.next()?;
+                if !matches!(escaped, '\\' | '"') {
+                    value.push('\\');
+                }
+                value.push(escaped);
+            }
+            _ => value.push(ch),
+        }
+    }
+    None
 }
 
 pub fn check_index_ready<P: AsRef<Path>>(gtf_path: P) -> bool {

@@ -93,7 +93,14 @@ pub fn merge_tx_cluster(
                     canonical_global_idxs.push(ptir_idx);
                 }
                 TxType::NOTC | TxType::PRTC => {
-                    non_canonical_global_idxs.push(*ptir_idx);
+                    if args.ignore_canonical {
+                        // ponytail: reuse the canonical pool as a common backbone; source
+                        // tx_type is preserved. Pairwise grouping is O(n²); index JC candidates
+                        // if large clusters become a bottleneck.
+                        canonical_global_idxs.push(ptir_idx);
+                    } else {
+                        non_canonical_global_idxs.push(*ptir_idx);
+                    }
                 }
                 TxType::MONO => {
                     return Err(MergeError::TxType {
@@ -700,4 +707,113 @@ pub fn is_splice_junctions_match(
             }
         });
     (in_wobble, bp_diff_d, bp_diff_a)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Cli, Commands};
+    use clap::Parser;
+    use libgtf::index::TxBoundary;
+
+    #[test]
+    fn ignore_canonical_preserves_junction_bridges_and_source_types() {
+        let cli_args = [
+            "isomatch",
+            "merge",
+            "-r",
+            "ref.fa",
+            "-o",
+            "merged",
+            "-d",
+            "3",
+            "-a",
+            "3",
+            "-u",
+            "3",
+            "--terminal-refine",
+            "none",
+            "input.gtf",
+        ];
+        let Commands::Merge(default_args) = Cli::try_parse_from(cli_args).unwrap().command else {
+            panic!("expected merge arguments");
+        };
+        assert!(!default_args.ignore_canonical);
+        let Commands::Merge(mut unified_args) =
+            Cli::try_parse_from(cli_args.into_iter().chain(["--ignore-canonical"]))
+                .unwrap()
+                .command
+        else {
+            panic!("expected merge arguments");
+        };
+        assert!(unified_args.ignore_canonical);
+        // These must not restrict unified grouping or split its terminals.
+        unified_args.wob_d_nc = 0;
+        unified_args.wob_a_nc = 0;
+        unified_args.wob_u_nc = 0;
+        unified_args.tss_wob_nc = 0;
+        unified_args.tes_wob_nc = 0;
+
+        for strand in [Strand::Plus, Strand::Minus, Strand::Unknown] {
+            for bridge_type in [TxType::NOTC, TxType::PRTC] {
+                let transcripts: Vec<PTIR> = [TxType::ALLC, bridge_type, TxType::ALLC]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, tx_type)| PTIR {
+                        tx_boundary: TxBoundary::new(100 + idx as u32 * 10, 800, strand),
+                        start: 100 + idx as u32 * 10,
+                        end: 800,
+                        strand,
+                        n_exons: 3,
+                        refhash: 0,
+                        seqhash: None,
+                        junction_vec: Some(vec![
+                            (200 + idx as u32 * 3, 300 + idx as u32 * 3),
+                            (500, 600),
+                        ]),
+                        splice_site_vec: None,
+                        tx_type,
+                        source_file_id: idx,
+                        source_txid: format!("tx{idx}"),
+                        source_geneid: "gene".to_string(),
+                    })
+                    .collect();
+                let indices = vec![0, 1, 2];
+                let merge = |args: &MergeArgs| {
+                    merge_tx_cluster(
+                        "chr1",
+                        3,
+                        strand,
+                        &indices,
+                        &transcripts,
+                        args,
+                        &None,
+                        &None,
+                    )
+                    .unwrap()
+                };
+                let groups = merge(&default_args);
+                assert_eq!(groups.len(), 2);
+                assert_eq!(groups.iter().map(GroupedPTIR::total_count).sum::<u32>(), 3);
+
+                let groups = merge(&unified_args);
+                assert_eq!(groups.len(), 1);
+                assert_eq!(groups[0].total_count(), 3);
+                let entries = groups[0].canonical_entries_cloned();
+                for entry in entries {
+                    let original = &transcripts[entry.super_idx];
+                    assert_eq!(entry.tx_type.to_u8(), original.tx_type.to_u8());
+                    assert_eq!(entry.junctions.as_slice(), original.junction_vec_ref());
+                    assert_eq!((entry.left, entry.right), (original.start, original.end));
+                }
+
+                // The flag does not disable the ordinary terminal rules for merge users.
+                let mut terminal_args = unified_args.clone();
+                terminal_args.terminal_refine = TerminalRefineMode::Both;
+                terminal_args.tss_wob = 0;
+                terminal_args.tes_wob = 0;
+                assert_eq!(merge(&terminal_args).len(), 3);
+            }
+        }
+    }
 }

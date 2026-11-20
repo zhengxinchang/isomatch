@@ -531,7 +531,9 @@ fn parse_sources(isom_src: &str, line_no: usize) -> Result<Vec<SourceRecord>, To
     Ok(out)
 }
 
-fn parse_junction_diffs(junction_diffs: &str) -> Result<Vec<(usize, i32, i32)>, ToolError> {
+pub(crate) fn parse_junction_diffs(
+    junction_diffs: &str,
+) -> Result<Vec<(usize, i32, i32)>, ToolError> {
     if junction_diffs == "no_diff" {
         return Ok(Vec::new());
     }
@@ -590,7 +592,7 @@ fn parse_junction_diff(diff: &str) -> Result<(usize, i32, i32), ToolError> {
     ))
 }
 
-fn shift_coordinate(repr_coord: u32, diff: i32) -> Result<u32, ToolError> {
+pub(crate) fn shift_coordinate(repr_coord: u32, diff: i32) -> Result<u32, ToolError> {
     let shifted = i64::from(repr_coord) - i64::from(diff);
     u32::try_from(shifted).map_err(|_| ToolError::ReadMergedGTFFailed {
         reason: format!("Invalid reconstructed coordinate: {repr_coord} - ({diff})"),
@@ -598,7 +600,7 @@ fn shift_coordinate(repr_coord: u32, diff: i32) -> Result<u32, ToolError> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn write_gtf_record(
+pub(crate) fn write_gtf_record(
     writer: &mut dyn Write,
     chrom: &str,
     feature: &str,

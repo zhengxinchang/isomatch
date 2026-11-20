@@ -1,5 +1,5 @@
 ## Changes
 
-- set 0 as the default value for `-u`
-- add source gene id to the `ISOM_SRC` attribute in the merged GTF (breaking: merged GTFs from earlier versions can no longer be read by `tools revert`)
-- migrate index to crates/libgtf
+- Added a new option to disable the non-canonical transcript split in merge.
+- Added a new option to run merge quietly.
+- Added `isomatch bench`: evaluate query GTFs against a reference GTF with one-to-one transcript matching (TP/FP/FN, precision, recall, F1); see `docs/bench.md`.

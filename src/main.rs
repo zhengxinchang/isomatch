@@ -6,6 +6,7 @@ use serde::Serialize;
 pub mod core;
 pub mod region;
 pub mod utils;
+use crate::bench::{BenchPreset, run_bench};
 use crate::classify::run_classify;
 use crate::tools::chop::run_chop;
 use crate::tools::mark::run_mark;
@@ -13,6 +14,7 @@ use crate::tools::revert::run_revert;
 use crate::tools::valtable::run_valtable;
 use crate::{index::run_index, merge::run_merge};
 use clap::ValueEnum;
+pub mod bench;
 pub mod classify;
 pub mod constants;
 pub mod index;
@@ -69,6 +71,7 @@ pub enum Commands {
     Index(IndexArgs),
     Merge(MergeArgs),
     Classify(ClassifyArgs),
+    Bench(BenchArgs),
     #[command(subcommand)]
     Tools(ToolssArgs),
 }
@@ -165,6 +168,14 @@ pub struct MergeArgs {
         help = "Skip transcripts on seqids absent from the reference FASTA"
     )]
     pub skip_missing_ref_chr: bool,
+
+    #[clap(
+        long = "ignore-canonical",
+        action = ArgAction::SetTrue,
+        help_heading = "Transcript Merge",
+        help = "Merge canonical and non-canonical transcripts together using wob-d/a/u and terminal-refine/tss-wob/tes-wob; ignore all *-nc parameters"
+    )]
+    pub ignore_canonical: bool,
 
     #[clap(
         short = 'd',
@@ -294,7 +305,7 @@ pub struct MergeArgs {
 
     #[clap(
         long = "mono-ovlp",
-        help_heading = "Mono Exon Transcirpt Merge",
+        help_heading = "Mono Exon Transcript Merge",
         help = "Minimum reciprocal overlap for mono-exon merge",
         default_value_t = 0.9,
         value_name = "FLOAT"
@@ -398,6 +409,15 @@ pub struct MergeArgs {
         value_parser = clap::value_parser!(u64).range(0..=100)
     )]
     pub unassigned_group_min_overlap: u64,
+
+    #[clap(
+        short= 'q',
+        long = "quiet",
+        help_heading = "Other",
+        action = ArgAction::SetTrue,
+        help = "Suppress non-warning messages; only warnings and errors are shown"
+    )]
+    pub quiet: bool,
 }
 
 #[derive(Parser, Debug, Serialize, Clone)]
@@ -656,6 +676,104 @@ pub struct MarkArgs {
     pub out: PathBuf,
 }
 
+#[derive(Parser, Debug, Serialize, Clone)]
+#[clap(about = "Evaluate query GTFs against a reference GTF (precision, recall, F1)")]
+pub struct BenchArgs {
+    #[clap(
+        help_heading = "Input",
+        help = "Query GTFs to evaluate",
+        required = true,
+        num_args = 1..
+    )]
+    pub inputs: Vec<PathBuf>,
+
+    #[clap(
+        short = 'g',
+        long = "ref-gtf",
+        help_heading = "Input",
+        help = "Baseline GTF"
+    )]
+    pub ref_gtf: PathBuf,
+
+    #[clap(
+        short = 'o',
+        long = "out",
+        help_heading = "Output",
+        help = "Output directory"
+    )]
+    pub outdir: PathBuf,
+
+    #[clap(
+        short = 'r',
+        long = "ref-fa",
+        help_heading = "Auto Indexing",
+        help = "Reference FASTA"
+    )]
+    pub ref_fa: PathBuf,
+
+    #[clap(
+        long = "skip-missing-ref-chr",
+        action = ArgAction::SetTrue,
+        help_heading = "Auto Indexing",
+        help = "Skip transcripts on seqids absent from the reference FASTA"
+    )]
+    pub skip_missing_ref_chr: bool,
+
+    #[clap(
+        short = 'w',
+        long = "wob",
+        help_heading = "Transcript compare",
+        help = "splice site wobble in bp",
+        default_value_t = 0,
+        value_name = "BP"
+    )]
+    pub wob: u32,
+
+    #[clap(
+        long = "preset",
+        value_enum,
+        default_value = "default",
+        help_heading = "Transcript compare",
+        help = "default: match junctions and TSS/TES; junction: collapse each input by exact junction chain, then match junctions only"
+    )]
+    pub preset: BenchPreset,
+
+    #[clap(
+        short = 's',
+        long = "tss-wob",
+        help_heading = "Transcript compare",
+        help = "TSS wobble in bp, default preset only [default: 50]",
+        value_name = "BP"
+    )]
+    pub tss_wob: Option<u32>,
+
+    #[clap(
+        short = 'e',
+        long = "tes-wob",
+        help_heading = "Transcript compare",
+        help = "TES wobble in bp, default preset only [default: 50]",
+        value_name = "BP"
+    )]
+    pub tes_wob: Option<u32>,
+
+    #[clap(
+        long = "mono-ovlp",
+        help_heading = "Transcript compare",
+        help = "Minimum reciprocal overlap for mono-exon match",
+        default_value_t = 0.9,
+        value_name = "FLOAT"
+    )]
+    pub mono_ovlp: f64,
+
+    #[clap(
+        long = "overwrite",
+        action = ArgAction::SetTrue,
+        help_heading = "Output",
+        help = "Delete all existing contents of the output folder before running"
+    )]
+    pub overwrite: bool,
+}
+
 #[derive(Subcommand, Debug, Clone, Serialize)]
 pub enum ToolssArgs {
     Chop(ChopArgs),
@@ -689,6 +807,14 @@ fn main() {
             command: Commands::Classify(args),
         } => {
             if let Err(e) = run_classify(args) {
+                error!("{:#}", e);
+                std::process::exit(1);
+            }
+        }
+        Cli {
+            command: Commands::Bench(args),
+        } => {
+            if let Err(e) = run_bench(args) {
                 error!("{:#}", e);
                 std::process::exit(1);
             }

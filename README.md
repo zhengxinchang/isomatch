@@ -37,6 +37,7 @@ D) Merged GTFs retain sample support and source-transcript provenance.
   Automatically called by `merge` and `classify` if needed.
 - `isomatch merge`: Merge multiple GTF files into a single merged GTF file, using the reference FASTA for sequence information.
 - `isomatch classify`: Classify query transcripts against a reference GTF, similar to SQANTI3 QC.
+- `isomatch bench`: Evaluate query GTFs against a reference GTF with one-to-one transcript matching (TP/FP/FN, precision, recall, F1). See [docs/bench.md](docs/bench.md).
 - `isomatch tools`: Run GTF manipulation utilities:
   - `chop`: Remove selected GTF attributes, commonly used to strip isomatch-added annotations from output GTF files.
   - `valtable`: Extract a per-transcript attribute value (e.g., TPM) from source GTFs and assemble it into a matrix aligned to the merged GTF transcript order.
@@ -92,6 +93,17 @@ isomatch classify --ref-fa ref.fa --ref-gtf reference.gtf.gz \
     -o query_vs_ref query.gtf.gz
 # outputs: query_vs_ref.classification.txt.gz  query_vs_ref.annotated.gtf.gz
 #          query_vs_ref.classify_info.json  query_vs_ref.classify_params.json
+```
+
+### Bench
+```
+# evaluate query GTFs against a reference GTF (-o takes a directory)
+isomatch bench --ref-fa ref.fa -g reference.gtf.gz -o bench_out query1.gtf.gz query2.gtf.gz
+# outputs: bench_out/results_summary.tsv  results_summary.json  results_all.json
+#          bench_out/Q1/{tp-query,fp,tp-ref,fn}.gtf.gz ...
+
+# score splicing structure only (ends ignored), e.g. for short-read assemblies
+isomatch bench --preset junction --ref-fa ref.fa -g reference.gtf.gz -o bench_junction query1.gtf.gz
 ```
 
 # How isomatch merge transcripts
